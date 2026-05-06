@@ -31,64 +31,79 @@ Security moves at research speed. New tools, new techniques, new agents drop eve
 Today, they can't:
 
 - **Run it on a laptop.** Fast. Invisible to the SOC. Zero governance. Not production.
-- **Wait for the platform team.** Six months per tool: isolation, IAM, audit, networking, secrets, findings pipeline, ticketing, observability. By the time it ships, the window has closed.
+- **Wait for the platform team.** Six months per tool: isolation, identity, audit, networking, secrets, findings pipeline, ticketing, observability. By the time it ships, the window has closed.
 - **Buy a vendor tool.** You get *their* tool, *their* opinions, *their* roadmap. When your team needs capability #2, start over.
 
-**Gibson is the fourth option: a substrate, not a tool.** Opinionated about the boring parts — isolation, RBAC, audit, knowledge graph, observability — because those should be uniform across every capability you ship. Flexible where it matters: your team builds exactly the tool, agent, or plugin they need. Production-worthy on arrival, because the substrate already is.
+**Gibson is the fourth option: a substrate, not a tool.** Opinionated about the boring parts — isolation, identity, authorization, knowledge graph, observability — because those should be uniform across every capability you ship. Flexible where it matters: your team builds exactly the agent, tool, or plugin they need. Production-worthy on arrival, because the substrate already is.
 
 ---
 
 ## What "production-worthy on day one" actually means
 
-When a new tool, agent, or plugin lands in Gibson, the substrate gives it:
+When a new agent or tool lands in Gibson, the substrate gives it:
 
-- **Hardware-isolated execution.** Every invocation runs inside a microVM with a kernel boundary. Untrusted code, LLM-generated payloads, novel binaries — none of them can escape.
-- **Scoped capabilities.** Every tool ships with a declared permission surface: which teams can invoke it, which data it can touch, which other tools or agents it can chain to. Checked on every single call.
-- **Automatic knowledge-graph integration.** Output becomes typed nodes in a shared graph the rest of your fleet can query. No per-tool ingestion code.
-- **Audit trail, tracing, observability.** Every call is logged, traced, metered. Flows to your SIEM. No separate wiring.
-- **Deployable anywhere.** Your cluster, your customer's cluster, or inside your SaaS — same artifact.
+- **Hardware-isolated execution.** Tools run inside Firecracker microVMs orchestrated by [Setec](https://github.com/zero-day-ai/setec). Untrusted code, LLM-generated payloads, novel binaries — none of them can escape the VM boundary.
+- **Workload identity by default.** Every component in the cluster gets a SPIFFE SVID. Every internal hop is mTLS, pinned to a known peer identity. There is no "internal network we trust."
+- **Fine-grained authorization.** OpenFGA backs every authz decision; the registry is generated from proto annotations, not hand-edited. A compromised or prompt-injected agent cannot exceed its grants.
+- **Multi-tenant by construction.** Per-tenant Postgres role, per-tenant Neo4j database, per-tenant secret resolution, per-tenant component registry. Not retrofitted.
+- **Knowledge graph integration.** Findings, hosts, services, and attack chains land as typed nodes in a shared graph the rest of your fleet — and your dashboard chat assistant — can query. No per-tool ingestion code.
+- **Compliance-mapped output.** Every finding maps to MITRE ATT&CK / ATLAS, with optional NIST AI RMF, CIS, and SOC2 overlays. Export as SARIF, JSON, CSV, or HTML.
+- **Audit, tracing, and LLM observability.** OpenTelemetry traces and Prometheus metrics for everything; Langfuse for every LLM call. Streamable to your existing stack.
 
 Your team writes the interesting part. The substrate handles the rest.
 
 ---
 
+## Zero-trust, end to end
+
+Gibson is built on a strict zero-trust posture. The architecture is the differentiator:
+
+- **No service trusts another service's word.** The daemon validates *no* JWTs itself — every authorization decision is delegated to a dedicated `ext-authz` service over SPIFFE-pinned mTLS.
+- **No service trusts the network.** Envoy ↔ ext-authz ↔ daemon channels are all pinned to known SPIFFE peer identities. Plain TCP between platform components is rejected at startup.
+- **No component trusts headers it didn't earn.** Identity headers handed to the daemon are emitted by ext-authz only after JWT, FGA, and tenancy claims have all been cross-verified — and the daemon refuses to bind anywhere but loopback if SPIFFE material is missing.
+- **No agent trusts the agent next to it.** Tool execution runs in a separate sandbox process over mTLS. Agents talk to tools through capability-grant JWTs, not shared credentials.
+- **The dashboard never gets a direct daemon channel.** A CI gate fails the build if any code path opens one — every byte goes through Envoy and ext-authz.
+
+The result: a platform where a compromised tool, a prompt-injected agent, or a leaked credential has a tightly bounded blast radius.
+
+---
+
 ## How the pieces fit
 
-Four pillars. Each one is the mechanism that makes "production-worthy on day one" actually true.
-
-| Pillar | What it gives your team |
-|---|---|
-| **Agent Development Kit** | Define your domain in YAML. The SDK generates proto types, Go types, validators, and graph query builders from one source of truth. Wrap a new tool in hours, not sprints. No ingestion code. No retrieval code. No drift. |
-| **Setec microVM sandbox** | Every agent action — tool execution, LLM-generated code, file edit, network call — runs inside a Firecracker microVM with sub-100ms cold start. Hardware isolation by default, on every invocation. |
-| **Capability-scoped RBAC** | Every agent, tool, and API key carries a capability scope. Checked on every harness call, not just at the API gateway. A compromised or prompt-injected agent cannot exceed its grants. |
-| **Split-plane deployment** | Lightweight data plane in your cluster. Control plane hosted by Gibson — or fully on-prem at the enterprise tier. Credentials, raw artifacts, and LLM traffic never leave your perimeter. |
+| Layer | What it is | What it gives your team |
+|---|---|---|
+| **SDK** | Public Go SDK for agents, tools, and discovery extractors | Build new capabilities against a stable, versioned, proto-first interface. No model lock-in — declare LLM slot requirements, the framework picks the model. |
+| **Daemon** | Multi-tenant control plane for missions, agents, tools, and findings | Mission planning, sub-agent delegation, three-tier memory (working / mission / long-term), graceful checkpointing, GraphRAG-backed reasoning. |
+| **ext-authz** | Envoy external authorization service | The platform's sole authz decision point. Every RPC checked against OpenFGA, with capability-grant short-circuits for federated components. |
+| **Setec sandbox** | Standalone K8s operator for Firecracker / Kata / gVisor | Sub-100ms cold starts. Every tool invocation hardware-isolated. Useful on its own; Gibson is just one consumer. |
+| **Tenant operator** | Kubebuilder operator over `Tenant`, `TenantMember`, `AgentEnrollment`, `ComponentGrant` CRDs | Tenant lifecycle, member invitations, and agent/tool enrollment reconciled declaratively against Zitadel + OpenFGA. |
+| **Dashboard** | Next.js 16 / React 19 console | Server-Action authn over Zitadel OIDC, two-layer authorization (UI + server), and a tenant-scoped chat assistant grounded in your knowledge graph. |
 
 ---
 
 ## Example: a new tool on Monday morning
 
-An analyst reads about a new fuzzer at a conference on Monday. Tomorrow's target is hers by lunch.
+An analyst reads about a new fuzzer at a conference on Monday. By Tuesday it's running in prod against her own targets.
 
-**Without Gibson:** Platform request Monday. Security review week 3. IAM wiring week 6. Findings pipeline week 10. Prod in month 5. By then the tool is obsolete.
+**Without Gibson:** Platform request Monday. Security review week 3. Identity wiring week 6. Findings pipeline week 10. Prod in month 5. By then the tool is obsolete.
 
 **With Gibson:**
 
 ```bash
-# Monday 10am — wrap the tool
-gibson tool scaffold fuzzer-xyz --binary ./fuzzer-xyz
+# Monday 10am — scaffold
+gibson-cli plugin init fuzzer-xyz
 
-# Monday 2pm — register and deploy
-gibson tool register fuzzer-xyz
-helm upgrade gibson --reuse-values
+# Monday 12pm — validate against the manifest schema
+gibson-cli plugin validate ./fuzzer-xyz
 
-# Monday 3pm — scope it to the team that owns it
-gibson rbac grant --team appsec --tool fuzzer-xyz
+# Monday 2pm — enroll with the daemon (issues a SPIFFE identity and FGA grants)
+gibson-cli plugin enroll ./fuzzer-xyz
 
-# Monday 4pm — it's running in prod
-gibson mission run --tool fuzzer-xyz --target internal-api.corp
+# Monday 3pm — ship: helm upgrade picks up the new component
+helm upgrade gibson ./helm/gibson --reuse-values
 ```
 
-Every invocation runs in a microVM. Findings flow into the knowledge graph. RBAC gates who can call it. Audit events stream to your SIEM. OTel traces land in your observability stack.
+Every invocation now runs in a microVM. Findings flow into the knowledge graph. OpenFGA gates who can call it. Audit events stream to your SIEM. OpenTelemetry traces land in your observability stack.
 
 **Same day. Same safety.**
 
@@ -113,55 +128,75 @@ Gibson is purpose-built for security work. The agents, tools, and plugins your t
 ## The SDK in two minutes
 
 ```go
-type MyAgent struct{}
+package main
 
-func (a *MyAgent) Execute(ctx context.Context, task agent.Task, h agent.Harness) (agent.Result, error) {
-    // BYOK LLM, abstract slot — not model-locked
+import (
+    "context"
+    sdk "github.com/zero-day-ai/sdk"
+    "github.com/zero-day-ai/sdk/agent"
+    "github.com/zero-day-ai/sdk/llm"
+)
+
+func main() {
+    a, _ := sdk.NewAgent(
+        sdk.WithName("recon-agent"),
+        sdk.WithVersion("1.0.0"),
+        sdk.WithTargetTypes("network"),
+
+        // Declare LLM slot requirements — the framework matches a model.
+        // No vendor SDK in your binary, no model lock-in.
+        sdk.WithLLMSlot("primary", llm.SlotRequirements{
+            MinContextWindow: 32000,
+            RequiredFeatures: []string{"function_calling"},
+        }),
+
+        sdk.WithExecuteFunc(execute),
+    )
+    sdk.ServeAgent(a)
+}
+
+func execute(ctx context.Context, h agent.Harness, task agent.Task) (agent.Result, error) {
+    // Reason with the LLM the framework provisioned for you.
     resp, _ := h.Complete(ctx, "primary", []llm.Message{
-        llm.NewSystemMessage("You are a security analyst"),
-        llm.NewUserMessage(task.Goal),
+        {Role: llm.RoleSystem, Content: "You are a security analyst."},
+        {Role: llm.RoleUser, Content: task.Goal},
     })
 
-    // Run a tool. Inside a microVM. Scoped to this agent's capabilities.
-    output, _ := h.ExecuteTool(ctx, "fuzzer-xyz", &pb.FuzzRequest{
-        Target: "https://internal-api.corp/v1/login",
-    })
+    // Call a tool. Inside a microVM. Scoped to this agent's capability grants.
+    // Wire format is resolved at runtime via FileDescriptorSet — no proto imports.
+    var out fuzzerpb.FuzzResponse
+    _ = h.CallToolProto(ctx, "fuzzer-xyz", &fuzzerpb.FuzzRequest{Target: task.Goal}, &out)
 
-    // Findings auto-flow to the knowledge graph.
-    h.SubmitFinding(ctx, agent.Finding{
-        Title:    "Authentication bypass via header injection",
-        Severity: agent.SeverityHigh,
-    })
+    // Three tiers of memory: working, mission, long-term graph.
+    _ = h.Memory().Working().Set(ctx, "last_completion", resp.Content)
 
     return agent.NewSuccessResult("done"), nil
 }
 ```
 
-Three tiers of memory come for free: working (ephemeral, per-mission), mission (persistent), long-term (cross-mission graph). Sub-agent delegation, plugin access, OTel tracing, Langfuse LLM observability — all on the harness.
-
 ---
 
 ## Knowledge graph as native memory
 
-Every entity your agents and tools discover lands in a shared graph with typed relationships:
+Every entity your agents and tools discover lands in a shared Neo4j graph with typed relationships:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│   Mission ──[HAS_RUN]──▶ MissionRun ──[CONTAINS_AGENT_RUN]──▶ AgentRun     │
-│                                                                             │
+┌───────────────────────────────────────────────────────────────────────────┐
+│                                                                           │
+│   Mission ──[HAS_RUN]──▶ MissionRun ──[CONTAINS_AGENT_RUN]──▶ AgentRun   │
+│                                                                           │
 │   Host ──[HAS_PORT]──▶ Port ──[RUNS_SERVICE]──▶ Service ──[HAS_ENDPOINT]──▶ Endpoint │
-│                                                                             │
-│   Domain ──[HAS_SUBDOMAIN]──▶ Subdomain ──[RESOLVES_TO]──▶ Host            │
-│                                                                             │
-│   Finding ──[AFFECTS]──▶ {Host, Service, Endpoint}                          │
-│   Finding ──[HAS_EVIDENCE]──▶ Evidence                                      │
-│   Finding ──[USES_TECHNIQUE]──▶ Technique (MITRE ATT&CK / ATLAS)           │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+│                                                                           │
+│   Domain ──[HAS_SUBDOMAIN]──▶ Subdomain ──[RESOLVES_TO]──▶ Host          │
+│                                                                           │
+│   Finding ──[AFFECTS]──▶ {Host, Service, Endpoint}                        │
+│   Finding ──[HAS_EVIDENCE]──▶ Evidence                                    │
+│   Finding ──[USES_TECHNIQUE]──▶ Technique (MITRE ATT&CK / ATLAS)         │
+│                                                                           │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-UUID identity with automatic deduplication. CEL validators on every node type. Taxonomy driven by one YAML file — edit it, regenerate, the SDK, graph schema, and query surface move together.
+UUID identity with automatic deduplication. CEL validators on every node type. Taxonomy driven by one YAML file in the SDK — edit it, regenerate, and the proto schema, Go types, graph schema, and query helpers all move together.
 
 ---
 
@@ -177,47 +212,49 @@ Every Gibson deployment ships with a dashboard chat assistant scoped to your ten
 >
 > **Compliance lead:** *"Show me findings mapped to CC6.1 from the last quarter."*
 
-No SQL. No Cypher. No custom dashboards. The assistant reads tenant-scoped graph context, picks the right analyst persona (General, Recon, Exploit, Analysis, Remediation), and streams a grounded answer through the LLM provider you already use. BYOK, no data leaves your perimeter.
+No SQL. No Cypher. No custom dashboards. The assistant reads tenant-scoped graph context, picks the right analyst persona, and streams a grounded answer through the LLM provider you already use. BYOK — no data leaves your perimeter.
 
 **The assistant is only as good as the agents you've deployed.** No agents → empty graph → generic answers. Ship a recon agent → the graph knows your hosts and services. Ship a vulnerability agent → the graph knows your CVEs. Every tool your team wraps adds another dimension the assistant can reason over. *That* is the substrate in action.
 
-**Coming soon — tool-calling chat.** The assistant moves from reader to dispatcher: *"run recon against 10.0.42.0/24 with the appsec toolkit"* → Gibson kicks off the mission, RBAC-gated, tenant-scoped, auditable.
+**On the roadmap — tool-calling chat.** The assistant moves from reader to dispatcher: *"run recon against 10.0.42.0/24 with the appsec toolkit"* → Gibson kicks off the mission, FGA-gated, tenant-scoped, auditable.
 
 ---
 
 ## Deployment
 
-**Default tier.** Gibson hosts the control plane. You run lightweight agent, tool, and plugin workers in your cluster. Credentials, raw artifacts, and LLM calls (BYOK, direct to your provider) never leave your perimeter.
+A single Helm chart brings the entire stack — daemon, dashboard, Envoy gateway, ext-authz, OpenFGA, SPIRE, Zitadel, Postgres, Redis, Neo4j, Langfuse, and the OpenTelemetry collector — up in one install. Production runs on EKS today and is reconciled by ArgoCD App-of-Apps; the chart is portable to any conformant Kubernetes cluster.
 
-**Enterprise tier.** Full on-prem. Same Helm chart, everything deployed inside your cluster. For air-gap, ITAR, and regulated buyers who can't let anything leave.
+```bash
+# kind / dev — full stack, one command
+make -C deploy/helm/gibson kind-create deploy-local
 
-**Embedded tier.** Deploy Gibson inside your own SaaS to power agent features for your customers.
-
-Runs on EKS, GKE, AKS, k3s, OpenShift, and air-gapped clusters.
-
-```yaml
-# values.yaml — standard tier (data plane only)
-gibson:
-  mode: data-plane
-  controlPlane:
-    endpoint: https://control.zero-day.ai
-  agents:
-    network-recon:
-      replicas: 3
-  tools:
-    fuzzer-xyz:
-      workers: 5
-      concurrency: 8
-  sandbox:
-    runtime: setec
-    networkPolicy: deny-all
+# production — managed services for the heavy data planes
+helm install gibson ./deploy/helm/gibson -f values-aws-prod.yaml
 ```
+
+**Roadmap.** Split-plane shapes (managed control plane + customer data plane) and an embedded mode for partners who want Gibson inside their own SaaS. Today the chart deploys the full stack into a single cluster; production overlays inject external Postgres / Redis / Zitadel where you already have them.
+
+---
+
+## Repos
+
+### Public
+
+| Repo | What it is |
+|---|---|
+| **[`sdk`](https://github.com/zero-day-ai/sdk)** | Public Go SDK for agents, tools, and discovery extractors. BSL 1.1. |
+| **[`setec`](https://github.com/zero-day-ai/setec)** | Standalone Kubernetes operator orchestrating Firecracker microVMs via Kata. Apache 2.0. |
+| **[`gibson-tool-runner`](https://github.com/zero-day-ai/gibson-tool-runner)** | One microVM image, one Go binary, parsers for nmap, nuclei, naabu, subfinder, httpx, masscan, dnsx, amass. Apache 2.0. |
+
+### Behind the curtain (today)
+
+The daemon, dashboard, ext-authz, tenant-operator, and Helm chart are private during the active build-out. They open as the platform stabilizes — the SDK and the sandbox are public first because that's where the community can build.
 
 ---
 
 ## Licensing
 
-**Business Source License (BSL 1.1)** — converts to Apache 2.0 after 4 years. Same model as HashiCorp, Sentry, CockroachDB, MariaDB.
+**Business Source License (BSL 1.1)** for the SDK and platform — converts to Apache 2.0 after 4 years. Same model as HashiCorp, Sentry, CockroachDB, MariaDB. The Setec sandbox and the tool runner are Apache 2.0 today.
 
 | Use case | Tier |
 |---|---|
@@ -234,16 +271,19 @@ gibson:
 
 | Layer | Technology |
 |---|---|
-| Language | Go 1.21+ |
-| RPC | gRPC + Protocol Buffers |
+| Languages | Go 1.25, TypeScript 5.9 |
+| Web | Next.js 16, React 19, Tailwind 4, Shadcn UI |
+| RPC | gRPC + Protocol Buffers, Buf for tooling |
+| Workload identity | SPIFFE / SPIRE |
+| Authentication | Zitadel (OIDC) |
+| Authorization | OpenFGA (Zanzibar relation model), Envoy ext_authz |
 | Sandbox | Firecracker + Kata, via the Setec K8s operator |
-| Authorization | OpenFGA (Zanzibar relation model) |
-| Job queue | Redis Stack |
 | Knowledge graph | Neo4j |
-| Vector store | Qdrant (optional) |
-| LLM providers | Anthropic, OpenAI, Google, Ollama — BYOK |
-| Observability | Langfuse, OpenTelemetry, Prometheus, Loki |
-| Deployment | Kubernetes, Helm |
+| Job queue & streams | Redis Stack |
+| Persistence | Postgres (per-tenant roles), per-tenant vector storage |
+| LLM providers | Anthropic, AWS Bedrock, OpenAI, Ollama — BYOK |
+| Observability | Langfuse, OpenTelemetry, Prometheus |
+| Deployment | Kubernetes, Helm, ArgoCD |
 
 ---
 
