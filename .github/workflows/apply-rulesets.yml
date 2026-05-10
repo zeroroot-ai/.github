@@ -1,0 +1,86 @@
+# Applies org-level and repo-level rulesets from rulesets/*.json.
+#
+# Triggers:
+#   - push to main on rulesets/**.json or this workflow
+#   - workflow_dispatch (manual reapply)
+#
+# Auth: requires a PAT in secret RULESET_APPLY_TOKEN with org-admin and
+# repo-admin perms across all 12 zero-day-ai/* repos. The default
+# GITHUB_TOKEN cannot manage org-level rulesets or cross-repo rulesets.
+#
+# Idempotency: each ruleset JSON file has a `name` field; the script looks
+# up an existing ruleset by name before deciding POST vs PUT. Re-running
+# the workflow on unchanged files is a no-op.
+
+name: apply-rulesets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rulesets/**.json'
+      - '.github/workflows/apply-rulesets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply-org-rulesets:
+    name: Apply org-level rulesets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply each org ruleset
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in rulesets/org/*.json; do
+            name=$(jq -r '.name' "$f")
+            echo "::group::Org ruleset: $name (from $f)"
+            existing_id=$(gh api /orgs/zero-day-ai/rulesets --jq \
+              ".[] | select(.name == \"$name\") | .id" 2>/dev/null || true)
+            if [ -n "$existing_id" ]; then
+              echo "Updating existing ruleset id=$existing_id"
+              gh api --method PUT "/orgs/zero-day-ai/rulesets/$existing_id" \
+                --input "$f"
+            else
+              echo "Creating new ruleset"
+              gh api --method POST "/orgs/zero-day-ai/rulesets" \
+                --input "$f"
+            fi
+            echo "::endgroup::"
+          done
+
+  apply-repo-rulesets:
+    name: Apply repo-level rulesets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply each repo ruleset
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in rulesets/repo/*.json; do
+            repo=$(basename "$f" .json)
+            name=$(jq -r '.name' "$f")
+            echo "::group::Repo ruleset: $repo / $name (from $f)"
+            existing_id=$(gh api "/repos/zero-day-ai/$repo/rulesets" --jq \
+              ".[] | select(.name == \"$name\") | .id" 2>/dev/null || true)
+            if [ -n "$existing_id" ]; then
+              echo "Updating existing ruleset id=$existing_id"
+              gh api --method PUT "/repos/zero-day-ai/$repo/rulesets/$existing_id" \
+                --input "$f"
+            else
+              echo "Creating new ruleset"
+              gh api --method POST "/repos/zero-day-ai/$repo/rulesets" \
+                --input "$f"
+            fi
+            echo "::endgroup::"
+          done

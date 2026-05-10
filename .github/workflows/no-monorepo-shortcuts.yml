@@ -1,0 +1,66 @@
+# Reusable workflow that fails any PR introducing monorepo shortcuts:
+#   - go.work / go.work.sum at any path
+#   - replace directives in any go.mod
+#   - .gitmodules (git submodules)
+#
+# Called by per-repo workflows via:
+#   uses: zero-day-ai/.github/.github/workflows/no-monorepo-shortcuts.yml@main
+#
+# Required check name: no-monorepo-shortcuts (declared in the calling
+# workflow's job id).
+
+name: no-monorepo-shortcuts
+
+on:
+  workflow_call:
+
+jobs:
+  no-monorepo-shortcuts:
+    name: no-monorepo-shortcuts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Block go.work files
+        run: |
+          set -euo pipefail
+          if find . -path ./.git -prune -o \( -name 'go.work' -o -name 'go.work.sum' \) -print | grep -q .; then
+            echo "::error::go.work / go.work.sum is forbidden — use SDK tag + consumer bump instead"
+            find . -path ./.git -prune -o \( -name 'go.work' -o -name 'go.work.sum' \) -print
+            exit 1
+          fi
+          echo "OK: no go.work files"
+
+      - name: Block replace directives in go.mod
+        run: |
+          set -euo pipefail
+          violations=0
+          for mod in $(find . -path ./.git -prune -o -name 'go.mod' -print 2>/dev/null); do
+            if grep -E '^[[:space:]]*replace[[:space:]]+' "$mod" >/dev/null 2>&1; then
+              echo "::error file=$mod::replace directive forbidden — use a real SDK tag bump"
+              grep -nE '^[[:space:]]*replace[[:space:]]+' "$mod" || true
+              violations=$((violations+1))
+            fi
+            # Also block the multi-line "replace ( ... )" block form
+            if awk 'BEGIN{in_block=0} /^replace[[:space:]]*\(/{in_block=1; next} /^\)/{in_block=0; next} in_block{print; found=1} END{exit !found}' "$mod" >/dev/null 2>&1; then
+              echo "::error file=$mod::replace ( ... ) block forbidden — use a real SDK tag bump"
+              violations=$((violations+1))
+            fi
+          done
+          if [ "$violations" -gt 0 ]; then
+            exit 1
+          fi
+          echo "OK: no replace directives"
+
+      - name: Block .gitmodules
+        run: |
+          set -euo pipefail
+          if [ -f .gitmodules ]; then
+            echo "::error::.gitmodules is forbidden — git submodules break the polyrepo discipline"
+            cat .gitmodules
+            exit 1
+          fi
+          echo "OK: no .gitmodules"
