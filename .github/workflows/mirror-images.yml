@@ -33,7 +33,12 @@ jobs:
   mirror:
     name: Mirror upstream images
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 min was tight on a cold run: 22 multi-arch images via skopeo
+    # `copy --all` against rate-limited upstreams (esp. bitnamilegacy
+    # and distroless) repeatedly ran out of clock. 60 min comfortably
+    # covers the worst observed cold start, while every subsequent run
+    # short-circuits via the "tag already mirrored" check in seconds.
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v5
