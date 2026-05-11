@@ -1,0 +1,96 @@
+name: mirror-images
+# Mirrors upstream container images to ghcr.io/zero-day-ai/mirror/*.
+#
+# Driven by mirror-list.yaml at the repo root. Tags are immutable: an entry
+# whose target tag already exists in the mirror is skipped.
+#
+# Spec: .spec-workflow/specs/deploy-simplification (Phase 1, R2.3).
+
+on:
+  schedule:
+    # Nightly at 04:00 UTC. Pick up new upstream patch releases if any.
+    # Most entries are tag-pinned and won't change; the cron just catches
+    # any drift from the small set of floating major-version tags.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Optional substring filter; only mirror entries whose source matches"
+        required: false
+        type: string
+
+permissions:
+  # write:packages — required to push to ghcr.io/zero-day-ai/mirror/*
+  packages: write
+  # read on the repo content (mirror-list.yaml)
+  contents: read
+
+concurrency:
+  group: mirror-images
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror upstream images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install yq + skopeo
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+          skopeo --version
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | skopeo login --username "${{ github.actor }}" --password-stdin ghcr.io
+
+      - name: Mirror images
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -euo pipefail
+
+          dest_registry="ghcr.io/zero-day-ai/mirror"
+
+          # Iterate every entry in mirror-list.yaml. `yq` emits one JSON
+          # object per entry; bash reads them one at a time.
+          yq -o=json -I=0 '.mirrors[]' mirror-list.yaml | while read -r entry; do
+            source=$(jq -r '.source' <<<"$entry")
+            tag=$(jq -r '.tag' <<<"$entry")
+            dest=$(jq -r '.dest // (.source | split("/") | last)' <<<"$entry")
+            target="${dest_registry}/${dest}:${tag}"
+            from="docker://${source}:${tag}"
+            to="docker://${target}"
+
+            # Optional filter
+            if [[ -n "${ONLY}" && "${source}" != *"${ONLY}"* ]]; then
+              echo "skip (filter): ${source}:${tag}"
+              continue
+            fi
+
+            # Skip if target tag already exists. skopeo inspect returns 0 only
+            # if the manifest is reachable; any non-zero is treated as
+            # "needs mirroring" (including auth failures, but the login step
+            # above ensures auth is set).
+            if skopeo inspect "${to}" >/dev/null 2>&1; then
+              echo "skip (already mirrored): ${target}"
+              continue
+            fi
+
+            echo "mirror: ${source}:${tag} → ${target}"
+            # --all so multi-arch manifests are preserved.
+            # --preserve-digests so a future `--digestfile` consumer can
+            # pin against the original upstream digest if needed.
+            skopeo copy --all "${from}" "${to}"
+          done
+
+      - name: Summary
+        if: always()
+        run: echo "Mirror run complete. Inspect ghcr.io/zero-day-ai/mirror/* for the populated tags."

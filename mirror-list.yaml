@@ -1,0 +1,66 @@
+# Mirror list for ghcr.io/zero-day-ai/mirror/*.
+#
+# The mirror-images.yml workflow reads this file and, for each entry,
+# copies the upstream image+tag to `ghcr.io/zero-day-ai/mirror/<dest>:<tag>`.
+# Tags are immutable once pushed to the mirror — to update an image,
+# add a new entry with a new tag rather than mutating an existing one.
+#
+# Spec: .spec-workflow/specs/deploy-simplification (Phase 1, R2.3).
+#
+# Schema:
+#   - source: <registry/repo>     fully-qualified upstream image (no tag)
+#     tag:    <tag>               immutable upstream tag to mirror
+#     dest:   <name>              local name under ghcr.io/zero-day-ai/mirror/
+#                                 (omit to default to the last path segment of source)
+mirrors:
+  # ---------------------------------------------------------------------------
+  # Build & shell base images
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/alpine
+    tag: "3.21"
+    dest: alpine
+  - source: docker.io/library/bash
+    tag: "5.2"
+    dest: bash
+  - source: docker.io/library/busybox
+    tag: "1.36"
+    dest: busybox
+  - source: docker.io/library/golang
+    tag: "1.25-alpine"
+    dest: golang
+
+  # ---------------------------------------------------------------------------
+  # Data plane images
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/postgres
+    tag: "16.4-alpine"
+    dest: postgres
+  - source: docker.io/library/redis
+    tag: "7.4-alpine"
+    dest: redis
+  - source: docker.io/library/neo4j
+    tag: "5.26.0-community"
+    dest: neo4j
+
+  # ---------------------------------------------------------------------------
+  # Bitnami refugees (legacy registry; pull-then-mirror until replacements land)
+  # ---------------------------------------------------------------------------
+  - source: docker.io/bitnamilegacy/kubectl
+    tag: "1.31.4"
+    dest: kubectl
+  - source: docker.io/bitnamilegacy/kubectl
+    tag: "1.30.13"
+    dest: kubectl
+
+  # ---------------------------------------------------------------------------
+  # CLI tools used in chart hooks / init containers
+  # ---------------------------------------------------------------------------
+  - source: docker.io/curlimages/curl
+    tag: "8.10.1"
+    dest: curl
+  - source: docker.io/oraseproject/oras
+    tag: "v1.2.0"
+    dest: oras
+  - source: docker.io/library/registry
+    tag: "2"
+    dest: registry
