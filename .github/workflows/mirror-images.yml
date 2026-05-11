@@ -55,13 +55,23 @@ jobs:
         env:
           ONLY: ${{ inputs.only }}
         run: |
-          set -euo pipefail
+          # NOTE: -u is OK; pipefail is OK; -e is NOT — we want to keep
+          # iterating even when an individual mirror entry fails (upstream
+          # tag removed, transient network blip, etc.). A failed entry is
+          # logged + summarised at the end; only an empty per-entry success
+          # set blocks the run.
+          set -uo pipefail
 
           dest_registry="ghcr.io/zero-day-ai/mirror"
 
-          # Iterate every entry in mirror-list.yaml. `yq` emits one JSON
-          # object per entry; bash reads them one at a time.
-          yq -o=json -I=0 '.mirrors[]' mirror-list.yaml | while read -r entry; do
+          mapfile -t entries < <(yq -o=json -I=0 '.mirrors[]' mirror-list.yaml)
+          total=${#entries[@]}
+          ok=0
+          skipped=0
+          failed=0
+          failed_refs=()
+
+          for entry in "${entries[@]}"; do
             source=$(jq -r '.source' <<<"$entry")
             tag=$(jq -r '.tag' <<<"$entry")
             dest=$(jq -r '.dest // (.source | split("/") | last)' <<<"$entry")
@@ -72,24 +82,44 @@ jobs:
             # Optional filter
             if [[ -n "${ONLY}" && "${source}" != *"${ONLY}"* ]]; then
               echo "skip (filter): ${source}:${tag}"
+              skipped=$((skipped + 1))
               continue
             fi
 
-            # Skip if target tag already exists. skopeo inspect returns 0 only
-            # if the manifest is reachable; any non-zero is treated as
-            # "needs mirroring" (including auth failures, but the login step
-            # above ensures auth is set).
+            # Skip if target tag already exists.
             if skopeo inspect "${to}" >/dev/null 2>&1; then
               echo "skip (already mirrored): ${target}"
+              skipped=$((skipped + 1))
               continue
             fi
 
-            echo "mirror: ${source}:${tag} → ${target}"
-            # --all so multi-arch manifests are preserved.
-            # --preserve-digests so a future `--digestfile` consumer can
-            # pin against the original upstream digest if needed.
-            skopeo copy --all "${from}" "${to}"
+            echo "::group::mirror ${source}:${tag} → ${target}"
+            if skopeo copy --all "${from}" "${to}"; then
+              echo "ok: ${target}"
+              ok=$((ok + 1))
+            else
+              echo "FAIL: ${from} → ${to} (continuing)"
+              failed=$((failed + 1))
+              failed_refs+=("${source}:${tag}")
+            fi
+            echo "::endgroup::"
           done
+
+          echo ""
+          echo "=== mirror summary ==="
+          echo "total:   ${total}"
+          echo "mirrored: ${ok}"
+          echo "skipped: ${skipped}"
+          echo "failed:  ${failed}"
+          if [[ ${failed} -gt 0 ]]; then
+            echo ""
+            echo "failed refs:"
+            printf '  %s\n' "${failed_refs[@]}"
+            # Surface the failure to the workflow status. A non-zero exit
+            # here lights the run red so an operator notices, but every
+            # successfully-mirrorable entry was processed.
+            exit 1
+          fi
 
       - name: Summary
         if: always()
