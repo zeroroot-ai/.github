@@ -64,3 +64,47 @@ mirrors:
   - source: docker.io/library/registry
     tag: "2"
     dest: registry
+
+  # ---------------------------------------------------------------------------
+  # Dockerfile bases for first-party images
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/alpine
+    tag: "3.20"
+    dest: alpine
+  - source: docker.io/library/golang
+    tag: "1.25"           # debian-based; tenant-operator builder needs CGO_ENABLED toggles
+    dest: golang
+  - source: docker.io/library/node
+    tag: "20-alpine"
+    dest: node
+  # gcr.io/distroless/* — the Google-published distroless runtime bases.
+  # We mirror to ghcr.io so workspace-wide policy holds.
+  - source: gcr.io/distroless/static-debian12
+    tag: nonroot
+    dest: distroless-static-debian12
+  - source: gcr.io/distroless/static
+    tag: nonroot
+    dest: distroless-static
+
+  # ---------------------------------------------------------------------------
+  # Chart-side tags the existing helm chart references (Phase 1.7 sweep targets).
+  # These can drop after Phase 4 deletes the in-chart subcharts that need them.
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/postgres
+    tag: "17-alpine"
+    dest: postgres
+  - source: docker.io/bitnamilegacy/kubectl
+    tag: "1.29.12"
+    dest: kubectl
+  - source: docker.io/bitnamilegacy/postgresql
+    tag: "16.4.0-debian-12-r0"
+    dest: bitnami-postgresql
+  - source: docker.io/bitnamilegacy/minio
+    tag: "2025.7.23-debian-12-r3"
+    dest: bitnami-minio
+  - source: docker.io/bitnamilegacy/minio-client
+    tag: "2025.7.23-debian-12-r2"
+    dest: bitnami-minio-client
+  - source: docker.io/bitnamilegacy/minio-object-browser
+    tag: "2.0.2-debian-12-r3"
+    dest: bitnami-minio-object-browser
