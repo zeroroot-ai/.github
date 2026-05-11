@@ -108,3 +108,8 @@ mirrors:
   - source: docker.io/bitnamilegacy/minio-object-browser
     tag: "2.0.2-debian-12-r3"
     dest: bitnami-minio-object-browser
+  # AWS node-termination-handler (used by setec spot-eviction-fallback).
+  # Public ECR is a Docker Hub equivalent; pin to a known good tag.
+  - source: public.ecr.aws/aws-ec2/aws-node-termination-handler
+    tag: "v1.22.0"
+    dest: aws-node-termination-handler
