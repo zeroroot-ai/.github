@@ -58,7 +58,7 @@ mirrors:
   - source: docker.io/curlimages/curl
     tag: "8.10.1"
     dest: curl
-  - source: docker.io/oraseproject/oras
+  - source: ghcr.io/oras-project/oras
     tag: "v1.2.0"
     dest: oras
   - source: docker.io/library/registry
