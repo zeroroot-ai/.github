@@ -273,7 +273,28 @@ When all four hold, merge with:
 gh pr merge <pr-number> --squash --delete-branch
 ```
 
-The `--delete-branch` flag is mandatory.
+`--delete-branch` is **mandatory** — it deletes the remote branch as part of
+the merge call. Every repo also has `delete_branch_on_merge=true` set at the
+repo level (so human-clicked merges clean up too), but agents pass the flag
+explicitly so the cleanup is observable in the gh output and survives any
+future repo-setting drift.
+
+After the merge call returns, clean up locally:
+
+```bash
+git checkout main
+git fetch --prune origin
+git branch -D <merged-branch>
+```
+
+`fetch --prune` removes the local tracking ref for the deleted remote branch;
+`branch -D` removes the local branch itself. Skip neither — leftover local
+branches are how agents end up trying to push to a branch that no longer
+exists upstream and getting confused by the resulting `--force-with-lease`
+failure.
+
+When the gate isn't met, leave the PR for a human and move on to the next
+task in your queue. Do not "encourage" the merge with comments or pings.
 
 **Full pre-merge checklist:** the four conditions above are the mechanical part; the complete canonical list (walker gates, CodeQL findings, coverage delta, ADR + trap obligations, escape-hatch ban, `Docs-PR:` trailer) lives at [`docs/agents/pr-checklist.md`](https://github.com/zero-day-ai/docs/blob/main/agents/pr-checklist.md) in the workspace docs repo. Single source of truth — do not restate items here.
 
@@ -355,16 +376,46 @@ issue manually with a one-line note explaining what you did.
 
 ## 7. After merge
 
-The ruleset deletes your remote branch automatically. Locally:
+**Remote branch cleanup** happens via two mechanisms (belt and suspenders):
+
+1. Every repo has the GitHub setting `delete_branch_on_merge=true`, so any
+   merge — yours, a human's, the SDK fan-out App's — deletes the remote
+   branch as the merge completes. (This is a *repo setting*, not a branch
+   ruleset rule. The `tier-core` ruleset's `deletion` rule blocks deletion
+   of the protected `main` branch; it does **not** auto-delete merged
+   feature branches.)
+2. Agent self-merges pass `--delete-branch` to `gh pr merge` explicitly
+   (see §5), so the cleanup is visible in the command output and survives
+   any future repo-setting drift.
+
+**Local cleanup is your responsibility** — the GitHub side does nothing for
+your working clone. After every merge (yours or someone else's that you
+were following), run:
 
 ```bash
 git checkout main
-git fetch --prune
+git fetch --prune origin
 git branch -D <merged-branch>
 ```
 
-The Project board's "PR merged → Done" automation flips the item state.
-**Do not** edit the board manually.
+`--prune` removes the dangling local tracking ref (`origin/<branch>`) for the
+deleted remote; `branch -D` removes the local branch. If you skip the prune,
+the next `git push` from a stale branch will produce a confusing
+`--force-with-lease` failure against a ref that no longer exists.
+
+**Audit your local clone** at the start of any session if you've been away —
+this one-liner lists local branches whose upstream is gone:
+
+```bash
+git fetch --prune origin
+git branch -vv | awk '/: gone]/ {print $1}'
+```
+
+Delete them with `git branch -D` (they're already merged from `main`'s
+perspective, otherwise the remote wouldn't have been deleted).
+
+**Project board automation:** the board's "PR merged → Done" automation
+flips the item state. **Do not** edit the board manually.
 
 Three independent fan-outs run after release-please tags one of the
 foundation modules. Each is a separate workflow firing on its own repo's
