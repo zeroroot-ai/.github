@@ -1,0 +1,195 @@
+# Reusable workflow that opens / updates / auto-closes a `ci-failure` issue
+# in the calling repo whenever a wired CI workflow finishes.
+#
+# Per-repo usage — drop a wrapper at <repo>/.github/workflows/ci-failure-triage.yml:
+#
+#   name: ci-failure-triage
+#   on:
+#     workflow_run:
+#       workflows: [CI, build, security, gibsoncheck]   # the workflows to watch
+#       types: [completed]
+#   permissions:
+#     issues: write
+#     contents: read
+#   jobs:
+#     triage:
+#       uses: zero-day-ai/.github/.github/workflows/ci-failure-triage.yml@main
+#       with:
+#         workflow_name: ${{ github.event.workflow_run.name }}
+#         conclusion:    ${{ github.event.workflow_run.conclusion }}
+#         run_id:        ${{ github.event.workflow_run.id }}
+#         run_url:       ${{ github.event.workflow_run.html_url }}
+#         head_branch:   ${{ github.event.workflow_run.head_branch }}
+#         head_sha:      ${{ github.event.workflow_run.head_sha }}
+#         event:         ${{ github.event.workflow_run.event }}
+#
+# Behavior
+# --------
+# - On `failure` / `timed_out` / `startup_failure`: open a `ci-failure`-labelled
+#   issue titled `CI failure: <workflow> on <branch>`, or comment on the
+#   existing one if it's already open. One issue per (workflow, branch).
+# - On `success`: if a matching open issue exists, post a "Resolved by run …"
+#   comment and close it.
+# - On any other conclusion (cancelled, neutral, skipped): no-op.
+#
+# Issue body & comment formatting are intentionally minimal — no severity
+# matrix, no SLA fields, no on-call routing. The point is a durable trail
+# for agents to read before retrying.
+
+name: ci-failure-triage
+
+on:
+  workflow_call:
+    inputs:
+      workflow_name: { required: true, type: string }
+      conclusion:    { required: true, type: string }
+      run_id:        { required: true, type: string }
+      run_url:       { required: true, type: string }
+      head_branch:   { required: true, type: string }
+      head_sha:      { required: true, type: string }
+      event:         { required: true, type: string }
+
+permissions:
+  issues: write
+  contents: read
+  actions: read
+
+jobs:
+  triage:
+    name: triage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Decide and act
+        uses: actions/github-script@v7
+        env:
+          WORKFLOW_NAME: ${{ inputs.workflow_name }}
+          CONCLUSION:    ${{ inputs.conclusion }}
+          RUN_ID:        ${{ inputs.run_id }}
+          RUN_URL:       ${{ inputs.run_url }}
+          HEAD_BRANCH:   ${{ inputs.head_branch }}
+          HEAD_SHA:      ${{ inputs.head_sha }}
+          EVENT:         ${{ inputs.event }}
+        with:
+          script: |
+            const {
+              WORKFLOW_NAME, CONCLUSION, RUN_ID, RUN_URL,
+              HEAD_BRANCH, HEAD_SHA, EVENT,
+            } = process.env;
+
+            const FAIL_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
+            const isFailure = FAIL_CONCLUSIONS.has(CONCLUSION);
+            const isSuccess = CONCLUSION === 'success';
+
+            if (!isFailure && !isSuccess) {
+              core.info(`Conclusion '${CONCLUSION}' is neither failure nor success — nothing to do.`);
+              return;
+            }
+
+            const title = `CI failure: ${WORKFLOW_NAME} on ${HEAD_BRANCH}`;
+            const label = 'ci-failure';
+
+            // Make sure the label exists. Cheap and idempotent.
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label,
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label,
+                  color: 'b60205',
+                  description: 'Auto-filed by ci-failure-triage when a required CI workflow fails.',
+                });
+              } else {
+                throw e;
+              }
+            }
+
+            // Find any open issue with this exact title + ci-failure label.
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 100,
+            });
+            const match = existing.find(i => i.title === title);
+
+            // Pull the failed-job names so the issue body / comment is useful
+            // without clicking through to the run.
+            let failedJobs = [];
+            if (isFailure) {
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: Number(RUN_ID),
+                per_page: 100,
+              });
+              failedJobs = jobs
+                .filter(j => FAIL_CONCLUSIONS.has(j.conclusion))
+                .map(j => `- \`${j.name}\` — ${j.html_url}`);
+            }
+
+            if (isFailure) {
+              const body = [
+                `**Workflow**: \`${WORKFLOW_NAME}\``,
+                `**Branch**: \`${HEAD_BRANCH}\``,
+                `**Commit**: \`${HEAD_SHA}\``,
+                `**Trigger event**: \`${EVENT}\``,
+                `**Run**: ${RUN_URL}`,
+                '',
+                '**Failed jobs**:',
+                failedJobs.length ? failedJobs.join('\n') : '_(no failed-job entries returned by the API)_',
+                '',
+                '---',
+                '',
+                'Per [`AGENTS.md` §6](https://github.com/zero-day-ai/.github/blob/main/AGENTS.md#6-ci-failures-triage-file-an-issue-then-fix):',
+                'do not rerun blindly. Post the root cause as a comment on this issue first. ' +
+                'This issue auto-closes when the next run of this workflow on this branch succeeds.',
+              ].join('\n');
+
+              if (match) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: match.number,
+                  body: `Re-failure: \`${HEAD_SHA}\` — ${RUN_URL}\n\n${
+                    failedJobs.length ? '**Failed jobs**:\n' + failedJobs.join('\n') : ''
+                  }`,
+                });
+                core.info(`Commented on existing issue #${match.number}.`);
+              } else {
+                const created = await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body,
+                  labels: [label],
+                });
+                core.info(`Opened issue #${created.data.number}.`);
+              }
+              return;
+            }
+
+            // Success path: close any matching open issue.
+            if (match) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                body: `Resolved by successful run on \`${HEAD_SHA}\` — ${RUN_URL}`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: match.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.info(`Closed issue #${match.number} after successful run.`);
+            }
