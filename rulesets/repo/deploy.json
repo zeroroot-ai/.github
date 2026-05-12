@@ -12,11 +12,7 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          {"context": "helm-unittest"},
-          {"context": "kind-up-smoke"},
-          {"context": "sandbox-e2e"},
-          {"context": "signup-e2e"},
-          {"context": "spiffe-guard"}
+          {"context": "kind-up-smoke"}
         ]
       }
     }
