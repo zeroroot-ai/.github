@@ -18,7 +18,7 @@
 **Gibson is the substrate where your team builds the security agents, tools, and missions they actually want — and ships them on day one.**
 
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/mkqd6mU3)
-[![Email](https://img.shields.io/badge/Contact-anthony@zero--day.ai-red?style=for-the-badge&logo=gmail&logoColor=white)](mailto:anthony@zero-day.ai)
+[![Email](https://img.shields.io/badge/Contact-sales@zero--day.ai-red?style=for-the-badge&logo=gmail&logoColor=white)](mailto:sales@zero-day.ai)
 
 </div>
 
@@ -57,7 +57,7 @@ Untrusted payloads, LLM-generated code, and novel binaries detonate inside [Sete
  ● BYOK → anthropic · openai · bedrock · gemini · ollama
 ```
 
-Self-host the whole thing on your own cluster if you'd rather: one Helm chart, one install.
+Enterprise customers can self-host the whole stack on their own Kubernetes cluster under a separate agreement — same substrate, same guarantees. [Contact sales →](mailto:sales@zero-day.ai)
 
 ---
 
@@ -111,14 +111,18 @@ An analyst reads about a new fuzzer at a conference on Monday. By Tuesday it's r
 **With Gibson:**
 
 ```bash
-# Monday 10am — scaffold
+# Monday 10am — scaffold from a template (manifest + stub against the SDK)
 gibson component init fuzzer-xyz
 
-# Monday 12pm — validate against the manifest schema
-gibson component build
+# Monday 11am — implement, compile the binary, validate the manifest
+cd fuzzer-xyz && go build ./... && gibson component validate
 
-# Monday 2pm — enroll (substrate issues identity + scoped grants)
-gibson component enroll ./fuzzer-xyz
+# Monday 2pm — enroll: the dashboard wizard issues an enrollment command;
+# pasting it locally mints workload identity + scoped grants on the substrate.
+gibson component register \
+  --client-id "$CLIENT_ID" \
+  --client-secret "$CLIENT_SECRET" \
+  --gibson-url "$GIBSON_URL"
 
 # Monday 3pm — submit a mission that uses it
 gibson mission submit missions/fuzz.yaml --target example.com
@@ -190,7 +194,8 @@ Every entity your agents and tools discover lands in a shared Neo4j graph with t
 │                                                                           │
 │   Mission ──[HAS_RUN]──▶ MissionRun ──[CONTAINS_AGENT_RUN]──▶ AgentRun    │
 │                                                                           │
-│   Host ──[HAS_PORT]──▶ Port ──[RUNS_SERVICE]──▶ Service ──[HAS_ENDPOINT]──▶ Endpoint │
+│   Host ──[HAS_PORT]──▶ Port ──[RUNS_SERVICE]──▶ Service                   │
+│   Service ──[HAS_ENDPOINT]──▶ Endpoint                                    │
 │                                                                           │
 │   Domain ──[HAS_SUBDOMAIN]──▶ Subdomain ──[RESOLVES_TO]──▶ Host           │
 │                                                                           │
@@ -227,18 +232,12 @@ No SQL. No Cypher. No custom dashboards. The assistant reads tenant-scoped graph
 
 ## Two ways to run
 
-- **Managed.** Sign up, point your agents at `api.zero-day.ai`, ship. Two-week free trial on every account.
-- **Self-hosted.** One Helm chart brings the whole stack up on any conformant Kubernetes cluster. Production overlays let you bring your own Postgres, Redis, and identity provider.
+- **Managed SaaS** — the default. Sign up, point your agents at `api.zero-day.ai`, ship. Two-week free trial on every account.
+- **Self-hosted — Enterprise only.** Not available out of the box: the Helm chart and production overlays ship to Enterprise customers under a separate agreement. One install brings the whole stack up on any conformant Kubernetes cluster, with BYO Postgres, Redis, and identity provider. [Contact sales →](mailto:sales@zero-day.ai)
 
 ```bash
-# managed
+# managed — the path for everyone else
 gibson login
-
-# self-hosted (kind / dev)
-helm install gibson oci://ghcr.io/zero-day-ai/charts/gibson
-
-# self-hosted (production)
-helm install gibson oci://ghcr.io/zero-day-ai/charts/gibson -f values-prod.yaml
 ```
 
 **Roadmap.** Split-plane shapes (managed control plane + customer data plane) and an embedded mode for partners who want Gibson inside their own SaaS.
@@ -285,7 +284,7 @@ The control plane, dashboard, and platform charts are private during the active 
 | MSSP / consulting | Commercial |
 | Offering as a managed service | Commercial |
 
-[Contact for pricing →](mailto:anthony@zero-day.ai)
+[Contact for pricing →](mailto:sales@zero-day.ai)
 
 ---
 
@@ -310,12 +309,12 @@ The control plane, dashboard, and platform charts are private during the active 
 
 ## Build the agents your CISO, SRE, and auditor all signed off on.
 
-**[Schedule a demo](mailto:anthony@zero-day.ai?subject=Gibson%20Demo%20Request)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
+**[Schedule a demo](mailto:sales@zero-day.ai?subject=Gibson%20Demo%20Request)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
 
 ---
 
 **Zero-Day.ai**
 
-[anthony@zero-day.ai](mailto:anthony@zero-day.ai)
+[sales@zero-day.ai](mailto:sales@zero-day.ai)
 
 </div>
