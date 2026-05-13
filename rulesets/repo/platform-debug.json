@@ -1,5 +1,5 @@
 {
-  "name": "debug-plugin-required-checks",
+  "name": "platform-debug-required-checks",
   "target": "branch",
   "enforcement": "evaluate",
   "bypass_actors": [],
@@ -12,8 +12,7 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          {"context": "test"},
-          {"context": "security"}
+          {"context": "test"}
         ]
       }
     }
