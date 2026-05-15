@@ -4,7 +4,12 @@
   "enforcement": "evaluate",
   "bypass_actors": [],
   "conditions": {
-    "ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
   },
   "rules": [
     {
@@ -12,8 +17,15 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          {"context": "terraform"},
-          {"context": "check-tenant-id-label"}
+          {
+            "context": "terraform"
+          },
+          {
+            "context": "check-tenant-id-label"
+          },
+          {
+            "context": "architectural-doc-coverage"
+          }
         ]
       }
     }

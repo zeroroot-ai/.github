@@ -4,7 +4,12 @@
   "enforcement": "evaluate",
   "bypass_actors": [],
   "conditions": {
-    "ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
   },
   "rules": [
     {
@@ -12,8 +17,15 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          {"context": "dispatch-auth-e2e"},
-          {"context": "build-and-push"}
+          {
+            "context": "dispatch-auth-e2e"
+          },
+          {
+            "context": "build-and-push"
+          },
+          {
+            "context": "architectural-doc-coverage"
+          }
         ]
       }
     }
