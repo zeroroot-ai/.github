@@ -73,11 +73,11 @@ jobs:
         id: na
         run: |
           set -euo pipefail
-          # IMPORTANT: $body is set via $GITHUB_ENV in the previous step and
-          # is automatically available as a shell env var here. We do NOT
-          # use `${{ env.body }}` template substitution — that would try to
-          # inject the body literal into the script source, executing any
-          # backticks / $(...) in the PR body as shell commands.
+          # SECURITY: read the body via the shell env var, never via the
+          # workflow template engine. Template references to PR-body-derived
+          # variables get substituted (even inside bash comments!) before the
+          # shell sees them, which expands the multi-line body inline and
+          # breaks the script.
           if printf '%s\n' "$body" | grep -qE '^Docs-PR: not-applicable: .+'; then
             echo "matched=true" >> "$GITHUB_OUTPUT"
             echo "PR uses the not-applicable escape hatch — pass."
@@ -127,16 +127,16 @@ jobs:
         if: steps.na.outputs.matched != 'true'
         env:
           GH_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN || github.token }}
+          TOKEN_CONFIGURED: ${{ secrets.DOCS_REPO_READ_TOKEN != '' }}
+          NUM: ${{ steps.extract.outputs.num }}
+          URL: ${{ steps.extract.outputs.url }}
         run: |
           set -euo pipefail
-          NUM="${{ steps.extract.outputs.num }}"
-          URL="${{ steps.extract.outputs.url }}"
+          # All inputs come from env vars. Never template-substitute into the
+          # script source — see the equivalent comment in the body-resolution
+          # step for the failure mode this avoids.
 
-          # Fall back to URL-syntax-only validation when no cross-repo token
-          # is configured. The URL was already pattern-matched in the previous
-          # step so we know it points at the docs repo; we just can't verify
-          # the PR state without a token that can read the private repo.
-          if [ -z "${{ secrets.DOCS_REPO_READ_TOKEN }}" ]; then
+          if [ "$TOKEN_CONFIGURED" != "true" ]; then
             echo "::warning::DOCS_REPO_READ_TOKEN is not configured. Falling back to URL-syntax validation only — the docs PR's existence is not verified."
             echo "::warning::To strengthen this gate, set the DOCS_REPO_READ_TOKEN org-level secret with pull_requests:read on zero-day-ai/docs."
             echo "Docs-PR URL is syntactically valid: $URL"
