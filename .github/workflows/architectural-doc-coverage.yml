@@ -1,0 +1,168 @@
+# Reusable workflow that requires every fix-PR to either:
+#
+#  (a) reference an open or merged companion PR on zero-day-ai/docs via the
+#      trailer `Docs-PR: <url>` in the PR body — used when the fix surfaces
+#      an architectural invariant, repo-wiring detail, or edge case worth
+#      capturing for the next agent; OR
+#
+#  (b) declare the fix as documentation-irrelevant via the trailer
+#      `Docs-PR: not-applicable: <one-sentence why>` — used sparingly for
+#      cosmetic / mechanical fixes (typo, dep bump, formatting). Reviewers
+#      should push back on routine use of this escape hatch.
+#
+# The check fires on EVERY PR — there is no label-based filter. Every fix
+# is gated; the trailer is the discriminator. This is by design: filtering
+# by label would push the discipline onto the author of the PR, and authors
+# routinely miss the label. Forcing one of two trailers makes the
+# documentation question impossible to skip.
+#
+# Called by per-repo workflows via:
+#   uses: zero-day-ai/.github/.github/workflows/architectural-doc-coverage.yml@main
+#   secrets:
+#     DOCS_REPO_READ_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN }}
+#
+# DOCS_REPO_READ_TOKEN should be a fine-grained PAT or GitHub-App token with
+# `Pull requests: read` on zero-day-ai/docs. Stored as an organization-level
+# secret so every repo's workflow can read it. If absent, the workflow falls
+# back to URL-syntax-only validation and emits a loud warning — the gate is
+# weaker but the workflow still runs.
+#
+# Required check name: architectural-doc-coverage (declared in the calling
+# workflow's job id).
+#
+# Rationale + design notes:
+#   docs/README.md + docs/CONTEXT-MAP.md in zero-day-ai/docs.
+
+name: architectural-doc-coverage
+
+on:
+  workflow_call:
+    secrets:
+      DOCS_REPO_READ_TOKEN:
+        description: "PAT/App token with pull_requests:read on zero-day-ai/docs"
+        required: false
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  architectural-doc-coverage:
+    name: architectural-doc-coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve PR body
+        id: body
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BODY=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --json body --jq .body)
+          # Persist for later steps via a delimited heredoc (handles newlines).
+          {
+            echo 'body<<__EOF__'
+            printf '%s\n' "$BODY"
+            echo '__EOF__'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: "Check for Docs-PR not-applicable escape hatch"
+        id: na
+        run: |
+          set -euo pipefail
+          body="${{ steps.body.outputs.body }}"
+          if printf '%s\n' "$body" | grep -qE '^Docs-PR: not-applicable: .+'; then
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            echo "PR uses the not-applicable escape hatch — pass."
+            echo "Reviewer note: confirm this is genuinely a cosmetic/mechanical fix."
+          else
+            echo "matched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract Docs-PR URL
+        id: extract
+        if: steps.na.outputs.matched != 'true'
+        run: |
+          set -euo pipefail
+          body="${{ steps.body.outputs.body }}"
+          # Match: `Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>`
+          # Whitespace-tolerant, case-sensitive on the docs repo path.
+          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zero-day-ai/docs/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
+          if [ -z "$URL" ]; then
+            cat <<EOF >&2
+
+          ❌ architectural-doc-coverage failed
+
+          This PR's body has no \`Docs-PR:\` trailer.
+
+          Every fix in this workspace must either:
+            (a) Reference a companion PR on zero-day-ai/docs that updates the
+                relevant page (architecture/, repos/<repo>/, edge-cases/, or adr/).
+                Add this trailer to your PR body:
+
+                    Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>
+
+            (b) Explicitly opt out for cosmetic/mechanical fixes:
+
+                    Docs-PR: not-applicable: <one-sentence why>
+
+          The intent is convergence: every cycle leaves a durable artifact
+          future agents can read before falling into the same trap.
+
+          See workspace CLAUDE.md → "Close the loop with documentation".
+          EOF
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          NUM=$(echo "$URL" | sed -E 's|.*/pull/([0-9]+)$|\1|')
+          echo "num=$NUM" >> "$GITHUB_OUTPUT"
+
+      - name: Verify docs PR exists and is open or merged
+        if: steps.na.outputs.matched != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          NUM="${{ steps.extract.outputs.num }}"
+          URL="${{ steps.extract.outputs.url }}"
+
+          # Fall back to URL-syntax-only validation when no cross-repo token
+          # is configured. The URL was already pattern-matched in the previous
+          # step so we know it points at the docs repo; we just can't verify
+          # the PR state without a token that can read the private repo.
+          if [ -z "${{ secrets.DOCS_REPO_READ_TOKEN }}" ]; then
+            echo "::warning::DOCS_REPO_READ_TOKEN is not configured. Falling back to URL-syntax validation only — the docs PR's existence is not verified."
+            echo "::warning::To strengthen this gate, set the DOCS_REPO_READ_TOKEN org-level secret with pull_requests:read on zero-day-ai/docs."
+            echo "Docs-PR URL is syntactically valid: $URL"
+            exit 0
+          fi
+
+          STATE=$(gh pr view "$NUM" --repo zero-day-ai/docs --json state --jq .state 2>/dev/null || echo "MISSING")
+          IS_DRAFT=$(gh pr view "$NUM" --repo zero-day-ai/docs --json isDraft --jq .isDraft 2>/dev/null || echo "true")
+
+          case "$STATE" in
+            OPEN|MERGED)
+              if [ "$IS_DRAFT" = "true" ]; then
+                echo "❌ Docs-PR ${URL} is in DRAFT state."
+                echo "Mark it ready-for-review before merging this PR (CLAUDE.md forbids draft PRs)."
+                exit 1
+              fi
+              echo "✅ Docs-PR ${URL} is ${STATE}; doc-coverage gate satisfied."
+              ;;
+            MISSING)
+              echo "❌ Docs-PR ${URL} could not be resolved on zero-day-ai/docs."
+              echo "Either the URL is wrong, the PR was deleted, or DOCS_REPO_READ_TOKEN lacks pull_requests:read."
+              exit 1
+              ;;
+            CLOSED)
+              echo "❌ Docs-PR ${URL} is CLOSED without merge."
+              echo "Reopen it or open a new docs PR and update this trailer."
+              exit 1
+              ;;
+            *)
+              echo "❌ Unexpected Docs-PR state: ${STATE}"
+              exit 1
+              ;;
+          esac
