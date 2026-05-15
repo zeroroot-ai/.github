@@ -71,14 +71,14 @@ jobs:
 
       - name: "Check for Docs-PR not-applicable escape hatch"
         id: na
-        env:
-          BODY: ${{ env.body }}
         run: |
           set -euo pipefail
-          # IMPORTANT: read body from env, NOT from `${{ ... }}` template
-          # expansion into the shell — PR body content is untrusted and may
-          # contain backticks / $(...) / etc. that would otherwise execute.
-          if printf '%s\n' "$BODY" | grep -qE '^Docs-PR: not-applicable: .+'; then
+          # IMPORTANT: $body is set via $GITHUB_ENV in the previous step and
+          # is automatically available as a shell env var here. We do NOT
+          # use `${{ env.body }}` template substitution — that would try to
+          # inject the body literal into the script source, executing any
+          # backticks / $(...) in the PR body as shell commands.
+          if printf '%s\n' "$body" | grep -qE '^Docs-PR: not-applicable: .+'; then
             echo "matched=true" >> "$GITHUB_OUTPUT"
             echo "PR uses the not-applicable escape hatch — pass."
             echo "Reviewer note: confirm this is genuinely a cosmetic/mechanical fix."
@@ -89,14 +89,11 @@ jobs:
       - name: Extract Docs-PR URL
         id: extract
         if: steps.na.outputs.matched != 'true'
-        env:
-          BODY: ${{ env.body }}
         run: |
           set -euo pipefail
-          # Match: `Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>`
-          # Whitespace-tolerant, case-sensitive on the docs repo path.
-          # Body comes from env (see security note above).
-          URL=$(printf '%s\n' "$BODY" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zero-day-ai/docs/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
+          # Match: Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>
+          # $body comes from $GITHUB_ENV — never template-substituted.
+          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zero-day-ai/docs/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
           if [ -z "$URL" ]; then
             cat <<EOF >&2
 
