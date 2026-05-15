@@ -56,24 +56,29 @@ jobs:
         id: body
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          BODY=$(gh pr view "${{ github.event.pull_request.number }}" \
-            --repo "${{ github.repository }}" \
-            --json body --jq .body)
-          # Persist for later steps via a delimited heredoc (handles newlines).
+          # Persist for later steps via the env-file mechanism (handles
+          # arbitrary body content — including backticks, $(...), etc. — by
+          # NEVER interpolating it into a shell template).
           {
             echo 'body<<__EOF__'
-            printf '%s\n' "$BODY"
+            gh pr view "$PR_NUMBER" --repo "$PR_REPO" --json body --jq .body
             echo '__EOF__'
-          } >> "$GITHUB_OUTPUT"
+          } >> "$GITHUB_ENV"
 
       - name: "Check for Docs-PR not-applicable escape hatch"
         id: na
+        env:
+          BODY: ${{ env.body }}
         run: |
           set -euo pipefail
-          body="${{ steps.body.outputs.body }}"
-          if printf '%s\n' "$body" | grep -qE '^Docs-PR: not-applicable: .+'; then
+          # IMPORTANT: read body from env, NOT from `${{ ... }}` template
+          # expansion into the shell — PR body content is untrusted and may
+          # contain backticks / $(...) / etc. that would otherwise execute.
+          if printf '%s\n' "$BODY" | grep -qE '^Docs-PR: not-applicable: .+'; then
             echo "matched=true" >> "$GITHUB_OUTPUT"
             echo "PR uses the not-applicable escape hatch — pass."
             echo "Reviewer note: confirm this is genuinely a cosmetic/mechanical fix."
@@ -84,12 +89,14 @@ jobs:
       - name: Extract Docs-PR URL
         id: extract
         if: steps.na.outputs.matched != 'true'
+        env:
+          BODY: ${{ env.body }}
         run: |
           set -euo pipefail
-          body="${{ steps.body.outputs.body }}"
           # Match: `Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>`
           # Whitespace-tolerant, case-sensitive on the docs repo path.
-          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zero-day-ai/docs/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
+          # Body comes from env (see security note above).
+          URL=$(printf '%s\n' "$BODY" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zero-day-ai/docs/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
           if [ -z "$URL" ]; then
             cat <<EOF >&2
 
