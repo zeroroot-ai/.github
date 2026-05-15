@@ -1,5 +1,5 @@
 {
-  "name": "sdk-required-checks",
+  "name": "platform-operator-required-checks",
   "target": "branch",
   "enforcement": "evaluate",
   "bypass_actors": [],

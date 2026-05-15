@@ -4,7 +4,12 @@
   "enforcement": "evaluate",
   "bypass_actors": [],
   "conditions": {
-    "ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}
+    "ref_name": {
+      "include": [
+        "~DEFAULT_BRANCH"
+      ],
+      "exclude": []
+    }
   },
   "rules": [
     {
@@ -12,7 +17,12 @@
       "parameters": {
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
-          {"context": "kind-up-smoke"}
+          {
+            "context": "kind-up-smoke"
+          },
+          {
+            "context": "architectural-doc-coverage"
+          }
         ]
       }
     }
