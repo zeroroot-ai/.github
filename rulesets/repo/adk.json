@@ -25,6 +25,9 @@
           },
           {
             "context": "architectural-doc-coverage"
+          },
+          {
+            "context": "check-cue-fresh"
           }
         ]
       }
