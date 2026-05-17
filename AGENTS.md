@@ -21,6 +21,10 @@ override only when explicitly noted.
 8. **CI failures must be root-caused, not retried.** Open or update a
    `ci-failure` issue (the `ci-failure-triage` workflow does this automatically;
    you add the diagnosis as a comment) before pushing a fix or rerunning.
+9. **One code path** ([ADR-0003](https://github.com/zero-day-ai/docs/blob/main/adr/0003-one-code-path.md)).
+   Every dependency is required at chart render, at process boot, and at runtime.
+   No `.enabled: false` toggles, graceful-nil branches, silent env fallbacks,
+   `failurePolicy: Ignore`, or `--dev-mode` flags. CI enforces (see §10).
 
 ---
 
@@ -313,6 +317,16 @@ If you need an out-of-band release (rare), open an issue first; do not hand-tag.
   agent self-merge on `sdk` / `deploy` / `gitops` regardless of scope (see §5).
 - **No rerunning a failed CI job without first posting a root-cause comment**
   on the `ci-failure` issue the triage workflow opened (see §6).
+- **One code path — see [ADR-0003](https://github.com/zero-day-ai/docs/blob/main/adr/0003-one-code-path.md).**
+  Never re-introduce `.enabled: false` defaults, `| default ""` silent template
+  fallbacks, `failurePolicy: Ignore` webhooks, `optional: true` env refs,
+  `lookup` calls outside bootstrap templates, `noopAuthorizer` / `NoopClient` /
+  `NullSender` injections, `GIBSON_MODE` / `--dev-mode` / `require_ready=false`
+  flags, or `process.env.X ?? "default"` fallbacks for required config. Every
+  dependency is required at chart render, at process boot, and at runtime;
+  failure surfaces at install time, never at "user clicks panel" time. The
+  cross-chart-check tool plus the Go AST `no-graceful-nil` contract test
+  enforce this on every PR.
 
 The `no-monorepo-shortcuts` workflow runs as a required check on every PR
 across every repo and will fail any PR that introduces `go.work`, `replace`,
