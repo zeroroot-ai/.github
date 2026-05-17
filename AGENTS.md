@@ -302,6 +302,43 @@ consumers. Those PRs auto-merge if their CI passes.
 
 If you need an out-of-band release (rare), open an issue first; do not hand-tag.
 
+### 9a. We are pre-1.0 — use `feat!:` freely, do NOT bump major by accident
+
+Every repo in this polyrepo is pre-1.0 software. The platform has not made
+a stability claim on any public surface yet. Reach 1.0 deliberately, not
+because release-please saw a single `feat!:` commit and obeyed Conventional
+Commits literally.
+
+Every repo's `release-please-config.json` carries `"bump-minor-pre-major":
+true`. While a package is below 1.0.0, this setting tells release-please
+that `feat!:` and `BREAKING CHANGE:` commits bump **minor**, not major —
+e.g. `0.103.0 → 0.104.0` instead of `1.0.0`. Use the breaking-change
+syntax freely for semantic accuracy; the config does the right thing.
+
+**Cutting a real 1.0.0 release is a deliberate human decision, never automatic.**
+The procedure for any future 1.0.0 cut on any repo:
+
+1. Open an issue proposing the stability claim — what's stable, what's
+   covered by SemVer guarantees going forward, what's still out of scope.
+2. Get explicit sign-off from a code owner. Async is fine; the explicit
+   approval is the gate.
+3. In the same PR that cuts 1.0: remove `"bump-minor-pre-major": true`
+   from that repo's `release-please-config.json`, write a commit body that
+   names the stability claim, merge.
+4. release-please's next cycle proposes `1.0.0` from the accumulated
+   commit history; that release PR gets the same code-owner sign-off
+   before merge.
+
+Reviewers should reject any PR titled with a `1.0.0` or `2.0.0` (etc.)
+bump unless the proposing issue exists and was approved.
+
+Historical context: on 2026-05-17 a `feat!:` PR on `core/sdk` reflexively
+crossed the polyrepo from 1.9.0 to 2.0.0, then bricked the SDK fan-out
+because Go's v2+ module-path rule requires `/v2` and the SDK doesn't have
+it. Recovery: full polyrepo reset back to 0.x (PRD
+zero-day-ai/.github#25). The `bump-minor-pre-major` setting is the only
+structural change that prevents repeat.
+
 ---
 
 ## 10. Hard prohibitions (CI-enforced where possible)
