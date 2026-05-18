@@ -16,8 +16,12 @@ override only when explicitly noted.
 5. **Rebase, never merge.** `git fetch origin && git rebase origin/main`.
 6. **Squash-merge only**, ruleset-enforced. Multi-commit PRs are fine; the
    squash subject is set from the PR title.
-7. **Agents may self-merge low-risk PRs on green CI** — see §5 for the gate.
-   `feat:` and any `BREAKING CHANGE` still require a human.
+7. **Agents merge their own PRs once required CI is green — across all repos, all commit types**
+   ([ADR-0007](https://github.com/zero-day-ai/docs/blob/main/adr/0007-agent-merge-autonomy.md)).
+   The CI rulesets are the gate; commit-type prefix, repo tier, and `BREAKING CHANGE` status
+   are not. The single remaining filter is agent judgment: if a human decision is genuinely
+   needed, halt and surface an `AGENT BLOCKED` banner at the top of the terminal reply, then
+   stop. No polling, no wake-up loops, no background monitors on human replies — see §5.
 8. **CI failures must be root-caused, not retried.** Open or update a
    `ci-failure` issue (the `ci-failure-triage` workflow does this automatically;
    you add the diagnosis as a comment) before pushing a fix or rerunning.
@@ -181,36 +185,72 @@ make authz-registry && make proto
 pnpm proto:generate
 ```
 
-### Agent self-merge gate
+### Agent merge autonomy
 
-Agents may merge their own PRs **only when all of the following hold**:
+Codified in [ADR-0007](https://github.com/zero-day-ai/docs/blob/main/adr/0007-agent-merge-autonomy.md).
+Read the ADR for the reasoning; this section is the operational contract.
+
+**Agents merge their own PRs once every required CI check is `success`.** This
+holds across all repos in the org and all commit types — including `feat:`,
+`feat!:`, and `BREAKING CHANGE`. The CI rulesets — `pr-title-lint`,
+`no-monorepo-shortcuts`, per-repo required checks, and the
+`tier-platform-release` signed-commits + CODEOWNERS-review ruleset on `sdk`,
+`deploy`, `gitops` — are the merge gate. They are sufficient.
 
 | # | Condition |
 |---|-----------|
 | 1 | Every required status check is `success` (not `pending`, not `neutral`, not skipped). Verify with `gh pr checks <num>`. |
-| 2 | The PR title prefix is one of: `fix:`, `chore:`, `docs:`, `test:`, `ci:`, `refactor:`, `build:`, `perf:`, `revert:`. **OR** the PR is a release-please release PR, **OR** an SDK fan-out `chore(deps): bump sdk to ...` PR. |
-| 3 | No `BREAKING CHANGE` footer and no `!` marker in the title. |
-| 4 | No unresolved review threads (the `tier-core` ruleset blocks merge otherwise, but check first to avoid a wasted call). |
-| 5 | Branch is rebased onto the current `origin/main` (no "out of date" warning in the PR). |
-| 6 | The repo is **not** under `tier-platform-release` (sdk / deploy / gitops) — those require a code-owner human review. |
+| 2 | No unresolved review threads (the `tier-core` ruleset already blocks otherwise; check first to avoid the wasted merge call). |
+| 3 | Branch is rebased onto the current `origin/main` (no "out of date" warning in the PR). |
+| 4 | On `tier-platform-release` repos (`sdk` / `deploy` / `gitops`): the required CODEOWNERS review has been submitted as approve. That review *is* the human checkpoint for these repos; the merge button is not a second checkpoint. |
 
-**`feat:`, `feat!:`, anything with `BREAKING CHANGE`, and any PR on
-`sdk` / `deploy` / `gitops` always need a human merge.**
-
-When the gate is met, merge with:
+When all four hold, merge with:
 
 ```bash
 gh pr merge <pr-number> --squash --delete-branch
 ```
 
-When it isn't, leave the PR for a human and move on to the next task in your
-queue. Do not "encourage" the merge with comments or pings.
+The `--delete-branch` flag is mandatory.
 
-**You are responsible for the judgment call.** "All checks green" is a
-necessary condition, not a sufficient one — if you have any reason to suspect
-the change is riskier than it looks (touches auth paths, modifies the daemon's
-public surface, changes Helm chart defaults, edits CI itself), leave it for a
-human even if the table above says you may merge.
+### Agent judgment is the one remaining filter
+
+Beyond CI, the only thing standing between green and merged is the agent's own
+judgment that the PR needs a human decision. "I would feel better if a human
+looked at this" is not a blocker. "I need a decision I am not authorized to
+make" — a design ambiguity, a security-sensitive policy choice, an irreversible
+action with multiple defensible answers — is.
+
+When the agent decides a PR (or any in-flight task) genuinely needs a human
+decision:
+
+1. **Surface the blocker at the very top of the terminal reply**, before any
+   other content, in this shape:
+
+   ```
+   === AGENT BLOCKED — DECISION REQUIRED ===
+   What is blocked: <one sentence>
+   Decision needed: <the specific question>
+   Options:
+     A) <option> — <tradeoff>
+     B) <option> — <tradeoff>
+     C) <option> — <tradeoff>
+   Artifact: <PR url | branch | spec path>
+   ==========================================
+   ```
+
+2. **Stop the turn.** Do not schedule a wake-up, do not arm a background
+   monitor, do not run a polling loop, do not "check back in N minutes" on a
+   human reply. The conversation resumes when the user answers in-band.
+
+Polling for human-typed answers or human-clicked merge buttons is forbidden.
+Background monitors and scheduled wake-ups remain correct for log streams,
+K8s state changes, and CI runs in progress — none of which are "waiting for a
+human." If the work in flight is "waiting for the user to reply," the right
+action is always: end the turn.
+
+The judgment call is yours. Calibrate from feedback: surfacing too many
+blockers retrains the user to ignore them; surfacing too few makes silent
+wrong decisions.
 
 ---
 
