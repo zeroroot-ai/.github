@@ -298,6 +298,7 @@ task in your queue. Do not "encourage" the merge with comments or pings.
 
 **Full pre-merge checklist:** the four conditions above are the mechanical part; the complete canonical list (walker gates, CodeQL findings, coverage delta, ADR + trap obligations, escape-hatch ban, `Docs-PR:` trailer) lives at [`docs/agents/pr-checklist.md`](https://github.com/zero-day-ai/docs/blob/main/agents/pr-checklist.md) in the workspace docs repo. Single source of truth — do not restate items here.
 
+
 ### Agent judgment is the one remaining filter
 
 Beyond CI, the only thing standing between green and merged is the agent's own
