@@ -1,0 +1,88 @@
+# Shared Dependabot config template for zero-day-ai repos.
+# Slice 1.5 (interim path while Renovate marketplace install is pending).
+#
+# Per-repo .github/dependabot.yml copies this template, adapting only
+# the ecosystem mix (Go vs npm vs gomod-only). Drift detector (forthcoming)
+# asserts per-repo files conform.
+
+version: 2
+updates:
+  # Go modules — covers gibson, sdk, ext-authz, tenant-operator, adk,
+  # gibson-tool-runner, spiffe-jwks-exporter, setec, platform-operator,
+  # platform-debug, debug-plugin, ast-checks, zda-ast, testharness,
+  # testfixtures (any repo with go.mod at root).
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    groups:
+      go-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # PRs go through release-please / standard flow. Conventional Commit
+    # prefix matches what pr-title-lint expects.
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # No major-version bumps — those require manual review.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  # npm — dashboard only
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    groups:
+      npm-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+
+  # GitHub Actions — all repos with workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    groups:
+      actions-deps:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  # Docker base images — image-producing repos
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
