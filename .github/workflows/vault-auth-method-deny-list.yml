@@ -1,0 +1,83 @@
+# Reusable workflow that enforces ADR-0009's deny-list.
+#
+# ADR-0009 (zero-day-ai/docs#33, amended docs#34) establishes that every
+# platform service-to-service auth uses JWT + SPIFFE. The "### Deny-list"
+# section enumerates literal tokens that MUST NOT appear in any consumer
+# repo's source tree. This workflow scans the calling repo for those
+# tokens and fails the PR on any new (non-allowlisted) occurrence.
+#
+# Source of truth for the deny-list:
+#   https://github.com/zero-day-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md
+#
+# The list is NOT hardcoded in this workflow. The job checks out the
+# docs repo at run time and parses the ADR's deny-list table directly.
+# Adding a new entry to the ADR's table automatically propagates to
+# every consumer repo's next CI run — no workflow edits required.
+#
+# Called by per-repo workflows via:
+#   uses: zero-day-ai/.github/.github/workflows/vault-auth-method-deny-list.yml@main
+#
+# Required check name: vault-auth-method-deny-list
+#
+# Per-repo opt-in: each consumer repo may carry an allowlist file at
+# .github/.vault-auth-deny-list-allowlist.json. Each entry is a JSON
+# object of {file, line, token, reason}. The list is monotonic-shrink:
+# any entry whose source line no longer matches the token is treated as
+# stale and fails the run (with a hint to remove it). New violations
+# are never auto-allowlisted; reviewers must hand-edit the JSON.
+
+name: vault-auth-method-deny-list
+
+on:
+  workflow_call:
+    inputs:
+      docs-ref:
+        description: "Ref of zero-day-ai/docs to read the ADR from. Defaults to main."
+        type: string
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  vault-auth-method-deny-list:
+    name: vault-auth-method-deny-list
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@v4
+        with:
+          path: caller
+
+      - name: Checkout zero-day-ai/.github (for the scanner script)
+        uses: actions/checkout@v4
+        with:
+          repository: zero-day-ai/.github
+          path: org-github
+          ref: main
+
+      - name: Checkout zero-day-ai/docs (for ADR-0009)
+        uses: actions/checkout@v4
+        with:
+          repository: zero-day-ai/docs
+          path: docs-repo
+          ref: ${{ inputs.docs-ref }}
+
+      - name: Run ADR-0009 deny-list selftest
+        # Selftest synthesises one file per deny-list token and asserts
+        # the scanner catches each one. Guards against a regex regression
+        # in the scanner itself (the deny-list comes from the ADR, but the
+        # scanning logic is in the bash script).
+        run: |
+          chmod +x org-github/scripts/vault-auth-deny-list-scan.sh
+          ADR_PATH="$GITHUB_WORKSPACE/docs-repo/adr/0009-jwt-spiffe-everywhere.md" \
+            org-github/scripts/vault-auth-deny-list-scan.sh --selftest
+
+      - name: Scan calling repo for ADR-0009 deny-list violations
+        run: |
+          ADR_PATH="$GITHUB_WORKSPACE/docs-repo/adr/0009-jwt-spiffe-everywhere.md" \
+          REPO_ROOT="$GITHUB_WORKSPACE/caller" \
+          ALLOWLIST="$GITHUB_WORKSPACE/caller/.github/.vault-auth-deny-list-allowlist.json" \
+            org-github/scripts/vault-auth-deny-list-scan.sh scan
