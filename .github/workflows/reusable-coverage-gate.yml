@@ -1,0 +1,54 @@
+name: Reusable coverage gate
+
+# Slice 5.5 of the production-readiness epic (gibson#175 → board #16).
+# Runs go test with -coverprofile, then scripts/coverage-compare.sh
+# against the per-repo coverage.yml. Fails the PR on:
+#   - Any package below the floor (default 60%)
+#   - Any package regression > tolerance vs main baseline (default 0.5pp)
+#
+# Caller:
+#   uses: zero-day-ai/.github/.github/workflows/reusable-coverage-gate.yml@main
+
+on:
+  workflow_call:
+    inputs:
+      go-mod-path:
+        description: "Path to module root (default: repo root)"
+        type: string
+        required: false
+        default: ""
+      coverage-config:
+        description: "Path to coverage.yml (default: coverage.yml at repo root)"
+        type: string
+        required: false
+        default: "coverage.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  coverage:
+    name: coverage-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}
+          cache: true
+      - name: Generate coverage profile
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go test -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Fetch comparator script
+        run: |
+          curl -sSL https://raw.githubusercontent.com/zero-day-ai/.github/main/scripts/coverage-compare.sh \
+            -o /tmp/coverage-compare.sh
+          chmod +x /tmp/coverage-compare.sh
+
+      - name: Compare against config
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          /tmp/coverage-compare.sh coverage.out "" "${{ inputs.coverage-config }}"
