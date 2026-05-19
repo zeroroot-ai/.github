@@ -50,6 +50,14 @@ on:
         type: string
         default: "HIGH,CRITICAL"
         description: Comma-separated Trivy severities that fail the build.
+    secrets:
+      ghtoken:
+        required: false
+        description: |
+          Optional PAT/GitHub-App token passed as a buildx secret named
+          `ghtoken`. Dockerfiles that need cross-repo private-module
+          access read it via `--mount=type=secret,id=ghtoken`. Callers
+          that don't need it can omit the `secrets:` block entirely.
 
 jobs:
   build-and-push:
