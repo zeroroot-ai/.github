@@ -123,6 +123,7 @@ jobs:
                 -not -path "*/testdata/*" \
                 -not -path "*/helm/*/templates/*" \
                 -not -path "*/helm/*/charts/*" \
+                -not -path "*/helm/*/files/*" \
                 -not -path "*/charts/*/templates/*" \
                 | sort)
 
