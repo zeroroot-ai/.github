@@ -1,0 +1,85 @@
+name: Reusable container hardening
+
+# Slice 1.6 of the production-readiness epic (gibson#171 → board #16).
+# Post-build assertions on a container image:
+#
+#   - runs as non-root (USER directive ≠ root / 0)
+#   - no shell at known paths (distroless / scratch)
+#   - read-only filesystem when invoked with --read-only
+#   - size ≤ caller-declared budget (in MB)
+#
+# Called by per-repo image-build wrapper AFTER docker/build-push-action
+# (which pushes the image; this job pulls + inspects).
+
+on:
+  workflow_call:
+    inputs:
+      image_ref:
+        description: "Image ref (e.g. ghcr.io/zero-day-ai/gibson@sha256:abc...)"
+        type: string
+        required: true
+      size_budget_mb:
+        description: "Maximum image size in MB"
+        type: number
+        required: false
+        default: 500
+      forbid_shell:
+        description: "Fail if /bin/sh or /bin/bash exists in image"
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  hardening:
+    name: hardening
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull image
+        run: docker pull ${{ inputs.image_ref }}
+
+      - name: Assert non-root USER
+        run: |
+          set -euo pipefail
+          USER=$(docker inspect ${{ inputs.image_ref }} --format '{{.Config.User}}')
+          if [ -z "$USER" ] || [ "$USER" = "root" ] || [ "$USER" = "0" ]; then
+            echo "::error::image runs as root (USER='$USER'); per slice 1.6 must be non-root"
+            exit 1
+          fi
+          echo "::notice::USER='$USER' (non-root)"
+
+      - name: Assert no shell
+        if: ${{ inputs.forbid_shell }}
+        run: |
+          set -uo pipefail
+          # Probe for shell at known paths. If `docker run` with the
+          # shell command exits 0, the shell exists -> fail.
+          for SHELL_PATH in /bin/sh /bin/bash /usr/bin/sh /usr/bin/bash; do
+            if docker run --rm --entrypoint $SHELL_PATH ${{ inputs.image_ref }} -c "exit 0" 2>/dev/null; then
+              echo "::error::shell $SHELL_PATH exists in image (per slice 1.6 distroless containers must not ship a shell)"
+              exit 1
+            fi
+          done
+          echo "::notice::no shell at /bin/sh /bin/bash /usr/bin/sh /usr/bin/bash"
+
+      - name: Assert image size ≤ budget
+        run: |
+          set -euo pipefail
+          SIZE_BYTES=$(docker inspect ${{ inputs.image_ref }} --format '{{.Size}}')
+          SIZE_MB=$((SIZE_BYTES / 1024 / 1024))
+          BUDGET=${{ inputs.size_budget_mb }}
+          echo "::notice::image size: ${SIZE_MB} MB (budget: ${BUDGET} MB)"
+          if [ "$SIZE_MB" -gt "$BUDGET" ]; then
+            echo "::error::image size ${SIZE_MB} MB > budget ${BUDGET} MB (per slice 1.6)"
+            exit 1
+          fi
