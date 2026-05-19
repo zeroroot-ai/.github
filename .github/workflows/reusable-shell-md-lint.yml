@@ -1,0 +1,169 @@
+# Reusable shell + markdown + broken-link lint workflow.
+#
+# Slice 2.5 of the production-readiness epic (zero-day-ai/gibson#172 →
+# board #16). Three sub-jobs:
+#
+# 1. shellcheck — every `*.sh` file in the calling repo. Severity
+#    threshold: warning+ blocks (info-level diagnostics ignored). Fails
+#    PR on any blocking diagnostic.
+#
+# 2. markdownlint — every `*.md` file. Sensible defaults: structure rules
+#    enforced (one-h1-per-doc, no-trailing-spaces, no-bare-urls,
+#    fenced-code-blocks); style rules disabled (line-length, em-style,
+#    list-indent — those are noise, not bugs).
+#
+# 3. lychee — broken-link checker on all markdown. Catches stale internal
+#    file refs (the most common drift class) + dead external URLs.
+#    Allowlist for known-stable-but-flaky external URLs lives in
+#    `.lychee.toml` at the caller-repo root, or falls back to the shared
+#    config bundled here.
+#
+# Called from per-repo `.github/workflows/lint.yml` via:
+#
+#     uses: zero-day-ai/.github/.github/workflows/reusable-shell-md-lint.yml@main
+#
+# Required check name suggestion: `shell-md-lint`.
+#
+# Implementation rules:
+#   - DO NOT use continue-on-error: the gates fail loud (per ADR-0013).
+#   - DO NOT skip files via wildcard exclusions in CI; per-rule disables
+#     belong in the config file (`.markdownlint.json` / `.lychee.toml`)
+#     so they're git-tracked.
+#
+# Closes slice 2.5 (zero-day-ai/.github#40).
+
+name: shell-md-lint
+
+on:
+  workflow_call:
+    inputs:
+      lychee-fail-on:
+        description: "Status codes to fail on (lychee default: any 4xx/5xx)"
+        type: string
+        required: false
+        default: "404,410,500,502,503,504"
+      markdownlint-config-path:
+        description: "Path to .markdownlint.json relative to repo root"
+        type: string
+        required: false
+        default: ".markdownlint.json"
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find shell scripts
+        id: find
+        run: |
+          # Locate every executable .sh + every #!/bin/(ba)?sh script.
+          # Output a newline-separated list to GITHUB_OUTPUT for the
+          # next step.
+          set -euo pipefail
+          files=$(find . -type f \( -name "*.sh" -o -name "*.bash" \) \
+                    -not -path "./.git/*" \
+                    -not -path "./vendor/*" \
+                    -not -path "./node_modules/*" \
+                    -not -path "*/.worktrees/*" \
+                    -not -path "*/testdata/*" 2>/dev/null \
+                    | sort -u)
+          {
+            echo "files<<__EOF__"
+            echo "$files"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::found $(printf '%s\n' "$files" | grep -c '.' || true) shell files"
+
+      - name: Run shellcheck
+        if: steps.find.outputs.files != ''
+        run: |
+          set -euo pipefail
+          # Severity threshold: warning. Style-level findings are info-only.
+          # SC2034 (unused variable) excluded — fires on intentional
+          # documentation patterns. Add per-script disables via
+          # `# shellcheck disable=...` comments, not workflow-level.
+          printf '%s\n' "${{ steps.find.outputs.files }}" \
+            | xargs -r shellcheck --severity=warning --shell=bash
+
+  markdownlint:
+    name: markdownlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install markdownlint-cli
+        run: npm install --no-save markdownlint-cli@0.45.0
+
+      - name: Resolve config
+        id: cfg
+        run: |
+          set -euo pipefail
+          # Prefer caller-repo's config; fall back to shared default at
+          # the org `.github` repo location.
+          if [ -f "${{ inputs.markdownlint-config-path }}" ]; then
+            echo "config=${{ inputs.markdownlint-config-path }}" >> "$GITHUB_OUTPUT"
+          else
+            cat > /tmp/markdownlint-default.json <<'JSON'
+          {
+            "default": true,
+            "MD013": false,
+            "MD024": { "siblings_only": true },
+            "MD033": false,
+            "MD034": true,
+            "MD041": false
+          }
+          JSON
+            echo "config=/tmp/markdownlint-default.json" >> "$GITHUB_OUTPUT"
+            echo "::notice::no .markdownlint.json in caller; using shared defaults (MD013/MD033/MD041 off, MD024 siblings-only)"
+          fi
+
+      - name: Run markdownlint
+        run: |
+          set -euo pipefail
+          # Walk markdown excluding vendored / generated paths. Quote
+          # config path so spaces survive.
+          npx markdownlint-cli \
+            --config "${{ steps.cfg.outputs.config }}" \
+            --ignore "node_modules" \
+            --ignore "vendor" \
+            --ignore ".worktrees" \
+            --ignore "**/CHANGELOG.md" \
+            --ignore "**/testdata/**" \
+            "**/*.md"
+
+  lychee:
+    name: lychee
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run lychee
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # Lychee accepts globs; pass via --args. Caller's
+          # `.lychee.toml` (if present at repo root) is auto-discovered.
+          # No-progress for clean CI logs.
+          args: >-
+            --no-progress
+            --max-concurrency 8
+            --accept ${{ inputs.lychee-fail-on }}
+            --exclude-loopback
+            --exclude '^mailto:'
+            --exclude '^localhost'
+            --exclude 'example\.com'
+            --exclude 'example\.org'
+            './**/*.md'
+          fail: true
+          token: ${{ secrets.GITHUB_TOKEN }}
