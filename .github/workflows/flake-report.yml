@@ -1,0 +1,74 @@
+name: flake-report
+
+# Weekly aggregator that scans recent CI runs across the org for flake
+# events emitted by actions/flake-quarantine. Updates (or creates) a
+# single open issue listing flaky tests.
+#
+# Slice 5.11 of the production-readiness epic (gibson#175 → board #16).
+
+on:
+  schedule:
+    - cron: "0 10 * * 1"  # Monday 10:00 UTC, after gremlins-pilot at 09:00
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  aggregate:
+    name: aggregate-flakes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aggregate from last 7 days of CI runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Scan each repo in the org for runs in the past week with
+          # flake.json artifacts. Aggregate by repo + test command.
+          mkdir -p /tmp/flakes
+          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | grep -v '^\.github$')
+          for REPO in $REPOS; do
+            # Get recent successful runs (flake counts only on green success)
+            RUNS=$(gh run list -R "zero-day-ai/$REPO" --limit 50 --status success --created ">$(date -u -d '7 days ago' +%Y-%m-%d)" --json databaseId --jq '.[].databaseId' 2>/dev/null || true)
+            for RUN_ID in $RUNS; do
+              gh run download "$RUN_ID" -R "zero-day-ai/$REPO" \
+                --name flake-log -D "/tmp/flakes/$REPO-$RUN_ID" 2>/dev/null || true
+            done
+          done
+
+          # Render aggregated report
+          REPORT="## Weekly flake report — $(date -u +%Y-%m-%d)"
+          REPORT="$REPORT\n\n"
+          if [ ! "$(ls -A /tmp/flakes 2>/dev/null)" ]; then
+            REPORT="${REPORT}No flake events found in the last 7 days. "
+            REPORT="${REPORT}\n\nThis means either (a) every test passed on attempt 1, or (b) no repo has adopted actions/flake-quarantine yet."
+          else
+            REPORT="${REPORT}| Repo | Test command | Run | Failed attempts |\n"
+            REPORT="${REPORT}|---|---|---|---|\n"
+            for f in /tmp/flakes/*/flake.json; do
+              REPO_RUN=$(dirname "$f" | xargs basename)
+              REPO=$(echo "$REPO_RUN" | cut -d- -f1)
+              RUN=$(echo "$REPO_RUN" | cut -d- -f2-)
+              CMD=$(jq -r .cmd "$f")
+              IS_FLAKE=$(jq -r .is_flake "$f")
+              FAILED=$(jq -r '.failed_attempts | length' "$f")
+              if [ "$IS_FLAKE" = "true" ]; then
+                REPORT="${REPORT}| $REPO | \`$CMD\` | $RUN | $FAILED |\n"
+              fi
+            done
+          fi
+
+          # Find existing open issue with the report title prefix
+          EXISTING=$(gh issue list -R zero-day-ai/.github \
+                       --state open --search 'in:title "Weekly flake report"' \
+                       --json number --jq '.[0].number // empty')
+          TITLE="Weekly flake report — $(date -u +%Y-%m-%d)"
+          if [ -n "$EXISTING" ]; then
+            printf "%b" "$REPORT" | gh issue edit "$EXISTING" -R zero-day-ai/.github --title "$TITLE" --body-file -
+          else
+            printf "%b" "$REPORT" | gh issue create -R zero-day-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+          fi

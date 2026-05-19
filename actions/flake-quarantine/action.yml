@@ -1,0 +1,67 @@
+name: flake-quarantine
+description: Wraps a test command with retry-3x logic + emits flake events
+
+inputs:
+  cmd:
+    description: "The test command to wrap"
+    required: true
+  max-attempts:
+    description: "Maximum attempts before declaring failure"
+    required: false
+    default: "3"
+  flake-log-path:
+    description: "Where to write flake event log (uploaded as artifact)"
+    required: false
+    default: "flake.json"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -uo pipefail
+        ATTEMPT=1
+        MAX=${{ inputs.max-attempts }}
+        LOG=${{ inputs.flake-log-path }}
+        SUCCESS=0
+        FAILURES=()
+
+        while [ $ATTEMPT -le $MAX ]; do
+          echo "::group::attempt $ATTEMPT of $MAX"
+          if bash -c "${{ inputs.cmd }}"; then
+            SUCCESS=$ATTEMPT
+            echo "::endgroup::"
+            break
+          fi
+          FAILURES+=("$ATTEMPT")
+          echo "::endgroup::"
+          echo "::warning::attempt $ATTEMPT failed"
+          ATTEMPT=$((ATTEMPT + 1))
+        done
+
+        # Emit flake event log (machine-readable).
+        # Avoid heredoc so YAML doesn't get confused by column-0 terminators.
+        FAILED_LIST=""
+        if [ ${#FAILURES[@]} -gt 0 ]; then
+          FAILED_LIST=$(IFS=,; echo "${FAILURES[*]}")
+        fi
+        IS_FLAKE="false"
+        if [ $SUCCESS -gt 1 ]; then IS_FLAKE="true"; fi
+        printf '{"repo":"%s","ref":"%s","sha":"%s","cmd":"%s","max_attempts":%s,"success_on_attempt":%s,"failed_attempts":[%s],"is_flake":%s}\n' \
+          "${{ github.repository }}" \
+          "${{ github.ref }}" \
+          "${{ github.sha }}" \
+          "${{ inputs.cmd }}" \
+          "$MAX" \
+          "$SUCCESS" \
+          "$FAILED_LIST" \
+          "$IS_FLAKE" \
+          > "$LOG"
+
+        if [ $SUCCESS -eq 0 ]; then
+          echo "::error::test failed after $MAX attempts"
+          exit 1
+        fi
+        if [ $SUCCESS -gt 1 ]; then
+          echo "::warning::test passed but flaked — succeeded on attempt $SUCCESS"
+        fi
