@@ -1,0 +1,57 @@
+name: sarif-triage
+
+# Slice 4.6 of the production-readiness epic (gibson#174 → board #16).
+# Daily cron that polls code-scanning alerts across the org. For new
+# alerts at severity ≥ medium, opens (or updates) a tracked issue in
+# the source repo with `ready-for-agent` label.
+
+on:
+  schedule:
+    - cron: "0 9 * * *"  # daily 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  triage:
+    name: triage-sarif-alerts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Scan code-scanning alerts across org
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | \
+                  grep -vE '^(\.github|.*\.github\.io)$')
+
+          for REPO in $REPOS; do
+            # Get open code-scanning alerts ≥ medium severity
+            ALERTS=$(gh api "/repos/zero-day-ai/$REPO/code-scanning/alerts?state=open&severity=critical,high,medium" \
+                       --paginate --jq '.[] | {number,rule_id: .rule.id, severity: .rule.severity, location: .most_recent_instance.location.path}' 2>/dev/null || echo "")
+
+            if [ -z "$ALERTS" ]; then continue; fi
+
+            # Group alerts by rule, create one tracking issue per (repo, rule)
+            echo "$ALERTS" | jq -s 'group_by(.rule_id) | .[] | {rule: .[0].rule_id, severity: .[0].severity, count: length, examples: [.[0:3] | .[] | "\(.location):\(.number)"]}' | \
+            jq -c '.' | while read GROUP; do
+              RULE=$(echo "$GROUP" | jq -r '.rule')
+              SEV=$(echo "$GROUP" | jq -r '.severity')
+              COUNT=$(echo "$GROUP" | jq -r '.count')
+              EXAMPLES=$(echo "$GROUP" | jq -r '.examples | join("\n- ")')
+
+              TITLE="ci(codeql): $SEV alerts — rule $RULE ($COUNT open)"
+              BODY="## Open code-scanning alerts\n\nRule: \`$RULE\`\nSeverity: $SEV\nOpen count: $COUNT\n\n### Examples\n\n- $EXAMPLES\n\nFull list at https://github.com/zero-day-ai/$REPO/security/code-scanning?query=is:open+rule:$RULE\n\nThis issue is auto-filed weekly by the org SARIF-triage workflow. Resolving alerts either closes them (fix the code) or marks them as suppressed with a tracked-issue link (per slice 4.6 suppression discipline + ADR-0013)."
+
+              EXISTING=$(gh issue list -R "zero-day-ai/$REPO" \
+                           --state open --search "in:title \"ci(codeql): $SEV alerts — rule $RULE\"" \
+                           --json number --jq '.[0].number // empty')
+              if [ -n "$EXISTING" ]; then
+                printf "%b" "$BODY" | gh issue edit "$EXISTING" -R "zero-day-ai/$REPO" --title "$TITLE" --body-file -
+              else
+                printf "%b" "$BODY" | gh issue create -R "zero-day-ai/$REPO" --title "$TITLE" --body-file - --label "ready-for-agent" || true
+              fi
+            done
+          done
