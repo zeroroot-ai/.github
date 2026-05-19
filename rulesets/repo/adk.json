@@ -28,6 +28,9 @@
           },
           {
             "context": "check-cue-fresh"
+          },
+          {
+            "context": "vault-auth-method-deny-list"
           }
         ]
       }
