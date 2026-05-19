@@ -1,0 +1,202 @@
+# Reusable YAML / helm / kubeconform lint workflow.
+#
+# Slice 2.4 of the production-readiness epic (zero-day-ai/gibson#172 →
+# board #16). Three sub-jobs that gate chart + manifest changes:
+#
+# 1. yamllint — every `*.yaml` / `*.yml` file in the caller. Sensible
+#    defaults via the shared config bundled below; per-repo
+#    `.yamllint.yml` overrides if present.
+#
+# 2. helm-lint — runs `helm lint` on every chart directory found at
+#    repo-relative path `helm/<name>/` or `charts/<name>/`. Charts with
+#    template-syntax errors or invalid values.yaml structure fail.
+#
+# 3. kubeconform — renders each chart with `helm template` and pipes the
+#    output through kubeconform against a pinned Kubernetes version
+#    matrix (default [1.30, 1.31, 1.32]). Catches manifest-schema drift
+#    BEFORE the cluster sees it.
+#
+# Implementation rules (load-bearing):
+#   - DO NOT use continue-on-error: the gates fail loud (per ADR-0013).
+#   - DO NOT skip files via wildcard in CI; per-rule disables go in the
+#     config file (yamllint, helm chart values) so they're git-tracked.
+#   - kubeconform matrix is the surface contract: when customers upgrade
+#     to a new k8s minor we add a row, not delete an old one (we keep
+#     coverage for the versions we still support).
+#
+# Called from per-repo `.github/workflows/yaml-helm-lint.yml`:
+#
+#     uses: zero-day-ai/.github/.github/workflows/reusable-yaml-helm-kubeconform-lint.yml@main
+#     with:
+#       chart-paths: '["helm/gibson", "helm/gibson-crds"]'
+#
+# Required check name suggestions:
+#   - yaml-helm-lint / yamllint
+#   - yaml-helm-lint / helm-lint
+#   - yaml-helm-lint / kubeconform
+
+name: yaml-helm-kubeconform-lint
+
+on:
+  workflow_call:
+    inputs:
+      chart-paths:
+        description: "JSON array of chart paths to lint+template (repo-relative)"
+        type: string
+        required: false
+        default: "[]"
+      yamllint-config-path:
+        description: "Path to .yamllint.yml; empty falls back to bundled defaults"
+        type: string
+        required: false
+        default: ".yamllint.yml"
+      k8s-versions:
+        description: "JSON array of kubernetes versions for kubeconform"
+        type: string
+        required: false
+        default: '["1.30.0", "1.31.0", "1.32.0"]'
+      helm-values-files:
+        description: "JSON array of values files; empty means `helm template` with defaults"
+        type: string
+        required: false
+        default: "[]"
+
+permissions:
+  contents: read
+
+jobs:
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve config
+        id: cfg
+        run: |
+          set -euo pipefail
+          if [ -f "${{ inputs.yamllint-config-path }}" ]; then
+            echo "config=${{ inputs.yamllint-config-path }}" >> "$GITHUB_OUTPUT"
+          else
+            # Bundled defaults — structural rules on, style rules off.
+            # Mirrors the shell-md-lint slice 2.5 markdownlint defaults.
+            cat > /tmp/yamllint-default.yml <<'YAML'
+          extends: default
+          rules:
+            # Style — off.
+            line-length: disable        # noise on real-world chart values
+            comments-indentation: disable
+            # Structural — on, with sensible exceptions.
+            indentation:
+              spaces: 2
+              indent-sequences: consistent
+              check-multi-line-strings: false
+            document-start: disable     # not every YAML has --- at top
+            truthy:
+              allowed-values: ["true", "false", "yes", "no", "on", "off"]
+              check-keys: true
+            key-duplicates: enable      # catches the Argo render-gap trap T0001
+          YAML
+            echo "config=/tmp/yamllint-default.yml" >> "$GITHUB_OUTPUT"
+            echo "::notice::no .yamllint.yml in caller; using shared defaults (key-duplicates ENABLED; trap T0001 mitigation)"
+          fi
+
+      - name: Install yamllint
+        run: pip install yamllint==1.35.1
+
+      - name: Run yamllint
+        run: |
+          set -euo pipefail
+          # Walk every .yaml + .yml file. Exclude vendored / generated paths.
+          yamllint \
+            -c "${{ steps.cfg.outputs.config }}" \
+            --strict \
+            $(find . -type f \( -name "*.yaml" -o -name "*.yml" \) \
+                -not -path "./node_modules/*" \
+                -not -path "./vendor/*" \
+                -not -path "./.worktrees/*" \
+                -not -path "./.git/*" \
+                -not -path "*/testdata/*" \
+                | sort)
+
+  helm-lint:
+    name: helm-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ inputs.chart-paths != '[]' && inputs.chart-paths != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: ${{ fromJSON(inputs.chart-paths) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.18.0"
+
+      - name: helm lint ${{ matrix.chart }}
+        run: |
+          set -euo pipefail
+          # Render subchart deps first if Chart.yaml declares any. Avoids
+          # a different lint outcome local-vs-CI.
+          if [ -f "${{ matrix.chart }}/Chart.yaml" ] && \
+             grep -q '^dependencies:' "${{ matrix.chart }}/Chart.yaml"; then
+            helm dependency update "${{ matrix.chart }}"
+          fi
+          helm lint "${{ matrix.chart }}" --strict
+
+  kubeconform:
+    name: kubeconform (k8s ${{ matrix.k8s }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: helm-lint
+    if: ${{ inputs.chart-paths != '[]' && inputs.chart-paths != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s: ${{ fromJSON(inputs.k8s-versions) }}
+        chart: ${{ fromJSON(inputs.chart-paths) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.18.0"
+
+      - name: Install kubeconform
+        run: |
+          set -euo pipefail
+          KUBECONFORM_VERSION="v0.6.7"
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+          kubeconform -v
+
+      - name: helm template + kubeconform ${{ matrix.chart }} on k8s ${{ matrix.k8s }}
+        run: |
+          set -euo pipefail
+          if [ -f "${{ matrix.chart }}/Chart.yaml" ] && \
+             grep -q '^dependencies:' "${{ matrix.chart }}/Chart.yaml"; then
+            helm dependency update "${{ matrix.chart }}"
+          fi
+          # Render the chart with default values. Apply caller-provided
+          # values files if any.
+          HELM_TEMPLATE_ARGS=()
+          VALUES_FILES='${{ inputs.helm-values-files }}'
+          if [ "$VALUES_FILES" != "[]" ] && [ -n "$VALUES_FILES" ]; then
+            for vf in $(echo "$VALUES_FILES" | jq -r '.[]'); do
+              if [ -f "$vf" ]; then
+                HELM_TEMPLATE_ARGS+=("-f" "$vf")
+              fi
+            done
+          fi
+          helm template "${{ matrix.chart }}" "${HELM_TEMPLATE_ARGS[@]}" \
+            | kubeconform \
+                -kubernetes-version "${{ matrix.k8s }}" \
+                -summary \
+                -strict \
+                -ignore-missing-schemas \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                -
