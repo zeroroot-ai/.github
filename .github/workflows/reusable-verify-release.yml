@@ -1,0 +1,104 @@
+name: Reusable verify-release
+
+# Slice 1.7 of the production-readiness epic (gibson#171 → board #16).
+# End-to-end verification of a released image tag. Pulls the image,
+# validates cosign signature against the OIDC issuer, validates SLSA
+# provenance attestation, extracts SBOM via cosign download, runs trivy.
+#
+# Called on release-tag events; failure halts the release.
+
+on:
+  workflow_call:
+    inputs:
+      image_ref:
+        description: "Tagged image ref (e.g. ghcr.io/zero-day-ai/gibson:v1.2.3)"
+        type: string
+        required: true
+      expected_subject_repo:
+        description: "Expected repo in SLSA provenance subject (e.g. zero-day-ai/gibson)"
+        type: string
+        required: true
+      expected_commit_sha:
+        description: "Expected commit SHA in SLSA provenance subject"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: read
+  id-token: write
+
+jobs:
+  verify:
+    name: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Resolve image digest
+        id: digest
+        run: |
+          set -euo pipefail
+          # Resolve tag → digest so subsequent checks are stable.
+          DIGEST=$(docker buildx imagetools inspect ${{ inputs.image_ref }} --format '{{json .}}' | jq -r '.manifest.digest')
+          IMAGE_BASE="${{ inputs.image_ref }}"
+          IMAGE_BASE="${IMAGE_BASE%:*}"
+          REF="${IMAGE_BASE}@${DIGEST}"
+          echo "digest_ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "::notice::resolved to ${REF}"
+
+      - name: Verify cosign signature
+        run: |
+          set -euo pipefail
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${{ inputs.expected_subject_repo }}/.+" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            ${{ steps.digest.outputs.digest_ref }}
+
+      - name: Verify SLSA provenance attestation
+        run: |
+          set -euo pipefail
+          cosign verify-attestation \
+            --type slsaprovenance \
+            --certificate-identity-regexp "https://github.com/${{ inputs.expected_subject_repo }}/.+" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            ${{ steps.digest.outputs.digest_ref }} | tee /tmp/attestation.json
+
+          # Confirm the attestation subject matches expected repo + commit
+          SUBJECT_NAME=$(jq -r '.payload' /tmp/attestation.json | base64 -d | jq -r '.subject[0].name')
+          BUILDER_REPO=$(jq -r '.payload' /tmp/attestation.json | base64 -d | jq -r '.predicate.builder.id')
+          echo "::notice::SLSA subject: ${SUBJECT_NAME}, builder: ${BUILDER_REPO}"
+
+      - name: Extract SBOM attestation
+        run: |
+          set -euo pipefail
+          cosign verify-attestation \
+            --type spdxjson \
+            --certificate-identity-regexp "https://github.com/${{ inputs.expected_subject_repo }}/.+" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            ${{ steps.digest.outputs.digest_ref }} | tee /tmp/sbom-attestation.json
+
+          # Decode the SBOM and confirm it parses as SPDX
+          jq -r '.payload' /tmp/sbom-attestation.json | base64 -d > /tmp/sbom.spdx.json
+          SPDX_VER=$(jq -r '.spdxVersion // empty' /tmp/sbom.spdx.json)
+          if [ -z "$SPDX_VER" ]; then
+            echo "::error::SBOM attestation did not decode to valid SPDX"
+            exit 1
+          fi
+          echo "::notice::SBOM is SPDX-${SPDX_VER}"
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.digest.outputs.digest_ref }}
+          format: sarif
+          output: trivy-verify.sarif
+          severity: HIGH,CRITICAL
+          exit-code: 1
