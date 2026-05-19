@@ -108,7 +108,10 @@ jobs:
       - name: Run yamllint
         run: |
           set -euo pipefail
-          # Walk every .yaml + .yml file. Exclude vendored / generated paths.
+          # Walk every .yaml + .yml file. Exclude vendored / generated paths
+          # AND helm chart template directories — those carry Go template
+          # syntax ({{ ... }}) that yamllint cannot parse before rendering.
+          # `helm lint` (next job) is the correct gate for chart templates.
           yamllint \
             -c "${{ steps.cfg.outputs.config }}" \
             --strict \
@@ -118,6 +121,9 @@ jobs:
                 -not -path "./.worktrees/*" \
                 -not -path "./.git/*" \
                 -not -path "*/testdata/*" \
+                -not -path "*/helm/*/templates/*" \
+                -not -path "*/helm/*/charts/*" \
+                -not -path "*/charts/*/templates/*" \
                 | sort)
 
   helm-lint:
