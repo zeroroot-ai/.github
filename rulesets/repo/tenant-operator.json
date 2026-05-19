@@ -31,6 +31,9 @@
           },
           {
             "context": "architectural-doc-coverage"
+          },
+          {
+            "context": "vault-auth-method-deny-list"
           }
         ]
       }

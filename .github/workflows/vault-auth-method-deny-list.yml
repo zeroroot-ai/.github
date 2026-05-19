@@ -36,6 +36,10 @@ on:
         type: string
         required: false
         default: main
+    secrets:
+      DOCS_REPO_READ_TOKEN:
+        description: "PAT/App token with contents:read on zero-day-ai/docs. Required because the docs repo is private."
+        required: false
 
 permissions:
   contents: read
@@ -64,6 +68,11 @@ jobs:
           repository: zero-day-ai/docs
           path: docs-repo
           ref: ${{ inputs.docs-ref }}
+          # zero-day-ai/docs is private; the default GITHUB_TOKEN cannot
+          # read other repos in the org, so callers MUST provide
+          # DOCS_REPO_READ_TOKEN. Same convention as the
+          # architectural-doc-coverage reusable workflow.
+          token: ${{ secrets.DOCS_REPO_READ_TOKEN || github.token }}
 
       - name: Run ADR-0009 deny-list selftest
         # Selftest synthesises one file per deny-list token and asserts
