@@ -1,0 +1,90 @@
+# Shared golangci-lint v2 baseline for every Go repo in the workspace.
+# Slice 2.1 of the production-readiness epic (gibson#172 → board #16).
+#
+# Per-repo `.golangci.yml` extends this via:
+#
+#     # In repo-local .golangci.yml:
+#     include:
+#       - https://raw.githubusercontent.com/zero-day-ai/.github/main/templates/golangci-base.yml
+#
+# Or vendored (preferred): copy this file to repo-local
+# `.github/golangci-base.yml` and reference via local include.
+#
+# Per-repo files declare only repo-specific exclusions; the linter set
+# itself lives here.
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # --- existing 6 (gibson + tenant-operator already use these) ---
+    - staticcheck
+    - govet
+    - errcheck
+    - ineffassign
+    - unused
+    - exhaustive
+
+    # --- security ---
+    - gosec
+
+    # --- error handling ---
+    - errorlint
+    - wrapcheck
+    - nilerr
+
+    # --- context propagation ---
+    - contextcheck
+    - fatcontext
+
+    # --- boundary enforcement ---
+    - depguard
+
+    # --- style + idiom ---
+    - gocritic
+    - revive
+    - gocyclo
+    - prealloc
+    - dupl
+    - copyloopvar
+    - gocheckcompilerdirectives
+    - intrange
+    - mirror
+    - perfsprint
+    - sloglint
+    - testifylint
+    - thelper
+    - usestdlibvars
+    - whitespace
+
+  settings:
+    staticcheck:
+      checks: ["all"]
+    gosec:
+      severity: medium
+    exhaustive:
+      default-signifies-exhaustive: false
+      check: [switch]
+    gocyclo:
+      min-complexity: 20
+    dupl:
+      threshold: 150
+    gocritic:
+      enabled-tags: [diagnostic, performance, style]
+      disabled-checks: [hugeParam, rangeValCopy] # noise-heavy on small structs
+
+  exclusions:
+    # Generated code is exempt from every linter — we don't author it.
+    paths:
+      - ".*\\.pb\\.go$"
+      - ".*_grpc\\.pb\\.go$"
+      - "zz_generated.*\\.go$"
+      - "api/gen/.*"
+    # Per-rule exclusions go here, NOT in repo-local files. New
+    # exclusions require a tracked issue per ADR-0013.
+    rules: []
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
