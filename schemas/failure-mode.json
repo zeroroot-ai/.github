@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zero-day-ai/.github/schemas/failure-mode.json",
+  "title": "Failure-mode manifest",
+  "description": "Schema for per-gate failure-mode.yaml files. Slice 6.5 of the production-readiness epic (gibson#176).",
+  "type": "object",
+  "required": ["id", "gate", "symptom", "diagnostic_command", "fix_command", "verify_command"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable identifier, kebab-case",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "gate": {
+      "type": "string",
+      "description": "Name of the gate this failure-mode documents (e.g. 'no_graceful_nil', 'gosec', 'codeql/tenant-id-taint')"
+    },
+    "symptom": {
+      "type": "string",
+      "description": "The wrong-state signal an agent or operator sees (CI annotation, error message)"
+    },
+    "diagnostic_command": {
+      "type": "string",
+      "description": "Shell command to investigate (run-locally-safe)"
+    },
+    "fix_command": {
+      "type": "string",
+      "description": "Shell command (or 'edit X then Y') that fixes the failure"
+    },
+    "verify_command": {
+      "type": "string",
+      "description": "Shell command that confirms the fix landed (typically re-run the gate)"
+    },
+    "runbook_link": {
+      "type": "string",
+      "description": "Optional URL to a runbook with deeper detail",
+      "format": "uri"
+    },
+    "adr_links": {
+      "type": "array",
+      "description": "Related ADR numbers (e.g. [3, 13])",
+      "items": { "type": "integer" }
+    }
+  },
+  "additionalProperties": false
+}
