@@ -1,0 +1,102 @@
+name: Reusable test
+
+# Shared CI test workflow for every repo. Slice 5.1 of the
+# production-readiness epic (gibson#175 → board #16).
+#
+# Runs three sub-jobs in parallel:
+#
+#   - unit        — `make test` (fast, no external deps)
+#   - integration — `make test-integration` (testcontainers; gated on input)
+#   - e2e         — `make test-e2e` (full stack; gated on input)
+#
+# Caller per-repo .github/workflows/test.yml:
+#
+#     jobs:
+#       test:
+#         uses: zero-day-ai/.github/.github/workflows/reusable-test.yml@main
+#         with:
+#           run-integration: true
+#           run-e2e: false
+#
+# The Makefile contract (per slice 1.4) requires each repo to expose
+#   `test`, `test-integration`, `test-e2e` as Make targets. The reusable
+# workflow assumes those exist; the caller's `with:` inputs gate which
+# subset actually runs (some repos don't have e2e, etc.).
+
+on:
+  workflow_call:
+    inputs:
+      run-unit:
+        description: "Run `make test` (unit tests)"
+        type: boolean
+        required: false
+        default: true
+      run-integration:
+        description: "Run `make test-integration` (testcontainers)"
+        type: boolean
+        required: false
+        default: false
+      run-e2e:
+        description: "Run `make test-e2e` (full stack)"
+        type: boolean
+        required: false
+        default: false
+      go-version-file:
+        description: "Path to go.mod for setup-go (Go repos)"
+        type: string
+        required: false
+        default: "go.mod"
+      runs-on:
+        description: "Runner to use"
+        type: string
+        required: false
+        default: "ubuntu-latest"
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: unit
+    if: ${{ inputs.run-unit }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        if: ${{ hashFiles(inputs.go-version-file) != '' }}
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: true
+      - name: make test
+        run: make test
+
+  integration:
+    name: integration
+    if: ${{ inputs.run-integration }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        if: ${{ hashFiles(inputs.go-version-file) != '' }}
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: true
+      - name: make test-integration
+        run: make test-integration
+
+  e2e:
+    name: e2e
+    if: ${{ inputs.run-e2e }}
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        if: ${{ hashFiles(inputs.go-version-file) != '' }}
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: true
+      - name: make test-e2e
+        run: make test-e2e
