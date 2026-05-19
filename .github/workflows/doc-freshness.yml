@@ -1,0 +1,139 @@
+name: doc-freshness
+
+# Slice 6.8 of the production-readiness epic (gibson#176 → board #16).
+# Runs four checks against any PR (or via cron) that gate documentation
+# references and link health:
+#
+#   - // adr: N comments resolve to an existing file in docs/adr/
+#   - // trap: T<NNNN> comments resolve to an entry in docs/agents/traps.md
+#   - Workspace CLAUDE.md does not reference removed/renamed files
+#   - Markdown links via lychee (covers all .md across called repo)
+
+on:
+  pull_request:
+  workflow_call:
+    inputs:
+      lychee-fail-on:
+        type: string
+        required: false
+        default: "404,410,500,502,503,504"
+
+permissions:
+  contents: read
+
+jobs:
+  adr-trap-references:
+    name: adr + trap reference resolution
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch docs repo's ADR + traps catalog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/refs
+          # Pull docs/adr/ file names
+          gh api /repos/zero-day-ai/docs/contents/adr --paginate --jq '.[] | select(.name | startswith("0") and endswith(".md")) | .name' \
+            | sed -E 's/^0*([0-9]+).*/\1/' | sort -u > /tmp/refs/adrs.txt
+          # Pull docs/agents/traps.md to find trap IDs
+          gh api /repos/zero-day-ai/docs/contents/agents/traps.md --jq '.content' | base64 -d \
+            | grep -oE 'T[0-9]{4}' | sort -u > /tmp/refs/traps.txt
+          echo "ADRs: $(wc -l < /tmp/refs/adrs.txt)"
+          echo "Traps: $(wc -l < /tmp/refs/traps.txt)"
+
+      - name: "Resolve adr-comment references"
+        run: |
+          set -uo pipefail
+          BAD=0
+          # Scan Go + TS files for `// adr: N` references
+          while IFS= read -r LINE; do
+            FILE=$(echo "$LINE" | cut -d: -f1)
+            NUM=$(echo "$LINE" | grep -oE 'adr:[[:space:]]*[0-9]+' | grep -oE '[0-9]+')
+            if [ -n "$NUM" ] && ! grep -qFx "$NUM" /tmp/refs/adrs.txt; then
+              echo "::error file=$FILE::// adr: $NUM does not resolve to docs/adr/"
+              BAD=1
+            fi
+          done < <(grep -rE '// adr:[[:space:]]*[0-9]+' \
+                     --include='*.go' --include='*.ts' --include='*.tsx' \
+                     --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=.worktrees \
+                     2>/dev/null || true)
+          if [ "$BAD" = "0" ]; then
+            echo "::notice::all // adr: N references resolve"
+          fi
+          exit $BAD
+
+      - name: "Resolve trap-comment references"
+        run: |
+          set -uo pipefail
+          BAD=0
+          while IFS= read -r LINE; do
+            FILE=$(echo "$LINE" | cut -d: -f1)
+            ID=$(echo "$LINE" | grep -oE 'T[0-9]{4}')
+            if [ -n "$ID" ] && ! grep -qFx "$ID" /tmp/refs/traps.txt; then
+              echo "::error file=$FILE::// trap: $ID does not resolve to docs/agents/traps.md"
+              BAD=1
+            fi
+          done < <(grep -rE '// trap:[[:space:]]*T[0-9]{4}' \
+                     --include='*.go' --include='*.ts' --include='*.tsx' \
+                     --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=.worktrees \
+                     2>/dev/null || true)
+          if [ "$BAD" = "0" ]; then
+            echo "::notice::all // trap: T<NNNN> references resolve"
+          fi
+          exit $BAD
+
+  lychee:
+    name: broken-link check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --max-concurrency 8
+            --accept ${{ inputs.lychee-fail-on || '404,410,500,502,503,504' }}
+            --exclude-loopback
+            --exclude '^mailto:'
+            --exclude '^localhost'
+            --exclude 'example\.(com|org)'
+            './**/*.md'
+          fail: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  claude-md-drift:
+    name: CLAUDE.md drift (stale paths)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect stale file/workflow refs in CLAUDE.md
+        run: |
+          set -uo pipefail
+          # CLAUDE.md / AGENTS.md may reference repo-relative paths.
+          # Quick check: every path-shaped string (e.g. internal/foo, .github/workflows/X.yml)
+          # mentioned in CLAUDE.md must exist OR be a known external URL.
+          for FILE in CLAUDE.md AGENTS.md; do
+            [ -f "$FILE" ] || continue
+            BAD=0
+            while IFS= read -r REF; do
+              # Strip the surrounding markdown syntax
+              REF=$(echo "$REF" | grep -oE '[a-zA-Z][a-zA-Z0-9/_.-]+/[a-zA-Z0-9/_.-]+' | head -1)
+              [ -z "$REF" ] && continue
+              # Skip URLs + skip globs + skip code-fence words
+              echo "$REF" | grep -qE '^(https?:|github\.com|orgs/)' && continue
+              # Skip if it's a 'package/name' fragment that doesn't look like a path
+              echo "$REF" | grep -qE '\.(go|ts|tsx|yml|yaml|md|json|sh|toml)$|/$' || continue
+              if [ ! -e "$REF" ]; then
+                echo "::warning file=$FILE::stale-looking path reference: $REF"
+                # Warning, not error: many references are workspace-relative
+                # or canonical (the workspace root is not a git repo) — too
+                # noisy to fail on. The signal here is human-review-grade.
+              fi
+            done < <(grep -oE '\`[^\`]+\`' "$FILE" 2>/dev/null)
+          done
