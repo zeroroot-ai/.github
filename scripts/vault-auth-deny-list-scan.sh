@@ -147,6 +147,7 @@ scan_repo() {
       --exclude=yarn.lock \
       --exclude='*.lock' \
       --exclude='0009-jwt-spiffe-everywhere.md' \
+      --exclude='adr-0009-deny-list.md' \
       --exclude='.vault-auth-deny-list-allowlist.json' \
       --exclude='vault-auth-method-deny-list.yml' \
       --exclude='adr-0009-deny-list.yml' \
