@@ -1,0 +1,93 @@
+name: Reusable Go check
+
+# Shared CI workflow for every Go repo in the workspace. Slice 1.3 of
+# the production-readiness epic (gibson#171 → board #16).
+#
+# Runs in this order:
+#   1. setup-go (cached)
+#   2. go mod tidy + diff (catches uncommitted go.mod/go.sum drift)
+#   3. go vet
+#   4. golangci-lint (per-repo `.golangci.yml`; shared base via slice 2.1)
+#   5. go test -race
+#   6. govulncheck (CVE-database lookup, fail on medium+)
+#
+# Called via:
+#   uses: zero-day-ai/.github/.github/workflows/reusable-go-check.yml@main
+#
+# govulncheck is the SECURITY surface — every Go repo runs it here.
+# Local invocation is forbidden per workspace CLAUDE.md (CPU thrash);
+# CI is the canonical place.
+
+on:
+  workflow_call:
+    inputs:
+      go-mod-path:
+        description: "Path to go.mod (default: repo root)"
+        type: string
+        required: false
+        default: ""
+      golangci-config:
+        description: "Path to .golangci.yml (default: auto-discover)"
+        type: string
+        required: false
+        default: ""
+      skip-lint:
+        description: "Skip golangci-lint step (use when repo not yet on slice 2.1 baseline)"
+        type: boolean
+        required: false
+        default: false
+      vuln-severity:
+        description: "Minimum severity to fail govulncheck"
+        type: string
+        required: false
+        default: "MEDIUM"
+
+permissions:
+  contents: read
+
+jobs:
+  go-check:
+    name: go-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}
+          cache: true
+
+      - name: go mod tidy + drift check
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go mod tidy
+          git diff --exit-code go.mod
+          # go.sum is only present when there are non-stdlib deps.
+          test ! -f go.sum || git diff --exit-code go.sum
+
+      - name: go vet
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go vet ./...
+
+      - name: golangci-lint
+        if: ${{ ! inputs.skip-lint }}
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.0.2
+          working-directory: ${{ inputs.go-mod-path }}
+          args: --timeout=10m
+
+      - name: go test (race)
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go test -race ./...
+
+      - name: govulncheck
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
