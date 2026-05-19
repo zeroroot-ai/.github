@@ -189,6 +189,14 @@ jobs:
       - name: helm template + kubeconform ${{ matrix.chart }} on k8s ${{ matrix.k8s }}
         run: |
           set -euo pipefail
+          # Library charts can't be rendered via `helm template` — skip them
+          # cleanly (helm-lint still covers their correctness in the prior
+          # job). Detect via `type: library` in Chart.yaml.
+          if [ -f "${{ matrix.chart }}/Chart.yaml" ] && \
+             grep -qE '^type:[[:space:]]*library' "${{ matrix.chart }}/Chart.yaml"; then
+            echo "::notice::${{ matrix.chart }} is a library chart — skipping helm template + kubeconform (helm-lint job already covered it)"
+            exit 0
+          fi
           if [ -f "${{ matrix.chart }}/Chart.yaml" ] && \
              grep -q '^dependencies:' "${{ matrix.chart }}/Chart.yaml"; then
             helm dependency update "${{ matrix.chart }}"
