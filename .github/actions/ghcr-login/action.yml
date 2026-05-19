@@ -1,0 +1,83 @@
+# Composite action: log in to ghcr.io with retry-on-failure.
+#
+# Closes the gap left by docker/login-action@v3, which has no native
+# retry. Spurious `context deadline exceeded` errors hitting
+# https://ghcr.io/v2/ used to fail entire image-build runs across the
+# polyrepo; the only "fix" available was to manually re-run the workflow.
+# This action wraps the underlying `docker login ghcr.io` shell call in
+# nick-fields/retry@v3 with exponential backoff so transient GHCR blips
+# resolve themselves inside the same run.
+#
+# Tracked at: zero-day-ai/.github#69
+#
+# Used by per-repo workflows via:
+#   - uses: zero-day-ai/.github/.github/actions/ghcr-login@main
+#     with:
+#       password: ${{ secrets.GITHUB_TOKEN }}
+#
+# Optional inputs:
+#   - username (default: ${{ github.actor }})
+#   - max-attempts (default: 3)
+#   - retry-wait-seconds (default: 10)
+#   - timeout-minutes (default: 2)
+#
+# Design notes:
+#
+# 1) The retry-wrapped command is the explicit `docker login ghcr.io
+#    --username <user> --password-stdin` form, not `echo $TOKEN | docker
+#    login`. Password is fed via stdin so it never lands in `ps`,
+#    environment dumps, or step logs even with debug logging on.
+#
+# 2) The whole step is gated behind nick-fields/retry@v3 (a well-known
+#    marketplace action; the same wrapper pattern is used by docker/docker
+#    and ghcr docs for resiliency). The action itself has no network
+#    surface beyond invoking the inner shell.
+#
+# 3) Exponential backoff is enabled (`retry_wait_seconds * attempt`) so
+#    the second attempt waits 10s, the third 20s. Total worst-case wall
+#    time per step: 3 * timeout-minutes + retry-wait-seconds + 2 * retry-wait-seconds
+#    = 3 * 2m + 30s = ~6m30s. In practice, transient GHCR blips clear
+#    inside a single 10-30s window, so almost all runs see no perceptible
+#    delay vs. the bare docker/login-action@v3 path.
+
+name: ghcr-login
+description: Log in to ghcr.io with retry-on-failure (wraps docker login in nick-fields/retry@v3).
+
+inputs:
+  username:
+    description: GHCR username. Defaults to the actor that triggered the workflow.
+    required: false
+    default: ${{ github.actor }}
+  password:
+    description: GHCR password or token (typically secrets.GITHUB_TOKEN). Required.
+    required: true
+  max-attempts:
+    description: How many times to retry the login before failing the step.
+    required: false
+    default: "3"
+  retry-wait-seconds:
+    description: Base seconds to wait between attempts (multiplied by attempt number for exponential backoff).
+    required: false
+    default: "10"
+  timeout-minutes:
+    description: Per-attempt timeout in minutes.
+    required: false
+    default: "2"
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to ghcr.io (with retry)
+      uses: nick-fields/retry@v3
+      env:
+        GHCR_USERNAME: ${{ inputs.username }}
+        GHCR_PASSWORD: ${{ inputs.password }}
+      with:
+        max_attempts: ${{ inputs.max-attempts }}
+        retry_wait_seconds: ${{ inputs.retry-wait-seconds }}
+        timeout_minutes: ${{ inputs.timeout-minutes }}
+        retry_on: error
+        command: |
+          printf '%s' "$GHCR_PASSWORD" | docker login ghcr.io \
+            --username "$GHCR_USERNAME" \
+            --password-stdin
