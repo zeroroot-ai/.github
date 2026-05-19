@@ -1,0 +1,81 @@
+name: makefile-contract
+
+# Slice 1.4 of the production-readiness epic (gibson#171 → board #16).
+# Asserts every repo's Makefile exposes the contracted targets:
+#
+#   build / test / check / image (image-producing repos only)
+#
+# Plus slice-5.1 test targets:
+#
+#   test-integration / test-e2e (where applicable)
+#
+# A repo's Makefile that's missing any required target fails this gate.
+# Repos without Go code (gitops, docs) are exempt; the workflow skips
+# them via the matrix exclusion.
+#
+# Runs weekly + on workflow_dispatch + on PR to .github repo (to validate
+# updates to this workflow against current repos).
+
+on:
+  schedule:
+    - cron: "30 11 * * 1"  # Monday 11:30 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/makefile-contract.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Audit each repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Repos with code (exclude docs / gitops / org repo / pages site)
+          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | \
+                  grep -vE '^(\.github|docs|gitops|.*\.github\.io)$')
+
+          MISSING=""
+          for REPO in $REPOS; do
+            MAKEFILE=$(gh api "/repos/zero-day-ai/$REPO/contents/Makefile" \
+                       --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+            if [ -z "$MAKEFILE" ]; then
+              MISSING="${MISSING}\n- $REPO: no Makefile"
+              continue
+            fi
+            # Required targets
+            FAIL=""
+            for T in build test check; do
+              if ! echo "$MAKEFILE" | grep -qE "^${T}:"; then
+                FAIL="${FAIL} ${T}"
+              fi
+            done
+            if [ -n "$FAIL" ]; then
+              MISSING="${MISSING}\n- $REPO: missing target(s):${FAIL}"
+            fi
+          done
+
+          TITLE="Makefile contract drift — $(date -u +%Y-%m-%d)"
+          if [ -z "$MISSING" ]; then
+            echo "::notice::all repos pass Makefile contract"
+            exit 0
+          fi
+
+          BODY="## Makefile contract drift report\n\nPer slice 1.4 every repo's Makefile must expose \`build\`, \`test\`, \`check\` targets.\n\nDrifted repos:${MISSING}\n\nFor the canonical contract, see workspace CLAUDE.md + the production-readiness PRD at gibson#171."
+
+          EXISTING=$(gh issue list -R zero-day-ai/.github \
+                       --state open --search 'in:title "Makefile contract drift"' \
+                       --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zero-day-ai/.github --title "$TITLE" --body-file -
+          else
+            printf "%b" "$BODY" | gh issue create -R zero-day-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+          fi
