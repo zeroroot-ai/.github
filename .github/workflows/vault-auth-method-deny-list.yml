@@ -9,10 +9,14 @@
 # Source of truth for the deny-list:
 #   https://github.com/zero-day-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md
 #
-# The list is NOT hardcoded in this workflow. The job checks out the
-# docs repo at run time and parses the ADR's deny-list table directly.
-# Adding a new entry to the ADR's table automatically propagates to
-# every consumer repo's next CI run — no workflow edits required.
+# Parse-stable vendored snapshot in this repo:
+#   data/adr-0009-deny-list.md
+#
+# The workflow reads the deny-list from the vendored snapshot (not the
+# docs repo directly), because zero-day-ai/docs is private and not every
+# consumer repo has DOCS_REPO_READ_TOKEN. The vendored file is kept in
+# lockstep with the ADR via the sync contract documented at the top of
+# `data/adr-0009-deny-list.md`.
 #
 # Called by per-repo workflows via:
 #   uses: zero-day-ai/.github/.github/workflows/vault-auth-method-deny-list.yml@main
@@ -30,16 +34,6 @@ name: vault-auth-method-deny-list
 
 on:
   workflow_call:
-    inputs:
-      docs-ref:
-        description: "Ref of zero-day-ai/docs to read the ADR from. Defaults to main."
-        type: string
-        required: false
-        default: main
-    secrets:
-      DOCS_REPO_READ_TOKEN:
-        description: "PAT/App token with contents:read on zero-day-ai/docs. Required because the docs repo is private."
-        required: false
 
 permissions:
   contents: read
@@ -55,38 +49,26 @@ jobs:
         with:
           path: caller
 
-      - name: Checkout zero-day-ai/.github (for the scanner script)
+      - name: Checkout zero-day-ai/.github (for the scanner + vendored deny-list)
         uses: actions/checkout@v4
         with:
           repository: zero-day-ai/.github
           path: org-github
           ref: main
 
-      - name: Checkout zero-day-ai/docs (for ADR-0009)
-        uses: actions/checkout@v4
-        with:
-          repository: zero-day-ai/docs
-          path: docs-repo
-          ref: ${{ inputs.docs-ref }}
-          # zero-day-ai/docs is private; the default GITHUB_TOKEN cannot
-          # read other repos in the org, so callers MUST provide
-          # DOCS_REPO_READ_TOKEN. Same convention as the
-          # architectural-doc-coverage reusable workflow.
-          token: ${{ secrets.DOCS_REPO_READ_TOKEN || github.token }}
-
       - name: Run ADR-0009 deny-list selftest
         # Selftest synthesises one file per deny-list token and asserts
         # the scanner catches each one. Guards against a regex regression
-        # in the scanner itself (the deny-list comes from the ADR, but the
-        # scanning logic is in the bash script).
+        # in the scanner itself (the deny-list comes from the vendored
+        # snapshot, but the scanning logic is in the bash script).
         run: |
           chmod +x org-github/scripts/vault-auth-deny-list-scan.sh
-          ADR_PATH="$GITHUB_WORKSPACE/docs-repo/adr/0009-jwt-spiffe-everywhere.md" \
+          ADR_PATH="$GITHUB_WORKSPACE/org-github/data/adr-0009-deny-list.md" \
             org-github/scripts/vault-auth-deny-list-scan.sh --selftest
 
       - name: Scan calling repo for ADR-0009 deny-list violations
         run: |
-          ADR_PATH="$GITHUB_WORKSPACE/docs-repo/adr/0009-jwt-spiffe-everywhere.md" \
+          ADR_PATH="$GITHUB_WORKSPACE/org-github/data/adr-0009-deny-list.md" \
           REPO_ROOT="$GITHUB_WORKSPACE/caller" \
           ALLOWLIST="$GITHUB_WORKSPACE/caller/.github/.vault-auth-deny-list-allowlist.json" \
             org-github/scripts/vault-auth-deny-list-scan.sh scan
