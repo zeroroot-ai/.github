@@ -1,0 +1,53 @@
+name: per-repo-claude-md-drift
+
+# Weekly check: every repo in the org has either CLAUDE.md or AGENTS.md
+# at the root. Posts a tracked issue listing missing repos.
+#
+# Slice 6.3 of the production-readiness epic (gibson#176 → board #16).
+
+on:
+  schedule:
+    - cron: "0 11 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: claude-md-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Scan org for missing per-repo CLAUDE.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
+          MISSING=""
+          for REPO in $REPOS; do
+            HAS_CLAUDE=$(gh api "/repos/zero-day-ai/$REPO/contents/CLAUDE.md" --silent 2>/dev/null && echo "yes" || echo "no")
+            HAS_AGENTS=$(gh api "/repos/zero-day-ai/$REPO/contents/AGENTS.md" --silent 2>/dev/null && echo "yes" || echo "no")
+            if [ "$HAS_CLAUDE" = "no" ] && [ "$HAS_AGENTS" = "no" ]; then
+              MISSING="$MISSING\n- $REPO"
+            fi
+          done
+
+          TITLE="Per-repo CLAUDE.md drift — $(date -u +%Y-%m-%d)"
+          if [ -z "$MISSING" ]; then
+            echo "::notice::all repos have CLAUDE.md or AGENTS.md"
+            exit 0
+          fi
+
+          BODY="## Per-repo CLAUDE.md drift report\n\nThe following repos lack BOTH CLAUDE.md and AGENTS.md at the root:\n${MISSING}\n\nPer slice 6.3, every repo must have one. Template at https://github.com/zero-day-ai/.github/blob/main/templates/repo-CLAUDE.md"
+
+          EXISTING=$(gh issue list -R zero-day-ai/.github \
+                       --state open --search 'in:title "Per-repo CLAUDE.md drift"' \
+                       --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zero-day-ai/.github --title "$TITLE" --body-file -
+          else
+            printf "%b" "$BODY" | gh issue create -R zero-day-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+          fi
