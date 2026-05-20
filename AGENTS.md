@@ -8,7 +8,15 @@ override only when explicitly noted.
 ## tl;dr (for agents skimming)
 
 1. **Never push to `main`.** Branch, open a PR, wait for CI.
-2. **Conventional Commits everywhere.** PR title is the squash-merge subject and
+2. **Every user-reported issue starts with a tracker search — open AND closed.**
+   Before reading code, sketching a fix, or filing a new issue, search the
+   relevant repo(s) across both states for matching text. Three outcomes
+   gate the next step: (a) open issue matches → link it, continue from its
+   diagnosis; (b) closed issue matches but the user's new evidence shows
+   it's still broken → `gh issue reopen <n> --comment "<new evidence>"`,
+   continue from there; (c) no match → file via `/to-issues`. Never start
+   fresh work on something a prior agent already filed. Detail in §1.
+3. **Conventional Commits everywhere.** PR title is the squash-merge subject and
    drives release-please. Malformed title → `pr-title-lint` fails → no merge.
 3. **Three branch patterns:** `epic/<id>-<slug>`, `feat/<short>`, `fix/<short>`.
 4. **Cross-repo work goes on a Project board** named `Epic: <id>`. Find or create
@@ -33,6 +41,52 @@ override only when explicitly noted.
 ---
 
 ## 1. Before you start
+
+### 1a. If the user is reporting a bug or asking for a fix — search the tracker first
+
+This step gates everything below. When the user describes a defect,
+regression, infra gap, broken flow, missing feature, or framing like "X
+doesn't work" / "fix Y" / "why is Z failing", BEFORE you read code,
+sketch a fix, dispatch a subagent, or file a new issue, run a tracker
+search across **both open AND closed** issues.
+
+```bash
+# Repo-scoped (most common — pick the repo the symptom most likely lives in):
+gh issue list -R zero-day-ai/<repo> --state all --search "<keywords>" --limit 25
+
+# Cross-repo (use when the symptom could span repos — auth chain, signup
+# flow, gitops sync, ESO behaviour, etc.):
+gh search issues "org:zero-day-ai <keywords>" --state all --limit 25
+```
+
+Choose keywords from the user's own phrasing first, then add error
+message strings, resource names, and file paths. `gh search` hits
+title+body but not comments, so vary terms across runs.
+
+Three outcomes drive what happens next:
+
+1. **An open issue matches.** Link it in your reply, continue from THAT
+   issue's existing diagnosis, prior comments, and any linked PRs.
+   Don't re-discover what's already documented.
+2. **A closed issue matches but the user's new evidence shows it's
+   actually still broken.** This is the most common driver of repeat
+   reports — closed-in-error is real.
+   ```bash
+   gh issue reopen <n> --comment "Repro 2026-MM-DD: <command>; got <new evidence>"
+   ```
+   Link the reopened issue, work from there.
+3. **No match.** File via the `/to-issues` skill (see §6 wording for the
+   shape), link the new issue in the reply, then begin work.
+
+Never start fresh code work on something a prior agent already filed:
+duplicate state, lost diagnosis, risk of re-landing a fix that didn't
+actually work.
+
+This rule does NOT apply to pure questions ("how does X work"),
+navigation ("show me Y"), or one-shot commands ("run Z") — only to
+anything that looks like a defect or feature request.
+
+### 1b. What else is in flight?
 
 Run, in this order:
 
