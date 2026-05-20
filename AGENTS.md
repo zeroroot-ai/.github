@@ -37,6 +37,14 @@ override only when explicitly noted.
    Every dependency is required at chart render, at process boot, and at runtime.
    No `.enabled: false` toggles, graceful-nil branches, silent env fallbacks,
    `failurePolicy: Ignore`, or `--dev-mode` flags. CI enforces (see §10).
+10. **Two-surface platform contract** (§11). `opensource/sdk` is the
+    customer-facing API client and ships zero admin RPCs and zero infra
+    deps. Every internal proto lives in `enterprise/platform/platform-sdk`;
+    every shared Go primitive (transport, secrets, readiness, pools,
+    observability, authz wrapper) lives in
+    `enterprise/platform/platform-clients`. Cross-module proto sharing
+    goes through BSR — never vendored `.proto`, never M-mapped
+    `go_package`.
 
 ---
 
@@ -92,8 +100,9 @@ Run, in this order:
 
 ```bash
 # What's already in flight under your name?
-for repo in gibson sdk ext-authz dashboard tenant-operator deploy gitops \
-            debug-plugin setec adk gibson-tool-runner spiffe-jwks-exporter; do
+for repo in gibson sdk platform-sdk platform-clients ext-authz dashboard \
+            tenant-operator platform-operator deploy gitops debug-plugin \
+            setec adk gibson-tool-runner spiffe-jwks-exporter; do
   gh pr list -R zero-day-ai/$repo --state open \
     --search "author:@me OR assignee:@me" --json number,title,headRefName
 done
@@ -357,9 +366,29 @@ git branch -D <merged-branch>
 The Project board's "PR merged → Done" automation flips the item state.
 **Do not** edit the board manually.
 
-For `core/sdk` merges, the SDK fan-out workflow opens 6 consumer-bump PRs
-(one per Go consumer) within ~5 minutes of the SDK tag being cut. Wait for
-those PRs to appear before starting downstream work in those consumers.
+Three independent fan-outs run after release-please tags one of the
+foundation modules. Each is a separate workflow firing on its own repo's
+`v*` tag; the consumer set differs:
+
+- **`opensource/sdk` tag** (customer-facing client SDK) → fans out to the
+  Go consumers that still depend on the public SDK: `gibson`, `adk` CLI,
+  `gibson-tool-runner`, `debug-plugin`, plus any external example repos.
+  PRs auto-merge if their CI passes. See §9 for the topology.
+- **`enterprise/platform/platform-sdk` tag** (internal protos: admin,
+  platform-operator, tenant-admin, budget, usage, authz, discovery,
+  DaemonAdminService) → fans out to internal consumers: `gibson`,
+  `ext-authz`, `tenant-operator`, `platform-operator`,
+  `spiffe-jwks-exporter`, `dashboard` (TypeScript regen).
+- **`enterprise/platform/platform-clients` tag** (shared Go library:
+  transport / secrets / readiness / pools / observability / authz) →
+  fans out to every internal Go service: `gibson`, `ext-authz`,
+  `tenant-operator`, `platform-operator`, `spiffe-jwks-exporter`,
+  `gibson-tool-runner`.
+
+Wait for the relevant fan-out PRs to appear before starting downstream
+work in those consumers; landing both a fan-out PR and an unrelated
+feature branch on the same consumer in the same window causes avoidable
+rebase churn.
 
 ---
 
@@ -392,9 +421,25 @@ You do **not** cut releases by hand. release-please runs on every push to
 version + writes the CHANGELOG. When a human merges the release PR, the tag
 is created automatically and the per-repo image-build workflow fires.
 
-**SDK releases trigger the fan-out**: when a `core/sdk` tag is published, a
-workflow opens `chore(deps): bump sdk to vX.Y.Z` PRs in each of the 6 Go
-consumers. Those PRs auto-merge if their CI passes.
+**Three foundation modules each trigger their own fan-out** on tag-publish.
+The consumer sets are distinct; do not assume one fan-out's PR opening
+implies another will:
+
+| Foundation module | Repo | Fan-out workflow | Consumer set |
+|-------------------|------|------------------|--------------|
+| Customer-facing SDK | `opensource/sdk` | `sdk/.github/workflows/fan-out.yml` (GitHub App `zeroday-sdk-fanout`) | `gibson`, `adk`, `gibson-tool-runner`, `debug-plugin` (+ external examples) |
+| Internal protos | `enterprise/platform/platform-sdk` | `platform-sdk/.github/workflows/fan-out.yml` | `gibson`, `ext-authz`, `tenant-operator`, `platform-operator`, `spiffe-jwks-exporter`, `dashboard` (TS regen) |
+| Shared Go library | `enterprise/platform/platform-clients` | `platform-clients/.github/workflows/fan-out.yml` | `gibson`, `ext-authz`, `tenant-operator`, `platform-operator`, `spiffe-jwks-exporter`, `gibson-tool-runner` |
+
+Each fan-out opens `chore(deps): bump <module> to vX.Y.Z` PRs in its
+consumer set. Those PRs auto-merge if their CI passes. A summary issue is
+filed in the source module listing all outcomes.
+
+A change that touches both an internal proto AND a shared-library helper
+that wraps it should be sequenced: land the `platform-sdk` PR first, let
+fan-out land in `platform-clients`, then land the `platform-clients` PR
+that consumes the new proto. Reversing the order leaves the wrapper
+referring to a proto type that does not yet exist in any tagged module.
 
 If you need an out-of-band release (rare), open an issue first; do not hand-tag.
 
@@ -446,10 +491,37 @@ structural change that prevents repeat.
 - **No `--force-push` to main** (rejected by ruleset).
 - **No direct push to main** (rejected by ruleset).
 - **No `--no-gpg-sign`** (signed commits required by ruleset on production-tier repos).
-- **No agent self-merge of `feat:` / `feat!:` / `BREAKING CHANGE` PRs**, and no
-  agent self-merge on `sdk` / `deploy` / `gitops` regardless of scope (see §5).
 - **No rerunning a failed CI job without first posting a root-cause comment**
   on the `ci-failure` issue the triage workflow opened (see §6).
+- **No local proto includes — cross-module proto sharing goes through BSR.**
+  Proto reuse between any two of the three foundation modules (`opensource/sdk`,
+  `platform-sdk`, `platform-clients`) MUST go through BSR module deps:
+  `buf.build/zero-day-ai-platform/<module>` declared in `buf.yaml` `deps:`,
+  pinned by `buf.lock`. Never vendor `.proto` files (no `cp` of one module's
+  proto into another's tree). Never M-map `go_package` via
+  `buf.gen.yaml managed.override.file_option`. Never duplicate a proto type
+  across modules. If a shared type does not yet exist as a separate package,
+  extract it to its own package in the module that owns it and depend via
+  BSR. Reviewers should grep new PRs for vendored `.proto` files and M-map
+  overrides and reject if present.
+- **No admin / infra protos in `opensource/sdk`.** The customer-facing OSS
+  SDK is a stripe-go-like API client and ships only what 3rd-party
+  agent/tool/plugin authors and customer integrations need to call. Every
+  admin RPC, every secret-bearing message type, every platform-operator /
+  tenant-admin / authz-admin / discovery / DaemonAdminService proto lives
+  in `enterprise/platform/platform-sdk` and nowhere else. Reintroducing a
+  `gibson.admin.v1` / `gibson.usage.v1` / `gibson.authz.v1` /
+  `gibson.daemon.discovery.v1` / `gibson.platform.v1` / `gibson.tenant.v1`
+  directory under `opensource/sdk/api/proto/` is rejected by review.
+- **No infra-client deps in `opensource/sdk/go.mod`.** The CodeQL deny-list
+  query (in `zero-day-ai/codeql-go-queries`) fails CI when the OSS SDK's
+  module graph pulls Vault / OpenBao / AWS Secrets Manager / GCP Secret
+  Manager / Azure Key Vault / SPIFFE / Redis / Neo4j / OpenFGA admin /
+  pgx / any other first-party-internal infra client. Those clients live
+  in `platform-clients` and are consumed only by internal services.
+  Smoke check: `go mod why` from a clean SDK consumer returns nothing for
+  any of those modules. Adding such a dep on the SDK is a fundamental
+  category error; rewrite the work into platform-clients instead.
 - **One code path — see [ADR-0003](https://github.com/zero-day-ai/docs/blob/main/adr/0003-one-code-path.md).**
   Never re-introduce `.enabled: false` defaults, `| default ""` silent template
   fallbacks, `failurePolicy: Ignore` webhooks, `optional: true` env refs,
@@ -467,7 +539,71 @@ or `.gitmodules`.
 
 ---
 
-## 11. When in doubt
+## 11. Two-surface API contract and required CI checks per repo type
+
+The org's Go module graph is intentionally split across three foundation
+modules, each with a distinct audience and a distinct CI contract.
+Knowing which one you are editing decides which checks must be green
+before merge.
+
+### Two-surface model
+
+| Module | Repo | Audience | What lives here |
+|--------|------|----------|-----------------|
+| Customer-facing SDK | `opensource/sdk` | 3rd-party customers (agent / tool / plugin authors and integrations) | Authoring protos (agent/tool/plugin/component/harness v1) + customer-callable daemon RPCs (member-scoped `DaemonService`, graph, intelligence, identity `WhoAmI`). Customer-facing OAuth2 helper (`auth/oidc/`). Zero admin RPCs, zero infra deps. Released as a customer artifact, semver line independent. |
+| Internal protos | `enterprise/platform/platform-sdk` | Internal services (gibson, ext-authz, tenant-operator, platform-operator, spiffe-jwks-exporter, dashboard) | Every admin proto: `DaemonAdminService`, platform-operator service, tenant-admin, authz, usage, discovery, plus any RPC requiring `relation:"admin"` / `relation:"writer"`. Independent BSR module, independent semver. |
+| Shared Go library | `enterprise/platform/platform-clients` | Same internal services | Transport (ConnectRPC builders with full interceptor chain), secrets (broker with lease renewal + circuit breaker), readiness (probe aggregator + `/readyz`), pools (Neo4j/Redis/pgx with mandated overrides), observability (OTel + slog + correlation), authz (FGA wrapper + identity-header validation). Consumes `platform-sdk` types; never consumed by `opensource/sdk`. |
+
+Composability comes from narrow public interfaces, not a monorepo. A new
+internal service depends on both `platform-sdk` and `platform-clients` at
+pinned tags; a customer integration depends on `opensource/sdk` and
+nothing else.
+
+### Required CI checks per repo type
+
+The checks below are the ones specific to the platform-contract refactor.
+Per-repo rulesets layer additional repo-specific required checks on top
+(see `gh ruleset list --org zero-day-ai`).
+
+| Check | OSS SDK (`opensource/sdk`) | platform-sdk | platform-clients | Internal Go services |
+|-------|---------------------------|--------------|------------------|----------------------|
+| `buf breaking` against last published BSR tag (`WIRE_JSON`) | required | — | — | — |
+| `buf breaking` against last published BSR tag (`FILE`) | — | required | — | — |
+| Reproducible-build hash compare (two independent runners) | required | required | required | required |
+| CodeQL deny-list (no infra deps in `go.mod`) | required | — | — | — |
+| Cross-repo contract tests (round-trip one RPC per service against testcontainer FGA/Neo4j/Redis) | — | required | required | required |
+| Dependency-graph size smoke (under 30 transitive modules from an empty consumer) | required | — | — | — |
+
+The reusable workflows for all of these live in this org `.github` repo
+under `.github/workflows/` and are called from each consumer repo. Tool
+versions are pinned by full semver or SHA — never `latest`, never
+major-only — so workflow drift does not produce per-PR build differences.
+
+### Cross-link to ADRs
+
+The architectural decisions behind this contract are tracked in the
+`zero-day-ai/docs` ADR series:
+
+<!-- TODO: replace placeholders with the actual ADR numbers once
+zero-day-ai/.github#101 slice #27 lands the ADR PR on zero-day-ai/docs.
+The 5 ADRs are: two-surface contract; platform-clients mandate;
+wholesale-flip discipline; proto hygiene contract (protovalidate +
+idempotency_key + pagination + buf breaking); reproducible-CI mandate
+(pinned tools + CodeQL deny-list + cross-repo contract tests). -->
+
+- ADR-NNNN — Two-surface platform contract (OSS SDK vs platform-sdk vs platform-clients)
+- ADR-NNNN — `platform-clients` shared-library mandate for internal Go services
+- ADR-NNNN — Wholesale-flip discipline (no parallel codepaths, no compat shims)
+- ADR-NNNN — Proto hygiene contract (`protovalidate`, `idempotency_key`, pagination, `buf breaking`)
+- ADR-NNNN — Reproducible-CI mandate (pinned tool versions, CodeQL deny-list, contract tests, reproducible-build hash compare)
+
+If a memory-loaded session shows ADR numbers above as `NNNN`, that means
+the docs PR has not landed yet — follow up at `zero-day-ai/.github#117`
+and `zero-day-ai/.github#101`.
+
+---
+
+## 12. When in doubt
 
 - Read the per-repo `CLAUDE.md`. It overrides this file when explicitly noted.
 - Check `gh ruleset list --org zero-day-ai` to see what's actually enforced.
