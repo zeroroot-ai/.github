@@ -1,0 +1,240 @@
+name: Reusable Go reproducible build
+
+# Determinism contract
+# ====================
+# Every Go binary released from this org must be byte-identical regardless
+# of when or where it is built (given the same source tree + toolchain).
+# This workflow enforces that contract by building each binary TWICE on
+# independent GitHub-hosted runners and asserting that sha256sum produces
+# identical digests for both artifacts.
+#
+# Determinism is achieved through four mandatory build flags (all set as
+# env defaults in the build matrix; callers may NOT override them):
+#
+#   -trimpath          strips host-filesystem paths from the compiled binary
+#   -buildvcs=false    excludes VCS metadata (commit SHA, dirty flag)
+#   -ldflags='-w -s -buildid='
+#                      -w  disables DWARF debug info
+#                      -s  strips the symbol table
+#                      -buildid= resets the embedded build ID (linker default
+#                                is non-deterministic)
+#   CGO_ENABLED=0      disables cgo so no host CC path leaks into the binary
+#
+# Reference: https://reproducible-builds.org/docs/build-path/
+#
+# Called via:
+#   uses: zero-day-ai/.github/.github/workflows/reusable-go-reproducible-build.yml@main
+#
+# Slice of .github#103 (Piece A): reproducible-build verification.
+# Parent PRD: zero-day-ai/.github#101.
+
+on:
+  workflow_call:
+    inputs:
+      go-mod-path:
+        description: "Directory containing go.mod (default: repo root)"
+        type: string
+        required: false
+        default: "."
+      binary-package:
+        description: >
+          Go package path to build (e.g. ./cmd/gibson). Must produce a
+          single binary named by binary-name.
+        type: string
+        required: true
+      binary-name:
+        description: "Output binary filename (e.g. gibson)"
+        type: string
+        required: true
+      goos:
+        description: "Target GOOS (default: linux)"
+        type: string
+        required: false
+        default: "linux"
+      goarch:
+        description: "Target GOARCH (default: amd64)"
+        type: string
+        required: false
+        default: "amd64"
+      extra-ldflags:
+        description: >
+          Additional -ldflags tokens appended AFTER the mandatory
+          '-w -s -buildid=' tokens. Use for injecting version strings
+          (e.g. '-X main.Version=v1.2.3'). Do NOT include -buildid= here;
+          the workflow enforces it.
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  # Build 1 — first independent runner
+  build-1:
+    name: "reproducible-build (pass 1)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - uses: actions/setup-go@v6.4.0 # pin: 4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: ${{ inputs.go-mod-path }}/go.mod
+          cache: true
+
+      - name: Build binary (pass 1)
+        id: build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ inputs.goos }}
+          GOARCH: ${{ inputs.goarch }}
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}"
+
+          # Assemble final ldflags: mandatory tokens first, caller extras appended.
+          # -buildid= MUST appear; stripping it removes the per-link-invocation
+          # random nonce that makes naive builds non-deterministic.
+          BASE_LDFLAGS="-w -s -buildid="
+          EXTRA="${{ inputs.extra-ldflags }}"
+          if [ -n "$EXTRA" ]; then
+            FINAL_LDFLAGS="${BASE_LDFLAGS} ${EXTRA}"
+          else
+            FINAL_LDFLAGS="${BASE_LDFLAGS}"
+          fi
+
+          go build \
+            -trimpath \
+            -buildvcs=false \
+            -ldflags="${FINAL_LDFLAGS}" \
+            -o "/tmp/${{ inputs.binary-name }}-pass1" \
+            ${{ inputs.binary-package }}
+
+          echo "::notice::pass 1 binary built at /tmp/${{ inputs.binary-name }}-pass1"
+
+      - name: Hash binary (pass 1)
+        id: hash
+        run: |
+          set -euo pipefail
+          DIGEST=$(sha256sum "/tmp/${{ inputs.binary-name }}-pass1" | awk '{print $1}')
+          echo "sha256=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "::notice::pass 1 sha256=${DIGEST}"
+
+      - name: Upload binary (pass 1)
+        uses: actions/upload-artifact@v4.6.2 # pin: ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.binary-name }}-pass1
+          path: /tmp/${{ inputs.binary-name }}-pass1
+          retention-days: 1
+          if-no-files-found: error
+
+  # Build 2 — second independent runner (separate job = separate VM)
+  build-2:
+    name: "reproducible-build (pass 2)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      sha256: ${{ steps.hash.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - uses: actions/setup-go@v6.4.0 # pin: 4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: ${{ inputs.go-mod-path }}/go.mod
+          cache: true
+
+      - name: Build binary (pass 2)
+        id: build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ inputs.goos }}
+          GOARCH: ${{ inputs.goarch }}
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}"
+
+          BASE_LDFLAGS="-w -s -buildid="
+          EXTRA="${{ inputs.extra-ldflags }}"
+          if [ -n "$EXTRA" ]; then
+            FINAL_LDFLAGS="${BASE_LDFLAGS} ${EXTRA}"
+          else
+            FINAL_LDFLAGS="${BASE_LDFLAGS}"
+          fi
+
+          go build \
+            -trimpath \
+            -buildvcs=false \
+            -ldflags="${FINAL_LDFLAGS}" \
+            -o "/tmp/${{ inputs.binary-name }}-pass2" \
+            ${{ inputs.binary-package }}
+
+          echo "::notice::pass 2 binary built at /tmp/${{ inputs.binary-name }}-pass2"
+
+      - name: Hash binary (pass 2)
+        id: hash
+        run: |
+          set -euo pipefail
+          DIGEST=$(sha256sum "/tmp/${{ inputs.binary-name }}-pass2" | awk '{print $1}')
+          echo "sha256=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "::notice::pass 2 sha256=${DIGEST}"
+
+      - name: Upload binary (pass 2)
+        uses: actions/upload-artifact@v4.6.2 # pin: ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ inputs.binary-name }}-pass2
+          path: /tmp/${{ inputs.binary-name }}-pass2
+          retention-days: 1
+          if-no-files-found: error
+
+  # Compare — collects both digests and fails loudly if they differ
+  compare:
+    name: "reproducible-build (compare hashes)"
+    runs-on: ubuntu-latest
+    needs: [build-1, build-2]
+    timeout-minutes: 5
+    steps:
+      - name: Compare sha256 digests
+        run: |
+          set -euo pipefail
+
+          HASH1="${{ needs.build-1.outputs.sha256 }}"
+          HASH2="${{ needs.build-2.outputs.sha256 }}"
+
+          echo "Pass 1 sha256: ${HASH1}"
+          echo "Pass 2 sha256: ${HASH2}"
+
+          if [ -z "${HASH1}" ] || [ -z "${HASH2}" ]; then
+            echo "::error::One or both hash outputs are empty — build jobs may have failed upstream."
+            exit 1
+          fi
+
+          if [ "${HASH1}" != "${HASH2}" ]; then
+            cat <<'EOF'
+          ============================================================
+          REPRODUCIBLE-BUILD FAILURE
+          ============================================================
+          The two independent build passes produced different binaries.
+          This means the binary is NOT reproducible. Common causes:
+
+            * A build flag is injecting a timestamp or random nonce
+              (check for -ldflags=-buildid=<non-empty>, time.Now(),
+              or rand.* at init time called from non-test code).
+            * CGO is enabled and the host CC version differs between
+              runners (should not happen with CGO_ENABLED=0).
+            * A go:generate step writes non-deterministic output that
+              is included in the binary (fix: commit generated files
+              and verify with "regenerate-then-diff" check).
+            * A dependency injects build-time randomness via its own
+              init() — audit with `go build -v` to find the culprit.
+
+          Fix the non-determinism, then re-run this workflow.
+          ============================================================
+          EOF
+            echo "::error::Reproducible-build check FAILED — pass 1 sha256=${HASH1} != pass 2 sha256=${HASH2}"
+            exit 1
+          fi
+
+          echo "::notice::Reproducible-build check PASSED — both passes agree on sha256=${HASH1}"
