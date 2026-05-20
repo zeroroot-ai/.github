@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Aggregate from last 7 days of CI runs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

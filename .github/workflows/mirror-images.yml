@@ -41,14 +41,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Install yq + skopeo
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y skopeo
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
           yq --version
           skopeo --version

@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: zero-day-ai/.github
           path: .github-repo
@@ -89,7 +89,7 @@ jobs:
           PY
 
       - name: Upload as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1 # pin: 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: failure-modes-generated
           path: /tmp/failure-modes.md

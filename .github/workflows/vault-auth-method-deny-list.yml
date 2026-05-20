@@ -45,12 +45,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout calling repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           path: caller
 
       - name: Checkout zero-day-ai/.github (for the scanner + vendored deny-list)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: zero-day-ai/.github
           path: org-github

@@ -68,7 +68,7 @@ runs:
   using: composite
   steps:
     - name: Log in to ghcr.io (with retry)
-      uses: nick-fields/retry@v3
+      uses: nick-fields/retry@v4.0.0 # pin: ad984534de44a9489a53aefd81eb77f87c70dc60
       env:
         GHCR_USERNAME: ${{ inputs.username }}
         GHCR_PASSWORD: ${{ inputs.password }}
