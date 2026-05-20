@@ -28,6 +28,9 @@
           },
           {
             "context": "vault-auth-method-deny-list"
+          },
+          {
+            "context": "contract-tests"
           }
         ]
       }
