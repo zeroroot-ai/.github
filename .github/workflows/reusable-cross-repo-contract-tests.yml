@@ -134,12 +134,17 @@ jobs:
       # 5. Configure private Go module access.                              #
       # ------------------------------------------------------------------ #
       - name: Configure GOPRIVATE access
-        if: ${{ secrets.GH_PAT_PLATFORM_RO != '' }}
         env:
           TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
         run: |
-          git config --global url."https://x-access-token:${TOKEN}@github.com/zero-day-ai/".insteadOf \
-            "https://github.com/zero-day-ai/"
+          # Only configure if a PAT was supplied; otherwise fall through to
+          # the default GITHUB_TOKEN (sufficient for same-org private repos
+          # when the caller passes `secrets: inherit`).
+          if [ -n "${TOKEN:-}" ]; then
+            git config --global \
+              url."https://x-access-token:${TOKEN}@github.com/zero-day-ai/".insteadOf \
+              "https://github.com/zero-day-ai/"
+          fi
 
       # ------------------------------------------------------------------ #
       # 6. Write the stub contract-test Go module.                          #
