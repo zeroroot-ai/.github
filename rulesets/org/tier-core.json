@@ -17,7 +17,9 @@
         "tenant-operator",
         "deploy",
         "gitops",
-        "platform-debug"
+        "platform-debug",
+        "platform-sdk",
+        "platform-clients"
       ],
       "exclude": [],
       "protected": false
