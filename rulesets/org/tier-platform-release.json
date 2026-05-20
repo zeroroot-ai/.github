@@ -9,7 +9,7 @@
       "exclude": []
     },
     "repository_name": {
-      "include": ["sdk", "deploy", "gitops"],
+      "include": ["sdk", "deploy", "gitops", "platform-sdk", "platform-clients"],
       "exclude": [],
       "protected": false
     }
