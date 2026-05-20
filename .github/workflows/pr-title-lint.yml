@@ -1,0 +1,49 @@
+# Reusable workflow: validates PR titles against Conventional Commits format
+# with the org-wide lowercase-first subject rule.
+#
+# Called by per-repo workflows via:
+#   uses: zero-day-ai/.github/.github/workflows/pr-title-lint.yml@main
+#
+# Required check name: pr-title-lint (declared in the calling workflow's job id).
+#
+# Rules enforced:
+#   - Type must be one of: feat fix chore docs refactor test perf build ci revert
+#   - Optional scope: feat(scope): ...
+#   - Subject must NOT start with an uppercase character (org-wide lowercase rule)
+#     ref: CLAUDE.md "deploy PR-title lint" memory entry
+#   - Breaking-change footer or ! suffix is allowed (feat!:, fix!:, etc.)
+
+name: pr-title-lint
+
+on:
+  workflow_call:
+
+permissions:
+  pull-requests: read
+
+jobs:
+  pr-title-lint:
+    name: pr-title-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            perf
+            build
+            ci
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" found in the pull request title "{title}"
+            didn't match the conventional commits subject pattern. Please ensure
+            the subject does not start with an uppercase character.
