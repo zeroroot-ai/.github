@@ -70,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Resolve config
         id: cfg
@@ -137,9 +137,9 @@ jobs:
       matrix:
         chart: ${{ fromJSON(inputs.chart-paths) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5.0.0 # pin: dda3372f752e03dde6b3237bc9431cdc2f7a02a2
         with:
           version: "v3.18.0"
 
@@ -172,9 +172,9 @@ jobs:
         k8s: ${{ fromJSON(inputs.k8s-versions) }}
         chart: ${{ fromJSON(inputs.chart-paths) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5.0.0 # pin: dda3372f752e03dde6b3237bc9431cdc2f7a02a2
         with:
           version: "v3.18.0"
 

@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Fetch docs repo's ADR + traps catalog
         env:
@@ -90,8 +90,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: lycheeverse/lychee-action@v2
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: lycheeverse/lychee-action@v2.8.0 # pin: 8646ba30535128ac92d33dfc9133794bfdd9b411
         with:
           args: >-
             --no-progress
@@ -111,7 +111,7 @@ jobs:
     timeout-minutes: 5
     if: ${{ github.event_name == 'pull_request' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Detect stale file/workflow refs in CLAUDE.md
         run: |
           set -uo pipefail
