@@ -1,18 +1,24 @@
 name: Reusable cross-repo contract tests
 
 # Integration safety net for the platform-sdk wholesale flip (PRD .github#101,
-# slice .github#114). Checks out platform-sdk, writes a self-contained stub
-# contract-test Go module inline, and runs it. Each run exercises one
-# happy-path RPC per platform-sdk service plus one forced-failure path that
-# asserts ErrorDetail shape.
+# slice .github#114). Checks out platform-sdk and the org .github repo (which
+# contains the committed stub contract-test source under contract-tests/),
+# runs go mod tidy + go test, and reports one result per service.
 #
-# Testcontainer deps (Neo4j, Redis, OpenFGA, Postgres) are started for
-# environment parity via docker-compose. The in-process stub gRPC servers
-# handle the RPC layer independently — they do not connect to the
-# containers. Real image-backed testing is tracked in the .github#114
-# follow-up once daemon/operator health probes are available.
+# Services exercised (one happy-path + one forced-failure per service):
+#   PlatformOperatorService / Shutdown
+#   TenantAdminService      / ListAgentIdentities
+#   UsageService            / ListUsage
+#   ModelAccessService      / ListAccess
+#   DiscoveryService        / ListAgents
+#   DaemonAdminService      / StartComponent
+#   AdminTenantService      / GetReservedNames
 #
-# Calling repo example (.github/workflows/contract-tests.yml):
+# Testcontainer deps (Neo4j, Redis, OpenFGA, Postgres) are started via
+# docker-compose for environment parity; the in-process stub gRPC servers
+# do not connect to them in this stub phase.
+#
+# Calling repo example:
 #
 #   jobs:
 #     contract-tests:
@@ -20,9 +26,6 @@ name: Reusable cross-repo contract tests
 #       with:
 #         platform-sdk-ref: main
 #       secrets: inherit
-#
-# No external network access beyond GitHub API (for the checkout) and
-# docker.io / ghcr.io for the testcontainer images.
 
 on:
   workflow_call:
@@ -33,22 +36,22 @@ on:
         required: false
         default: "main"
       daemon-image:
-        description: "Fully-qualified daemon image (ghcr.io/zero-day-ai/gibson:tag). Defaults to :main."
+        description: "Fully-qualified daemon image (ghcr.io/zero-day-ai/gibson:tag)."
         type: string
         required: false
         default: "ghcr.io/zero-day-ai/gibson:main"
       tenant-operator-image:
-        description: "Fully-qualified tenant-operator image. Defaults to :main."
+        description: "Fully-qualified tenant-operator image."
         type: string
         required: false
         default: "ghcr.io/zero-day-ai/tenant-operator:main"
       platform-operator-image:
-        description: "Fully-qualified platform-operator image. Defaults to :main."
+        description: "Fully-qualified platform-operator image."
         type: string
         required: false
         default: "ghcr.io/zero-day-ai/platform-operator:main"
       ext-authz-image:
-        description: "Fully-qualified ext-authz image. Defaults to :main."
+        description: "Fully-qualified ext-authz image."
         type: string
         required: false
         default: "ghcr.io/zero-day-ai/ext-authz:main"
@@ -68,8 +71,8 @@ on:
         description: |
           Read-only PAT or GitHub App token for checking out private platform
           repos (zero-day-ai/platform-sdk). If the calling repo passes
-          `secrets: inherit` and its default GITHUB_TOKEN has org private-repo
-          read access, this can be omitted.
+          secrets: inherit and its GITHUB_TOKEN has org private-repo read
+          access, this can be omitted.
 
 permissions:
   contents: read
@@ -83,16 +86,19 @@ jobs:
     env:
       GOPRIVATE: "github.com/zero-day-ai/*"
       GONOSUMCHECK: "github.com/zero-day-ai/*"
-      # Image refs forwarded to the environment for future real-image tests.
       DAEMON_IMAGE: ${{ inputs.daemon-image }}
       TENANT_OPERATOR_IMAGE: ${{ inputs.tenant-operator-image }}
       PLATFORM_OPERATOR_IMAGE: ${{ inputs.platform-operator-image }}
       EXT_AUTHZ_IMAGE: ${{ inputs.ext-authz-image }}
 
     steps:
-      # ------------------------------------------------------------------ #
-      # 1. Check out platform-sdk at the requested ref.                     #
-      # ------------------------------------------------------------------ #
+      - name: Checkout org .github repo
+        uses: actions/checkout@v4
+        with:
+          repository: zero-day-ai/.github
+          token: ${{ secrets.GH_PAT_PLATFORM_RO || github.token }}
+          path: dot-github
+
       - name: Checkout platform-sdk
         uses: actions/checkout@v4
         with:
@@ -101,18 +107,12 @@ jobs:
           token: ${{ secrets.GH_PAT_PLATFORM_RO || github.token }}
           path: platform-sdk
 
-      # ------------------------------------------------------------------ #
-      # 2. Runtime toolchain.                                               #
-      # ------------------------------------------------------------------ #
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: platform-sdk/go.mod
           cache: true
 
-      # ------------------------------------------------------------------ #
-      # 3. Configure private Go module access (when PAT is supplied).       #
-      # ------------------------------------------------------------------ #
       - name: Configure GOPRIVATE access
         env:
           TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
@@ -123,354 +123,30 @@ jobs:
               "https://github.com/zero-day-ai/"
           fi
 
-      # ------------------------------------------------------------------ #
-      # 4. Start testcontainer deps via docker-compose for env parity.      #
-      #    The stub RPC servers don't connect to these; they exist so the   #
-      #    test binary's environment is consistent with production shape.    #
-      # ------------------------------------------------------------------ #
-      - name: Write docker-compose for deps
-        run: |
-          cat > /tmp/contract-deps-compose.yml <<'COMPOSE'
-          services:
-            neo4j:
-              image: neo4j:5-community
-              environment:
-                NEO4J_AUTH: neo4j/testpassword
-              ports: ["7474:7474", "7687:7687"]
-            redis:
-              image: redis:7-alpine
-              ports: ["6379:6379"]
-            openfga:
-              image: openfga/openfga:latest
-              command: run
-              ports: ["8080:8080"]
-            postgres:
-              image: postgres:16-alpine
-              environment:
-                POSTGRES_PASSWORD: testpassword
-                POSTGRES_DB: testdb
-              ports: ["5432:5432"]
-          COMPOSE
-
-      - name: Start deps
-        run: |
-          docker compose -f /tmp/contract-deps-compose.yml up -d
-          echo "Deps started; stubs use in-process gRPC, not these services directly."
-
-      # ------------------------------------------------------------------ #
-      # 5. Write the self-contained contract-test Go module.                #
-      #    Uses only platform-sdk (local replace) + grpc + protobuf.       #
-      # ------------------------------------------------------------------ #
-      - name: Write contract-test module
+      - name: Prepare contract-test module
         run: |
           mkdir -p contract-tests
-          cat > contract-tests/go.mod <<'GOMOD'
-module github.com/zero-day-ai/contract-tests
+          cp dot-github/contract-tests/go.mod.tmpl  contract-tests/go.mod
+          cp dot-github/contract-tests/contract_test.go contract-tests/contract_test.go
 
-go 1.25.0
-
-require (
-	github.com/zero-day-ai/platform-sdk v0.0.0
-	google.golang.org/grpc v1.81.1
-	google.golang.org/protobuf v1.36.11
-)
-
-replace github.com/zero-day-ai/platform-sdk => ../platform-sdk
-GOMOD
-
-      - name: Write contract-test source
+      - name: Start dep containers
         run: |
-          cat > contract-tests/contract_test.go <<'GOTEST'
-// Copyright 2026 Zero Day AI, Inc.
-// Licensed under BUSL-1.1; see LICENSE.
-//
-// Cross-repo contract tests — slice .github#114 of PRD .github#101.
-//
-// Exercises one happy-path RPC per platform-sdk service via in-process stub
-// gRPC servers, then asserts ErrorDetail shape on forced failure cases.
-// Testcontainer deps (Neo4j, Redis, OpenFGA, Postgres) are started by the
-// workflow via docker-compose for environment parity; the stubs do not
-// connect to them in this stub phase.
-package contracttests
+          docker compose -f dot-github/contract-tests/docker-compose.yml up -d
+          echo "Dep containers started for environment parity."
 
-import (
-	"context"
-	"fmt"
-	"net"
-	"os"
-	"testing"
-	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
-
-	errorsv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/common/errors/v1"
-
-	adminv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/admin/v1"
-	authzv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/authz/v1"
-	daemonadminv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/daemon/admin/v1"
-	discoveryv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/daemon/discovery/v1"
-	platformv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/platform/v1"
-	tenantv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/tenant/v1"
-	usagev1 "github.com/zero-day-ai/platform-sdk/gen/gibson/usage/v1"
-)
-
-// errorDetailStatus builds a gRPC status with an ErrorDetail in the details
-// slot — the canonical failure shape every platform-sdk consumer must handle.
-func errorDetailStatus(grpcCode codes.Code, errCode errorsv1.ErrorCode, msg string) error {
-	st := status.New(grpcCode, msg)
-	detail := &errorsv1.ErrorDetail{
-		Code:      errCode,
-		Retryable: false,
-		Detail:    msg,
-		Metadata:  map[string]string{"test": "forced-failure"},
-	}
-	st2, err := st.WithDetails(detail)
-	if err != nil {
-		return st.Err()
-	}
-	return st2.Err()
-}
-
-// assertErrorDetail verifies the canonical ErrorDetail shape in a gRPC error.
-func assertErrorDetail(t *testing.T, err error, wantGRPC codes.Code, wantCode errorsv1.ErrorCode) {
-	t.Helper()
-	if err == nil {
-		t.Fatal("expected an error, got nil")
-	}
-	st := status.Convert(err)
-	if st.Code() != wantGRPC {
-		t.Errorf("gRPC code: got %v, want %v", st.Code(), wantGRPC)
-	}
-	var found *errorsv1.ErrorDetail
-	for _, d := range st.Details() {
-		if ed, ok := d.(*errorsv1.ErrorDetail); ok {
-			found = ed
-			break
-		}
-	}
-	if found == nil {
-		t.Fatalf("no ErrorDetail in status details; details: %v", st.Details())
-	}
-	if found.Code != wantCode {
-		t.Errorf("ErrorDetail.Code: got %v, want %v", found.Code, wantCode)
-	}
-	if found.Detail == "" {
-		t.Error("ErrorDetail.Detail must be non-empty")
-	}
-}
-
-// --- Stub servers --- //
-
-type stubPlatformOperator struct{ platformv1.UnimplementedPlatformOperatorServiceServer }
-
-func (s *stubPlatformOperator) Shutdown(_ context.Context, req *platformv1.ShutdownRequest) (*platformv1.ShutdownResponse, error) {
-	if req.GetReason() == "bad-tenant" {
-		return nil, errorDetailStatus(codes.PermissionDenied, errorsv1.ErrorCode_ERROR_CODE_PERMISSION_DENIED, "invalid tenant")
-	}
-	return &platformv1.ShutdownResponse{}, nil
-}
-
-type stubTenantAdmin struct{ tenantv1.UnimplementedTenantAdminServiceServer }
-
-func (s *stubTenantAdmin) ListAgentIdentities(_ context.Context, req *tenantv1.ListAgentIdentitiesRequest) (*tenantv1.ListAgentIdentitiesResponse, error) {
-	if req.GetTenantId() == "bad-tenant" {
-		return nil, errorDetailStatus(codes.NotFound, errorsv1.ErrorCode_ERROR_CODE_NOT_FOUND, "tenant not found")
-	}
-	return &tenantv1.ListAgentIdentitiesResponse{}, nil
-}
-
-type stubUsage struct{ usagev1.UnimplementedUsageServiceServer }
-
-func (s *stubUsage) ListUsage(_ context.Context, req *usagev1.ListUsageRequest) (*usagev1.ListUsageResponse, error) {
-	if req.GetTenantId() == "bad-tenant" {
-		return nil, errorDetailStatus(codes.InvalidArgument, errorsv1.ErrorCode_ERROR_CODE_INVALID_ARGUMENT, "invalid tenant id")
-	}
-	return &usagev1.ListUsageResponse{}, nil
-}
-
-type stubModelAccess struct{ authzv1.UnimplementedModelAccessServiceServer }
-
-func (s *stubModelAccess) ListAccess(_ context.Context, req *authzv1.ListAccessRequest) (*authzv1.ListAccessResponse, error) {
-	if req.GetTenantId() == "bad-tenant" {
-		return nil, errorDetailStatus(codes.PermissionDenied, errorsv1.ErrorCode_ERROR_CODE_PERMISSION_DENIED, "permission denied")
-	}
-	return &authzv1.ListAccessResponse{}, nil
-}
-
-type stubDiscovery struct{ discoveryv1.UnimplementedDiscoveryServiceServer }
-
-func (s *stubDiscovery) ListAgents(_ context.Context, req *discoveryv1.ListAgentsRequest) (*discoveryv1.ListAgentsResponse, error) {
-	if req.GetTenantId() == "bad-tenant" {
-		return nil, errorDetailStatus(codes.NotFound, errorsv1.ErrorCode_ERROR_CODE_NOT_FOUND, "tenant not found")
-	}
-	return &discoveryv1.ListAgentsResponse{}, nil
-}
-
-type stubDaemonAdmin struct{ daemonadminv1.UnimplementedDaemonAdminServiceServer }
-
-func (s *stubDaemonAdmin) StartComponent(_ context.Context, req *daemonadminv1.StartComponentRequest) (*daemonadminv1.StartComponentResponse, error) {
-	if req.GetComponentId() == "bad-component" {
-		return nil, errorDetailStatus(codes.NotFound, errorsv1.ErrorCode_ERROR_CODE_NOT_FOUND, "component not found")
-	}
-	return &daemonadminv1.StartComponentResponse{}, nil
-}
-
-type stubAdminTenant struct{ adminv1.UnimplementedTenantAdminServiceServer }
-
-func (s *stubAdminTenant) GetReservedNames(_ context.Context, _ *adminv1.GetReservedNamesRequest) (*adminv1.GetReservedNamesResponse, error) {
-	return &adminv1.GetReservedNamesResponse{}, nil
-}
-
-// --- Test harness --- //
-
-func startStubServer(t *testing.T) string {
-	t.Helper()
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	srv := grpc.NewServer()
-	platformv1.RegisterPlatformOperatorServiceServer(srv, &stubPlatformOperator{})
-	tenantv1.RegisterTenantAdminServiceServer(srv, &stubTenantAdmin{})
-	usagev1.RegisterUsageServiceServer(srv, &stubUsage{})
-	authzv1.RegisterModelAccessServiceServer(srv, &stubModelAccess{})
-	discoveryv1.RegisterDiscoveryServiceServer(srv, &stubDiscovery{})
-	daemonadminv1.RegisterDaemonAdminServiceServer(srv, &stubDaemonAdmin{})
-	adminv1.RegisterTenantAdminServiceServer(srv, &stubAdminTenant{})
-	go func() { _ = srv.Serve(lis) }()
-	t.Cleanup(srv.GracefulStop)
-	return lis.Addr().String()
-}
-
-// --- Tests --- //
-
-func TestContractSuite(t *testing.T) {
-	addr := startStubServer(t)
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatalf("grpc dial: %v", err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-
-	start := time.Now()
-	results := map[string]string{}
-
-	t.Run("PlatformOperatorService/Shutdown", func(t *testing.T) {
-		c := platformv1.NewPlatformOperatorServiceClient(conn)
-		rpcStart := time.Now()
-		if _, err := c.Shutdown(context.Background(), &platformv1.ShutdownRequest{Reason: "test"}); err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		_, err := c.Shutdown(context.Background(), &platformv1.ShutdownRequest{Reason: "bad-tenant"})
-		assertErrorDetail(t, err, codes.PermissionDenied, errorsv1.ErrorCode_ERROR_CODE_PERMISSION_DENIED)
-		results["PlatformOperatorService/Shutdown"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	t.Run("TenantAdminService/ListAgentIdentities", func(t *testing.T) {
-		c := tenantv1.NewTenantAdminServiceClient(conn)
-		rpcStart := time.Now()
-		if _, err := c.ListAgentIdentities(context.Background(), &tenantv1.ListAgentIdentitiesRequest{TenantId: "t-ok"}); err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		_, err := c.ListAgentIdentities(context.Background(), &tenantv1.ListAgentIdentitiesRequest{TenantId: "bad-tenant"})
-		assertErrorDetail(t, err, codes.NotFound, errorsv1.ErrorCode_ERROR_CODE_NOT_FOUND)
-		results["TenantAdminService/ListAgentIdentities"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	t.Run("UsageService/ListUsage", func(t *testing.T) {
-		c := usagev1.NewUsageServiceClient(conn)
-		rpcStart := time.Now()
-		if _, err := c.ListUsage(context.Background(), &usagev1.ListUsageRequest{TenantId: "t-ok"}); err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		_, err := c.ListUsage(context.Background(), &usagev1.ListUsageRequest{TenantId: "bad-tenant"})
-		assertErrorDetail(t, err, codes.InvalidArgument, errorsv1.ErrorCode_ERROR_CODE_INVALID_ARGUMENT)
-		results["UsageService/ListUsage"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	t.Run("ModelAccessService/ListAccess", func(t *testing.T) {
-		c := authzv1.NewModelAccessServiceClient(conn)
-		rpcStart := time.Now()
-		if _, err := c.ListAccess(context.Background(), &authzv1.ListAccessRequest{TenantId: "t-ok"}); err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		_, err := c.ListAccess(context.Background(), &authzv1.ListAccessRequest{TenantId: "bad-tenant"})
-		assertErrorDetail(t, err, codes.PermissionDenied, errorsv1.ErrorCode_ERROR_CODE_PERMISSION_DENIED)
-		results["ModelAccessService/ListAccess"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	t.Run("DiscoveryService/ListAgents", func(t *testing.T) {
-		c := discoveryv1.NewDiscoveryServiceClient(conn)
-		rpcStart := time.Now()
-		if _, err := c.ListAgents(context.Background(), &discoveryv1.ListAgentsRequest{TenantId: "t-ok"}); err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		_, err := c.ListAgents(context.Background(), &discoveryv1.ListAgentsRequest{TenantId: "bad-tenant"})
-		assertErrorDetail(t, err, codes.NotFound, errorsv1.ErrorCode_ERROR_CODE_NOT_FOUND)
-		results["DiscoveryService/ListAgents"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	t.Run("DaemonAdminService/StartComponent", func(t *testing.T) {
-		c := daemonadminv1.NewDaemonAdminServiceClient(conn)
-		rpcStart := time.Now()
-		if _, err := c.StartComponent(context.Background(), &daemonadminv1.StartComponentRequest{ComponentId: "c-ok"}); err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		_, err := c.StartComponent(context.Background(), &daemonadminv1.StartComponentRequest{ComponentId: "bad-component"})
-		assertErrorDetail(t, err, codes.NotFound, errorsv1.ErrorCode_ERROR_CODE_NOT_FOUND)
-		results["DaemonAdminService/StartComponent"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	t.Run("AdminTenantService/GetReservedNames", func(t *testing.T) {
-		c := adminv1.NewTenantAdminServiceClient(conn)
-		rpcStart := time.Now()
-		resp, err := c.GetReservedNames(context.Background(), &adminv1.GetReservedNamesRequest{})
-		if err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		// Wire-compat: assert no Unknown fields survive a round-trip marshal.
-		b, _ := proto.Marshal(resp)
-		var check adminv1.GetReservedNamesResponse
-		if uerr := proto.Unmarshal(b, &check); uerr != nil {
-			t.Errorf("round-trip unmarshal (Unknown fields?): %v", uerr)
-		}
-		results["AdminTenantService/GetReservedNames"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	fmt.Printf("\n=== Contract test results (total: %s) ===\n", time.Since(start).Round(time.Millisecond))
-	for rpc, result := range results {
-		fmt.Printf("  %-55s %s\n", rpc, result)
-	}
-	fmt.Println("==========================================")
-
-	if summaryFile := os.Getenv("GITHUB_STEP_SUMMARY"); summaryFile != "" {
-		if f, err := os.OpenFile(summaryFile, os.O_APPEND|os.O_WRONLY, 0644); err == nil {
-			defer f.Close()
-			fmt.Fprintln(f, "## Cross-repo contract test results")
-			fmt.Fprintln(f, "| RPC | Result |")
-			fmt.Fprintln(f, "|-----|--------|")
-			for rpc, result := range results {
-				fmt.Fprintf(f, "| `%s` | %s |\n", rpc, result)
-			}
-		}
-	}
-}
-GOTEST
-
-      # ------------------------------------------------------------------ #
-      # 6. Tidy and run.                                                    #
-      # ------------------------------------------------------------------ #
       - name: go mod tidy
         working-directory: contract-tests
         run: go mod tidy
 
       - name: Run contract tests
         working-directory: contract-tests
-        run: go test -v -race -timeout 5m ./... 2>&1 | tee /tmp/contract-test-output.txt; exit ${PIPESTATUS[0]}
+        run: |
+          go test -v -race -timeout 5m ./... 2>&1 | tee /tmp/contract-test-output.txt
+          exit ${PIPESTATUS[0]}
+
+      - name: Stop dep containers
+        if: always()
+        run: docker compose -f dot-github/contract-tests/docker-compose.yml down --remove-orphans || true
 
       - name: Upload test output
         if: failure()
@@ -479,7 +155,3 @@ GOTEST
           name: contract-test-output
           path: /tmp/contract-test-output.txt
           retention-days: 7
-
-      - name: Stop deps
-        if: always()
-        run: docker compose -f /tmp/contract-deps-compose.yml down --remove-orphans || true
