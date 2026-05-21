@@ -21,6 +21,9 @@
             "context": "kind-up-smoke"
           },
           {
+            "context": "signup-smoke"
+          },
+          {
             "context": "architectural-doc-coverage"
           },
           {
