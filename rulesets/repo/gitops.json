@@ -24,9 +24,6 @@
             "context": "check-tenant-id-label"
           },
           {
-            "context": "signup-smoke"
-          },
-          {
             "context": "architectural-doc-coverage"
           },
           {

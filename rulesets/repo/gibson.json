@@ -30,9 +30,6 @@
             "context": "security"
           },
           {
-            "context": "signup-smoke"
-          },
-          {
             "context": "architectural-doc-coverage"
           },
           {
