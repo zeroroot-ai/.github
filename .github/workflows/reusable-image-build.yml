@@ -175,3 +175,9 @@ jobs:
         with:
           sarif_file: trivy-${{ inputs.component_name }}.sarif
           category: trivy-${{ inputs.component_name }}
+          # Explicitly supply the calling-workflow's token. The cross-repo
+          # reusable workflow context causes "Bad credentials" on the
+          # code-scanning endpoint when the token is taken from the env
+          # implicitly; passing github.token via the input uses the
+          # calling-repo's token directly (.github#136).
+          token: ${{ github.token }}
