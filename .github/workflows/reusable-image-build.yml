@@ -138,11 +138,21 @@ jobs:
     name: Vulnerability scan
     needs: build-and-push
     runs-on: ubuntu-latest
+    # continue-on-error: scan results inform but never block the image push.
+    # Two known failure modes in cross-repo reusable workflow context:
+    #   1. codeql-action/upload-sarif returns "Bad credentials" because the
+    #      GITHUB_TOKEN JWT's workflow-repo claim (zero-day-ai/.github) doesn't
+    #      match the target repo's code-scanning API expectation (.github#135).
+    #   2. trivy exits 1 on CVEs that are tracked but not yet fixed (e.g.
+    #      swiper@11.x GHSA-hmx5-qpq5-p643, tracked in dashboard#258).
+    # Artifacts + Security-tab upload are best-effort; the image push is the gate.
+    continue-on-error: true
     if: github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: read
       security-events: write
+      actions: read
     steps:
       # GHCR repo is private; trivy's `remote` resolver needs creds to pull
       # the just-pushed image by digest. Without this login, every scan run
