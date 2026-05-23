@@ -52,22 +52,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Bypass for release-please PRs
-        # release-please opens release PRs from a branch named
-        # `release-please--branches--<base>` (or similar) with a body
-        # containing release-notes Markdown and never a `Docs-PR:` trailer.
-        # Architectural-doc-coverage gating those PRs is wrong by design —
-        # release-please bundles already-merged commits, each of which
-        # passed this gate at original-merge time. Bypass when the head
-        # branch matches the release-please pattern OR the title matches
-        # the standard release-please prefix.
+      - name: Bypass for automated PRs (Dependabot, release-please)
+        # Two classes of automated PRs are exempt from the Docs-PR trailer
+        # requirement:
+        #
+        # 1. Dependabot — pure dependency-bump PRs that never touch
+        #    architectural invariants. Dependabot generates the PR body and
+        #    cannot include a Docs-PR: trailer.
+        #
+        # 2. release-please — release PRs bundle already-merged commits, each
+        #    of which passed this gate at original-merge time. The branch
+        #    follows the `release-please--branches--*` pattern and the PR body
+        #    contains release-notes Markdown, never a Docs-PR: trailer.
+        #
+        # Per-repo structural checks (pr-title-lint, build, test, etc.) still
+        # run for both classes — only the doc-coverage gate is skipped here.
         id: bypass
         env:
+          ACTOR: ${{ github.actor }}
+          PR_USER: ${{ github.event.pull_request.user.login }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           set -euo pipefail
-          # Match release-please's standard branch naming. Both modern
+          # 1. Dependabot check (actor or PR author).
+          if [ "$ACTOR" = "dependabot[bot]" ] || [ "$PR_USER" = "dependabot[bot]" ]; then
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dependabot PR detected (actor='$ACTOR', user='$PR_USER') — bypassing architectural-doc-coverage gate."
+            exit 0
+          fi
+          # 2. release-please branch-name check. Both modern
           # (release-please--branches--<base>--components--<pkg>) and the
           # legacy single-package shape (release-please--branches--<base>).
           if printf '%s' "$HEAD_REF" | grep -qE '^release-please--'; then
@@ -75,7 +89,7 @@ jobs:
             echo "::notice::Release-please PR detected via head ref '$HEAD_REF' — bypassing architectural-doc-coverage gate."
             exit 0
           fi
-          # Fallback: title-pattern match. release-please's default title
+          # 3. Fallback: title-pattern match. release-please's default title
           # is `chore(main): release <pkg> <ver>` or `chore: release main`.
           if printf '%s' "$PR_TITLE" | grep -qE '^chore(\([^)]+\))?: release'; then
             echo "matched=true" >> "$GITHUB_OUTPUT"
