@@ -105,6 +105,30 @@ jobs:
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  fixture-self-test:
+    # Validates that the adr/trap resolution logic itself is correct.
+    # Proves a valid reference (adr:7, T0001) passes and a stale one
+    # (adr:9999, T9999) fails — so a regression in the check logic would
+    # itself fail CI.
+    name: adr + trap fixture self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Fetch docs repo refs (same as adr-trap-references job)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/refs
+          gh api /repos/zero-day-ai/docs/contents/adr --paginate \
+            --jq '.[] | select(.name | startswith("0") and endswith(".md")) | .name' \
+            | sed -E 's/^0*([0-9]+).*/\1/' | sort -u > /tmp/refs/adrs.txt
+          gh api /repos/zero-day-ai/docs/contents/agents/traps.md --jq '.content' | base64 -d \
+            | grep -oE 'T[0-9]{4}' | sort -u > /tmp/refs/traps.txt
+      - name: Run fixture self-test
+        run: bash scripts/test-doc-freshness.sh
+
   claude-md-drift:
     name: CLAUDE.md drift (stale paths)
     runs-on: ubuntu-latest
