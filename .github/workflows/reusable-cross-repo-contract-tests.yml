@@ -93,14 +93,14 @@ jobs:
 
     steps:
       - name: Checkout org .github repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: zero-day-ai/.github
           token: ${{ secrets.GH_PAT_PLATFORM_RO || github.token }}
           path: dot-github
 
       - name: Checkout platform-sdk
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: zero-day-ai/platform-sdk
           ref: ${{ inputs.platform-sdk-ref }}
@@ -108,20 +108,18 @@ jobs:
           path: platform-sdk
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: platform-sdk/go.mod
           cache: true
 
       - name: Configure GOPRIVATE access
         env:
-          TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
+          TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || github.token }}
         run: |
-          if [ -n "${TOKEN:-}" ]; then
-            git config --global \
-              url."https://x-access-token:${TOKEN}@github.com/zero-day-ai/".insteadOf \
-              "https://github.com/zero-day-ai/"
-          fi
+          git config --global \
+            url."https://x-access-token:${TOKEN}@github.com/zero-day-ai/".insteadOf \
+            "https://github.com/zero-day-ai/"
 
       - name: Prepare contract-test module
         run: |
