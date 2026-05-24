@@ -27,12 +27,22 @@
 #   REPO_ROOT     Path to the calling repo's checkout (defaults to $GITHUB_WORKSPACE or .)
 #   ALLOWLIST     Path to the allowlist JSON (defaults to $REPO_ROOT/.github/.vault-auth-deny-list-allowlist.json)
 #
-# The allowlist file is a JSON array of {file, line, token} objects.
-# Monotonic-shrink: any entry whose source line no longer contains the
-# token is treated as stale and fails the run (with a hint to remove it).
-# New violations are never auto-allowlisted; reviewers must hand-edit the
-# JSON to add an entry (forcing a conversation about why the exception
-# is legitimate).
+# The allowlist file is a JSON array of objects. Two entry shapes:
+#
+#   {file, line, token}        — line-number-based (classic)
+#   {file, content, token}     — content-based (preferred for CHANGELOG entries)
+#
+# Content-based entries match any occurrence of `token` in `file` whose
+# source line contains the exact string `content`. This is stable across
+# release-please CHANGELOG prepends that shift line numbers.
+# Staleness check for content-based entries: grep -qF content file.
+# If the content string is no longer in the file, the entry is stale.
+#
+# Monotonic-shrink: any line-number entry whose source line no longer
+# contains the token is treated as stale and fails the run (with a hint to
+# remove it). New violations are never auto-allowlisted; reviewers must
+# hand-edit the JSON to add an entry (forcing a conversation about why the
+# exception is legitimate).
 
 set -euo pipefail
 
@@ -190,12 +200,13 @@ scan_repo() {
 diff_against_allowlist() {
   local allow_entries
   if [ -f "$ALLOWLIST" ]; then
-    # Validate the JSON parses, then turn each entry into a "file\tline\ttoken" key.
+    # Validate the JSON parses, then turn line-based entries into "file\tline\ttoken" keys.
     if ! command -v jq >/dev/null 2>&1; then
       echo "::error::jq is required to read the allowlist; it is preinstalled on ubuntu-latest GitHub runners"
       exit 2
     fi
-    allow_entries=$(jq -r '.[] | [.file, (.line|tostring), .token] | @tsv' "$ALLOWLIST" 2>/dev/null || true)
+    # Line-based entries: have a .line field and no .content field (or content is null/empty).
+    allow_entries=$(jq -r '.[] | select((.content == null or .content == "") and .line != null) | [.file, (.line|tostring), .token] | @tsv' "$ALLOWLIST" 2>/dev/null || true)
   else
     allow_entries=""
   fi
@@ -203,10 +214,43 @@ diff_against_allowlist() {
   # Build sets of violations and allowlist entries keyed by file\tline\ttoken.
   : >"$STALE_FILE"
   : >"$FRESH_FILE"
+  local CONTENT_STALE_FILE="$SCAN_TMPDIR/content-stale.txt"
+  : >"$CONTENT_STALE_FILE"
 
   awk -F'\t' 'NF>=3 && $1!="" {print $1 "\t" $2 "\t" $3}' "$VIOL_FILE" | sort -u >"$SCAN_KEYS"
   # Filter blank lines so we don't count empty allowlists as having one entry.
   printf '%s\n' "$allow_entries" | awk 'NF>0' | sort -u >"$ALLOW_KEYS"
+
+  # ---------------------------------------------------------------------------
+  # Content-based allowlist entries: match by file + token + line content substring.
+  # For each {file, content, token} entry, find violation rows where the source
+  # line contains the content string verbatim. Those rows are added to ALLOW_KEYS.
+  # Stale check: the content string must still be present somewhere in the file.
+  # ---------------------------------------------------------------------------
+  if [ -f "$ALLOWLIST" ] && command -v jq >/dev/null 2>&1; then
+    while IFS= read -r entry_json; do
+      [ -z "$entry_json" ] && continue
+      local e_file e_content e_token
+      e_file=$(printf '%s' "$entry_json" | jq -r '.file')
+      e_content=$(printf '%s' "$entry_json" | jq -r '.content')
+      e_token=$(printf '%s' "$entry_json" | jq -r '.token')
+
+      # Expand to file+line+token keys for any violation row matching file+token+content.
+      awk -F'\t' -v f="$e_file" -v t="$e_token" -v c="$e_content" \
+        '$1 == f && $3 == t && index($4, c) > 0 { print $1 "\t" $2 "\t" $3 }' \
+        "$VIOL_FILE" >>"$ALLOW_KEYS"
+
+      # Stale check: content string no longer present anywhere in the file.
+      local actual_file="$REPO_ROOT/$e_file"
+      if [ -f "$actual_file" ] && ! grep -qF "$e_content" "$actual_file" 2>/dev/null; then
+        printf 'content-based allowlist entry stale — content not found in %s (token: %s):\n  %s\n' \
+          "$e_file" "$e_token" "$e_content" >>"$CONTENT_STALE_FILE"
+      fi
+    done < <(jq -c '.[] | select(.content != null and .content != "")' "$ALLOWLIST" 2>/dev/null || true)
+
+    # Re-sort after adding content-based expansions.
+    sort -u -o "$ALLOW_KEYS" "$ALLOW_KEYS"
+  fi
 
   # Fresh violations: in scan, not in allowlist
   comm -23 "$SCAN_KEYS" "$ALLOW_KEYS" >"$FRESH_FILE"
@@ -239,6 +283,8 @@ diff_against_allowlist() {
     echo "Fix: remove the forbidden token. The ADR documents the canonical replacement pattern at $ADR_URL."
     echo "If the token is legitimate (rare — e.g. a documentation cross-reference), add an entry to $ALLOWLIST:"
     echo "  {\"file\": \"<path>\", \"line\": <line>, \"token\": \"<token>\", \"reason\": \"<one sentence>\"}"
+    echo "  OR use content-based (preferred for CHANGELOG entries — stable across line-number shifts):"
+    echo "  {\"file\": \"<path>\", \"content\": \"<verbatim substring of the line>\", \"token\": \"<token>\", \"reason\": \"<one sentence>\"}"
     rc=1
   fi
 
@@ -252,6 +298,15 @@ diff_against_allowlist() {
     done <"$STALE_FILE"
     echo
     echo "Monotonic-shrink: when a deny-list match is removed from source, its allowlist entry must be removed too."
+    rc=1
+  fi
+
+  if [ -s "$CONTENT_STALE_FILE" ]; then
+    echo
+    echo "::error::ADR-0009 deny-list allowlist drift — content-based entries are stale."
+    cat "$CONTENT_STALE_FILE"
+    echo
+    echo "Monotonic-shrink: when the allowlisted content is removed from the file, remove the allowlist entry too."
     rc=1
   fi
 
