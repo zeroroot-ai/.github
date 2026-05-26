@@ -1,4 +1,4 @@
-# Shared Dependabot config template for zero-day-ai repos.
+# Shared Dependabot config template for zeroroot-ai repos.
 # Slice 1.5 (interim path while Renovate marketplace install is pending).
 #
 # Per-repo .github/dependabot.yml copies this template, adapting only

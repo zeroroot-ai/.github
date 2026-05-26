@@ -5,7 +5,7 @@
 #
 #     # In repo-local .golangci.yml:
 #     include:
-#       - https://raw.githubusercontent.com/zero-day-ai/.github/main/templates/golangci-base.yml
+#       - https://raw.githubusercontent.com/zeroroot-ai/.github/main/templates/golangci-base.yml
 #
 # Or vendored (preferred): copy this file to repo-local
 # `.github/golangci-base.yml` and reference via local include.

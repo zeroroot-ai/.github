@@ -31,10 +31,10 @@ Pick exactly ONE of these and uncomment it. The `architectural-doc-coverage`
 CI check parses your PR body for one of these trailers and blocks merge
 otherwise.
 
-Trailer (a) — companion PR on zero-day-ai/docs that updates the relevant
+Trailer (a) — companion PR on zeroroot-ai/docs that updates the relevant
 page (architecture/, repos/<repo>/, edge-cases/, or adr/):
 
-    Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>
+    Docs-PR: https://github.com/zeroroot-ai/docs/pull/<N>
 
 Trailer (b) — cosmetic/mechanical fix that touches no architectural
 invariant (typo, dep bump, formatting, comment-only). Reviewers will push

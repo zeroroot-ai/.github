@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/zero-day-ai/.github/schemas/failure-mode.json",
+  "$id": "https://github.com/zeroroot-ai/.github/schemas/failure-mode.json",
   "title": "Failure-mode manifest",
   "description": "Schema for per-gate failure-mode.yaml files. Slice 6.5 of the production-readiness epic (gibson#176).",
   "type": "object",

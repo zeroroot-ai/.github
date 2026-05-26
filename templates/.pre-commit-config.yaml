@@ -1,4 +1,4 @@
-# Shared pre-commit hooks template for the zero-day-ai workspace.
+# Shared pre-commit hooks template for the zeroroot-ai workspace.
 # Slice 2.6 of the production-readiness epic (gibson#172 → board #16).
 #
 # Per-repo .pre-commit-config.yaml copies this verbatim. Drift detector
