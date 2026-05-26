@@ -1,6 +1,6 @@
 # Reusable YAML / helm / kubeconform lint workflow.
 #
-# Slice 2.4 of the production-readiness epic (zero-day-ai/gibson#172 →
+# Slice 2.4 of the production-readiness epic (zeroroot-ai/gibson#172 →
 # board #16). Three sub-jobs that gate chart + manifest changes:
 #
 # 1. yamllint — every `*.yaml` / `*.yml` file in the caller. Sensible
@@ -26,7 +26,7 @@
 #
 # Called from per-repo `.github/workflows/yaml-helm-lint.yml`:
 #
-#     uses: zero-day-ai/.github/.github/workflows/reusable-yaml-helm-kubeconform-lint.yml@main
+#     uses: zeroroot-ai/.github/.github/workflows/reusable-yaml-helm-kubeconform-lint.yml@main
 #     with:
 #       chart-paths: '["helm/gibson", "helm/gibson-crds"]'
 #

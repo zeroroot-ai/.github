@@ -1,4 +1,4 @@
-# AI agent runbook for `zero-day-ai/*`
+# AI agent runbook for `zeroroot-ai/*`
 
 This file is the contract every AI agent (Claude Code, opencode, others) reads
 before doing any work in this org. It is agent-agnostic; the same rules apply
@@ -25,7 +25,7 @@ override only when explicitly noted.
 6. **Squash-merge only**, ruleset-enforced. Multi-commit PRs are fine; the
    squash subject is set from the PR title.
 7. **Agents merge their own PRs once required CI is green — across all repos, all commit types**
-   ([ADR-0007](https://github.com/zero-day-ai/docs/blob/main/adr/0007-agent-merge-autonomy.md)).
+   ([ADR-0007](https://github.com/zeroroot-ai/docs/blob/main/adr/0007-agent-merge-autonomy.md)).
    The CI rulesets are the gate; commit-type prefix, repo tier, and `BREAKING CHANGE` status
    are not. The single remaining filter is agent judgment: if a human decision is genuinely
    needed, halt and surface an `AGENT BLOCKED` banner at the top of the terminal reply, then
@@ -33,7 +33,7 @@ override only when explicitly noted.
 8. **CI failures must be root-caused, not retried.** Open or update a
    `ci-failure` issue (the `ci-failure-triage` workflow does this automatically;
    you add the diagnosis as a comment) before pushing a fix or rerunning.
-9. **One code path** ([ADR-0003](https://github.com/zero-day-ai/docs/blob/main/adr/0003-one-code-path.md)).
+9. **One code path** ([ADR-0003](https://github.com/zeroroot-ai/docs/blob/main/adr/0003-one-code-path.md)).
    Every dependency is required at chart render, at process boot, and at runtime.
    No `.enabled: false` toggles, graceful-nil branches, silent env fallbacks,
    `failurePolicy: Ignore`, or `--dev-mode` flags. CI enforces (see §10).
@@ -60,11 +60,11 @@ search across **both open AND closed** issues.
 
 ```bash
 # Repo-scoped (most common — pick the repo the symptom most likely lives in):
-gh issue list -R zero-day-ai/<repo> --state all --search "<keywords>" --limit 25
+gh issue list -R zeroroot-ai/<repo> --state all --search "<keywords>" --limit 25
 
 # Cross-repo (use when the symptom could span repos — auth chain, signup
 # flow, gitops sync, ESO behaviour, etc.):
-gh search issues "org:zero-day-ai <keywords>" --state all --limit 25
+gh search issues "org:zeroroot-ai <keywords>" --state all --limit 25
 ```
 
 Choose keywords from the user's own phrasing first, then add error
@@ -103,19 +103,19 @@ Run, in this order:
 for repo in gibson sdk platform-sdk platform-clients ext-authz dashboard \
             tenant-operator platform-operator deploy gitops debug-plugin \
             setec adk gibson-tool-runner spiffe-jwks-exporter; do
-  gh pr list -R zero-day-ai/$repo --state open \
+  gh pr list -R zeroroot-ai/$repo --state open \
     --search "author:@me OR assignee:@me" --json number,title,headRefName
 done
 
 # What epics are open?
-gh project list --owner zero-day-ai --format json \
+gh project list --owner zeroroot-ai --format json \
   | jq '.projects[] | select(.title | startswith("Epic:")) | {number, title}'
 ```
 
 If you are joining a named epic, view its board first:
 
 ```bash
-gh project view <num> --owner zero-day-ai
+gh project view <num> --owner zeroroot-ai
 ```
 
 **Never start a branch whose slug matches an existing in-flight branch in any repo.**
@@ -210,7 +210,7 @@ without inviting a merge yet, just say so in the PR body.
 **Add to the epic board** if this PR is part of one:
 
 ```bash
-gh project item-add <project-num> --owner zero-day-ai --url <pr-url>
+gh project item-add <project-num> --owner zeroroot-ai --url <pr-url>
 ```
 
 The board's built-in automation moves the item through `Todo → In Progress →
@@ -250,7 +250,7 @@ pnpm proto:generate
 
 ### Agent merge autonomy
 
-Codified in [ADR-0007](https://github.com/zero-day-ai/docs/blob/main/adr/0007-agent-merge-autonomy.md).
+Codified in [ADR-0007](https://github.com/zeroroot-ai/docs/blob/main/adr/0007-agent-merge-autonomy.md).
 Read the ADR for the reasoning; this section is the operational contract.
 
 **Agents merge their own PRs once every required CI check is `success`.** This
@@ -296,7 +296,7 @@ failure.
 When the gate isn't met, leave the PR for a human and move on to the next
 task in your queue. Do not "encourage" the merge with comments or pings.
 
-**Full pre-merge checklist:** the four conditions above are the mechanical part; the complete canonical list (walker gates, CodeQL findings, coverage delta, ADR + trap obligations, escape-hatch ban, `Docs-PR:` trailer) lives at [`docs/agents/pr-checklist.md`](https://github.com/zero-day-ai/docs/blob/main/agents/pr-checklist.md) in the workspace docs repo. Single source of truth — do not restate items here.
+**Full pre-merge checklist:** the four conditions above are the mechanical part; the complete canonical list (walker gates, CodeQL findings, coverage delta, ADR + trap obligations, escape-hatch ban, `Docs-PR:` trailer) lives at [`docs/agents/pr-checklist.md`](https://github.com/zeroroot-ai/docs/blob/main/agents/pr-checklist.md) in the workspace docs repo. Single source of truth — do not restate items here.
 
 
 ### Agent judgment is the one remaining filter
@@ -347,7 +347,7 @@ When a required check fails on your PR (or on `main` after merge):
 
 1. **Do not blindly rerun** the workflow. The `ci-failure-triage` workflow
    (a `workflow_run` listener wired in each repo, calling the reusable workflow
-   at `zero-day-ai/.github/.github/workflows/ci-failure-triage.yml`) opens or
+   at `zeroroot-ai/.github/.github/workflows/ci-failure-triage.yml`) opens or
    updates a `ci-failure`-labelled issue with the failed-jobs list, the run
    URL, the head SHA, and the branch. **One issue per `(workflow, branch)`
    pair** — if the issue already exists, the workflow comments on it instead
@@ -448,7 +448,7 @@ rebase churn.
 
 Anything spanning ≥2 repos is an epic. Each epic gets:
 
-1. **A Project (v2) board** at the org level: `gh project create --owner zero-day-ai --title "Epic: <id>"`
+1. **A Project (v2) board** at the org level: `gh project create --owner zeroroot-ai --title "Epic: <id>"`
 2. **A consistent branch name** across every repo: `epic/<id>-<slug>` (or just `epic/<id>` if no slug needed).
 3. **Items**: every PR added via `gh project item-add`.
 
@@ -529,7 +529,7 @@ Historical context: on 2026-05-17 a `feat!:` PR on `core/sdk` reflexively
 crossed the polyrepo from 1.9.0 to 2.0.0, then bricked the SDK fan-out
 because Go's v2+ module-path rule requires `/v2` and the SDK doesn't have
 it. Recovery: full polyrepo reset back to 0.x (PRD
-zero-day-ai/.github#25). The `bump-minor-pre-major` setting is the only
+zeroroot-ai/.github#25). The `bump-minor-pre-major` setting is the only
 structural change that prevents repeat.
 
 ---
@@ -548,7 +548,7 @@ structural change that prevents repeat.
 - **No local proto includes — cross-module proto sharing goes through BSR.**
   Proto reuse between any two of the three foundation modules (`opensource/sdk`,
   `platform-sdk`, `platform-clients`) MUST go through BSR module deps:
-  `buf.build/zero-day-ai-platform/<module>` declared in `buf.yaml` `deps:`,
+  `buf.build/zeroroot-ai-platform/<module>` declared in `buf.yaml` `deps:`,
   pinned by `buf.lock`. Never vendor `.proto` files (no `cp` of one module's
   proto into another's tree). Never M-map `go_package` via
   `buf.gen.yaml managed.override.file_option`. Never duplicate a proto type
@@ -566,7 +566,7 @@ structural change that prevents repeat.
   `gibson.daemon.discovery.v1` / `gibson.platform.v1` / `gibson.tenant.v1`
   directory under `opensource/sdk/api/proto/` is rejected by review.
 - **No infra-client deps in `opensource/sdk/go.mod`.** The CodeQL deny-list
-  query (in `zero-day-ai/codeql-go-queries`) fails CI when the OSS SDK's
+  query (in `zeroroot-ai/codeql-go-queries`) fails CI when the OSS SDK's
   module graph pulls Vault / OpenBao / AWS Secrets Manager / GCP Secret
   Manager / Azure Key Vault / SPIFFE / Redis / Neo4j / OpenFGA admin /
   pgx / any other first-party-internal infra client. Those clients live
@@ -574,7 +574,7 @@ structural change that prevents repeat.
   Smoke check: `go mod why` from a clean SDK consumer returns nothing for
   any of those modules. Adding such a dep on the SDK is a fundamental
   category error; rewrite the work into platform-clients instead.
-- **One code path — see [ADR-0003](https://github.com/zero-day-ai/docs/blob/main/adr/0003-one-code-path.md).**
+- **One code path — see [ADR-0003](https://github.com/zeroroot-ai/docs/blob/main/adr/0003-one-code-path.md).**
   Never re-introduce `.enabled: false` defaults, `| default ""` silent template
   fallbacks, `failurePolicy: Ignore` webhooks, `optional: true` env refs,
   `lookup` calls outside bootstrap templates, `noopAuthorizer` / `NoopClient` /
@@ -615,7 +615,7 @@ nothing else.
 
 The checks below are the ones specific to the platform-contract refactor.
 Per-repo rulesets layer additional repo-specific required checks on top
-(see `gh ruleset list --org zero-day-ai`).
+(see `gh ruleset list --org zeroroot-ai`).
 
 | Check | OSS SDK (`opensource/sdk`) | platform-sdk | platform-clients | Internal Go services |
 |-------|---------------------------|--------------|------------------|----------------------|
@@ -634,10 +634,10 @@ major-only — so workflow drift does not produce per-PR build differences.
 ### Cross-link to ADRs
 
 The architectural decisions behind this contract are tracked in the
-`zero-day-ai/docs` ADR series:
+`zeroroot-ai/docs` ADR series:
 
 <!-- TODO: replace placeholders with the actual ADR numbers once
-zero-day-ai/.github#101 slice #27 lands the ADR PR on zero-day-ai/docs.
+zeroroot-ai/.github#101 slice #27 lands the ADR PR on zeroroot-ai/docs.
 The 5 ADRs are: two-surface contract; platform-clients mandate;
 wholesale-flip discipline; proto hygiene contract (protovalidate +
 idempotency_key + pagination + buf breaking); reproducible-CI mandate
@@ -650,15 +650,15 @@ idempotency_key + pagination + buf breaking); reproducible-CI mandate
 - ADR-NNNN — Reproducible-CI mandate (pinned tool versions, CodeQL deny-list, contract tests, reproducible-build hash compare)
 
 If a memory-loaded session shows ADR numbers above as `NNNN`, that means
-the docs PR has not landed yet — follow up at `zero-day-ai/.github#117`
-and `zero-day-ai/.github#101`.
+the docs PR has not landed yet — follow up at `zeroroot-ai/.github#117`
+and `zeroroot-ai/.github#101`.
 
 ---
 
 ## 12. When in doubt
 
 - Read the per-repo `CLAUDE.md`. It overrides this file when explicitly noted.
-- Check `gh ruleset list --org zero-day-ai` to see what's actually enforced.
+- Check `gh ruleset list --org zeroroot-ai` to see what's actually enforced.
 - Open a PR (ready-for-review, not draft) early and let CI tell you what's wrong.
 - If a ruleset blocks something legitimate, ask the operator — they have
   bypass during the soft-launch period; tightening happens after the rules

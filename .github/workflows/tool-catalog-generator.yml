@@ -9,7 +9,7 @@ name: tool-catalog-generator
 #   - Make targets (build / test / check / etc.)
 #   - zda-ast subcommands (when the zda-ast CLI lands)
 #
-# Emits a consolidated docs/agents/tools.md to zero-day-ai/docs as a
+# Emits a consolidated docs/agents/tools.md to zeroroot-ai/docs as a
 # workflow artifact. PR to actually open the cross-repo PR is a follow-up
 # (needs cross-repo PAT).
 
@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           OUT=/tmp/tools.md
-          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
 
           {
             echo "# Tool catalog"
@@ -49,7 +49,7 @@ jobs:
           } > "$OUT"
 
           for REPO in $REPOS; do
-            WALKERS=$(gh api -X GET "search/code" -F q="filename:no_graceful_nil_test.go OR filename:no_context_background_test.go OR filename:no_time_now_test.go OR filename:authz_annotation_completeness_test.go OR filename:check_no_gibson_test.go OR filename:tenant_id_source_test.go OR filename:tenant_client_only_test.go OR filename:audit_emit_on_mutation_test.go repo:zero-day-ai/$REPO" --jq '.items[].path' 2>/dev/null || true)
+            WALKERS=$(gh api -X GET "search/code" -F q="filename:no_graceful_nil_test.go OR filename:no_context_background_test.go OR filename:no_time_now_test.go OR filename:authz_annotation_completeness_test.go OR filename:check_no_gibson_test.go OR filename:tenant_id_source_test.go OR filename:tenant_client_only_test.go OR filename:audit_emit_on_mutation_test.go repo:zeroroot-ai/$REPO" --jq '.items[].path' 2>/dev/null || true)
             for W in $WALKERS; do
               echo "| $REPO | \`$W\` | structural invariant walker |" >> "$OUT"
             done
@@ -63,7 +63,7 @@ jobs:
             echo "|---|---|---|"
           } >> "$OUT"
           for REPO in $REPOS; do
-            CFG=$(gh api "/repos/zero-day-ai/$REPO/contents/.golangci.yml" --silent 2>/dev/null && echo "yes" || echo "")
+            CFG=$(gh api "/repos/zeroroot-ai/$REPO/contents/.golangci.yml" --silent 2>/dev/null && echo "yes" || echo "")
             if [ -n "$CFG" ]; then
               echo "| $REPO | \`.golangci.yml\` | extends shared baseline (per slice 2.1) |" >> "$OUT"
             fi
@@ -77,7 +77,7 @@ jobs:
             echo "|---|---|---|"
           } >> "$OUT"
           for REPO in $REPOS; do
-            CODEQL=$(gh api "/repos/zero-day-ai/$REPO/contents/.github/workflows/codeql.yml" --silent 2>/dev/null && echo "yes" || echo "")
+            CODEQL=$(gh api "/repos/zeroroot-ai/$REPO/contents/.github/workflows/codeql.yml" --silent 2>/dev/null && echo "yes" || echo "")
             if [ -n "$CODEQL" ]; then
               echo "| $REPO | \`.github/workflows/codeql.yml\` | semantic / data-flow analysis (per PRD 4) |" >> "$OUT"
             fi
@@ -135,9 +135,9 @@ jobs:
             echo ""
             echo "| Module | Purpose | Latest | Slice |"
             echo "|---|---|---|---|"
-            echo "| [\`zero-day-ai/ast-checks\`](https://github.com/zero-day-ai/ast-checks) | shared AST walker primitives + harness | v0.1.1 | 3.1 |"
-            echo "| [\`zero-day-ai/testharness\`](https://github.com/zero-day-ai/testharness) | goldenfile (v0.1) + planned testcontainers | v0.1.0 | 5.13 |"
-            echo "| [\`zero-day-ai/testfixtures\`](https://github.com/zero-day-ai/testfixtures) | 5 shared fakes (authz/audit/fga/tenant/spiffe) | v0.1.0 | 5.4 |"
+            echo "| [\`zeroroot-ai/ast-checks\`](https://github.com/zeroroot-ai/ast-checks) | shared AST walker primitives + harness | v0.1.1 | 3.1 |"
+            echo "| [\`zeroroot-ai/testharness\`](https://github.com/zeroroot-ai/testharness) | goldenfile (v0.1) + planned testcontainers | v0.1.0 | 5.13 |"
+            echo "| [\`zeroroot-ai/testfixtures\`](https://github.com/zeroroot-ai/testfixtures) | 5 shared fakes (authz/audit/fga/tenant/spiffe) | v0.1.0 | 5.4 |"
           } >> "$OUT"
 
       - name: Upload as artifact

@@ -1,6 +1,6 @@
 # Reusable shell + markdown + broken-link lint workflow.
 #
-# Slice 2.5 of the production-readiness epic (zero-day-ai/gibson#172 →
+# Slice 2.5 of the production-readiness epic (zeroroot-ai/gibson#172 →
 # board #16). Three sub-jobs:
 #
 # 1. shellcheck — every `*.sh` file in the calling repo. Severity
@@ -20,7 +20,7 @@
 #
 # Called from per-repo `.github/workflows/lint.yml` via:
 #
-#     uses: zero-day-ai/.github/.github/workflows/reusable-shell-md-lint.yml@main
+#     uses: zeroroot-ai/.github/.github/workflows/reusable-shell-md-lint.yml@main
 #
 # Required check name suggestion: `shell-md-lint`.
 #
@@ -30,7 +30,7 @@
 #     belong in the config file (`.markdownlint.json` / `.lychee.toml`)
 #     so they're git-tracked.
 #
-# Closes slice 2.5 (zero-day-ai/.github#40).
+# Closes slice 2.5 (zeroroot-ai/.github#40).
 
 name: shell-md-lint
 

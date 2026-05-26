@@ -13,7 +13,7 @@ name: Reusable test
 #
 #     jobs:
 #       test:
-#         uses: zero-day-ai/.github/.github/workflows/reusable-test.yml@main
+#         uses: zeroroot-ai/.github/.github/workflows/reusable-test.yml@main
 #         with:
 #           run-integration: true
 #           run-e2e: false

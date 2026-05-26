@@ -1,5 +1,5 @@
 name: mirror-images
-# Mirrors upstream container images to ghcr.io/zero-day-ai/mirror/*.
+# Mirrors upstream container images to ghcr.io/zeroroot-ai/mirror/*.
 #
 # Driven by mirror-list.yaml at the repo root. Tags are immutable: an entry
 # whose target tag already exists in the mirror is skipped.
@@ -20,7 +20,7 @@ on:
         type: string
 
 permissions:
-  # write:packages — required to push to ghcr.io/zero-day-ai/mirror/*
+  # write:packages — required to push to ghcr.io/zeroroot-ai/mirror/*
   packages: write
   # read on the repo content (mirror-list.yaml)
   contents: read
@@ -67,7 +67,7 @@ jobs:
           # set blocks the run.
           set -uo pipefail
 
-          dest_registry="ghcr.io/zero-day-ai/mirror"
+          dest_registry="ghcr.io/zeroroot-ai/mirror"
 
           mapfile -t entries < <(yq -o=json -I=0 '.mirrors[]' mirror-list.yaml)
           total=${#entries[@]}
@@ -128,4 +128,4 @@ jobs:
 
       - name: Summary
         if: always()
-        run: echo "Mirror run complete. Inspect ghcr.io/zero-day-ai/mirror/* for the populated tags."
+        run: echo "Mirror run complete. Inspect ghcr.io/zeroroot-ai/mirror/* for the populated tags."

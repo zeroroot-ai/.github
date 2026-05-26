@@ -15,7 +15,7 @@ on:
   workflow_call:
     inputs:
       image_ref:
-        description: "Image ref (e.g. ghcr.io/zero-day-ai/gibson@sha256:abc...)"
+        description: "Image ref (e.g. ghcr.io/zeroroot-ai/gibson@sha256:abc...)"
         type: string
         required: true
       size_budget_mb:

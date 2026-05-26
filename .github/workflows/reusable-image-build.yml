@@ -3,7 +3,7 @@ name: Reusable image build
 # Reusable workflow for building + signing + SBOM-attest + scanning platform images.
 # Slice 1.1 of the production-readiness epic (gibson#171 → board #16).
 # Org-level so every image-producing repo can:
-#   uses: zero-day-ai/.github/.github/workflows/reusable-image-build.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-image-build.yml@main
 #
 # Job 1 (build-and-push):
 #   build → push → cosign sign → syft SBOM → cosign attest SBOM → trivy.
@@ -35,7 +35,7 @@ on:
       image_name:
         required: true
         type: string
-        description: Fully qualified image name (e.g. ghcr.io/zero-day-ai/gibson).
+        description: Fully qualified image name (e.g. ghcr.io/zeroroot-ai/gibson).
       tag_pattern:
         required: true
         type: string
@@ -141,7 +141,7 @@ jobs:
     # continue-on-error: scan results inform but never block the image push.
     # Two known failure modes in cross-repo reusable workflow context:
     #   1. codeql-action/upload-sarif returns "Bad credentials" because the
-    #      GITHUB_TOKEN JWT's workflow-repo claim (zero-day-ai/.github) doesn't
+    #      GITHUB_TOKEN JWT's workflow-repo claim (zeroroot-ai/.github) doesn't
     #      match the target repo's code-scanning API expectation (.github#135).
     #   2. trivy exits 1 on CVEs that are tracked but not yet fixed (e.g.
     #      swiper@11.x GHSA-hmx5-qpq5-p643, tracked in dashboard#258).

@@ -13,7 +13,7 @@
 #     contents: read
 #   jobs:
 #     triage:
-#       uses: zero-day-ai/.github/.github/workflows/ci-failure-triage.yml@main
+#       uses: zeroroot-ai/.github/.github/workflows/ci-failure-triage.yml@main
 #       with:
 #         workflow_name: ${{ github.event.workflow_run.name }}
 #         conclusion:    ${{ github.event.workflow_run.conclusion }}
@@ -148,7 +148,7 @@ jobs:
                 '',
                 '---',
                 '',
-                'Per [`AGENTS.md` §6](https://github.com/zero-day-ai/.github/blob/main/AGENTS.md#6-ci-failures-triage-file-an-issue-then-fix):',
+                'Per [`AGENTS.md` §6](https://github.com/zeroroot-ai/.github/blob/main/AGENTS.md#6-ci-failures-triage-file-an-issue-then-fix):',
                 'do not rerun blindly. Post the root cause as a comment on this issue first. ' +
                 'This issue auto-closes when the next run of this workflow on this branch succeeds.',
               ].join('\n');

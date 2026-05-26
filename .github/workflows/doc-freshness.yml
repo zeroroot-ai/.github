@@ -14,7 +14,7 @@ on:
   workflow_call:
     secrets:
       DOCS_REPO_READ_TOKEN:
-        description: "PAT/App token with contents:read on zero-day-ai/docs (private repo)"
+        description: "PAT/App token with contents:read on zeroroot-ai/docs (private repo)"
         required: false
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
           # Falls back gracefully when the docs repo is private and DOCS_REPO_READ_TOKEN
           # is not configured — the resolution steps then emit warnings but don't fail,
           # which mirrors how architectural-doc-coverage.yml handles the same situation.
-          if gh api /repos/zero-day-ai/docs/contents/adr --paginate \
+          if gh api /repos/zeroroot-ai/docs/contents/adr --paginate \
               --jq '.[] | select(.name | startswith("0") and endswith(".md")) | .name' \
               2>/dev/null \
             | sed -E 's/^0*([0-9]+).*/\1/' | sort -u > /tmp/refs/adrs.txt && \
@@ -55,7 +55,7 @@ jobs:
           fi
 
           # Pull docs/agents/traps.md to find trap IDs
-          gh api /repos/zero-day-ai/docs/contents/agents/traps.md --jq '.content' 2>/dev/null \
+          gh api /repos/zeroroot-ai/docs/contents/agents/traps.md --jq '.content' 2>/dev/null \
             | base64 -d \
             | grep -oE 'T[0-9]{4}' | sort -u > /tmp/refs/traps.txt || touch /tmp/refs/traps.txt
           echo "Traps: $(wc -l < /tmp/refs/traps.txt)"
@@ -120,7 +120,7 @@ jobs:
             --exclude 'example\.(com|org)'
             --exclude 'img\.shields\.io'
             --exclude 'discord\.gg'
-            --exclude 'github\.com/zero-day-ai/docs'
+            --exclude 'github\.com/zeroroot-ai/docs'
             './**/*.md'
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -142,13 +142,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/refs
-          if gh api /repos/zero-day-ai/docs/contents/adr --paginate \
+          if gh api /repos/zeroroot-ai/docs/contents/adr --paginate \
               --jq '.[] | select(.name | startswith("0") and endswith(".md")) | .name' \
               2>/dev/null \
             | sed -E 's/^0*([0-9]+).*/\1/' | sort -u > /tmp/refs/adrs.txt && \
              [ -s /tmp/refs/adrs.txt ]; then
             echo "refs_available=true" >> "$GITHUB_OUTPUT"
-            gh api /repos/zero-day-ai/docs/contents/agents/traps.md --jq '.content' 2>/dev/null \
+            gh api /repos/zeroroot-ai/docs/contents/agents/traps.md --jq '.content' 2>/dev/null \
               | base64 -d | grep -oE 'T[0-9]{4}' | sort -u > /tmp/refs/traps.txt || touch /tmp/refs/traps.txt
           else
             echo "refs_available=false" >> "$GITHUB_OUTPUT"

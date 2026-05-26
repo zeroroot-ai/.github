@@ -7,7 +7,7 @@ name: Reusable coverage gate
 #   - Any package regression > tolerance vs main baseline (default 0.5pp)
 #
 # Caller:
-#   uses: zero-day-ai/.github/.github/workflows/reusable-coverage-gate.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-coverage-gate.yml@main
 
 on:
   workflow_call:
@@ -44,7 +44,7 @@ jobs:
 
       - name: Fetch comparator script
         run: |
-          curl -sSL https://raw.githubusercontent.com/zero-day-ai/.github/main/scripts/coverage-compare.sh \
+          curl -sSL https://raw.githubusercontent.com/zeroroot-ai/.github/main/scripts/coverage-compare.sh \
             -o /tmp/coverage-compare.sh
           chmod +x /tmp/coverage-compare.sh
 

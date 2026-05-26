@@ -1,25 +1,25 @@
 # Reusable workflow that enforces ADR-0009's deny-list.
 #
-# ADR-0009 (zero-day-ai/docs#33, amended docs#34) establishes that every
+# ADR-0009 (zeroroot-ai/docs#33, amended docs#34) establishes that every
 # platform service-to-service auth uses JWT + SPIFFE. The "### Deny-list"
 # section enumerates literal tokens that MUST NOT appear in any consumer
 # repo's source tree. This workflow scans the calling repo for those
 # tokens and fails the PR on any new (non-allowlisted) occurrence.
 #
 # Source of truth for the deny-list:
-#   https://github.com/zero-day-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md
+#   https://github.com/zeroroot-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md
 #
 # Parse-stable vendored snapshot in this repo:
 #   data/adr-0009-deny-list.md
 #
 # The workflow reads the deny-list from the vendored snapshot (not the
-# docs repo directly), because zero-day-ai/docs is private and not every
+# docs repo directly), because zeroroot-ai/docs is private and not every
 # consumer repo has DOCS_REPO_READ_TOKEN. The vendored file is kept in
 # lockstep with the ADR via the sync contract documented at the top of
 # `data/adr-0009-deny-list.md`.
 #
 # Called by per-repo workflows via:
-#   uses: zero-day-ai/.github/.github/workflows/vault-auth-method-deny-list.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/vault-auth-method-deny-list.yml@main
 #
 # Required check name: vault-auth-method-deny-list
 #
@@ -49,10 +49,10 @@ jobs:
         with:
           path: caller
 
-      - name: Checkout zero-day-ai/.github (for the scanner + vendored deny-list)
+      - name: Checkout zeroroot-ai/.github (for the scanner + vendored deny-list)
         uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          repository: zero-day-ai/.github
+          repository: zeroroot-ai/.github
           path: org-github
           ref: main
 

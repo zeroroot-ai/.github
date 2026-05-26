@@ -5,7 +5,7 @@
 #   - workflow_dispatch (manual reapply)
 #
 # Auth: requires a PAT in secret RULESET_APPLY_TOKEN with org-admin and
-# repo-admin perms across all 12 zero-day-ai/* repos. The default
+# repo-admin perms across all 12 zeroroot-ai/* repos. The default
 # GITHUB_TOKEN cannot manage org-level rulesets or cross-repo rulesets.
 #
 # Plan requirement: GitHub Team for org rulesets, GitHub Pro for branch
@@ -50,7 +50,7 @@ jobs:
             name=$(jq -r '.name' "$f")
             echo "::group::Org ruleset: $name (from $f)"
             # List existing rulesets; if the call fails (plan gate, perm), skip lookup.
-            list_out=$(gh api /orgs/zero-day-ai/rulesets 2>&1) || true
+            list_out=$(gh api /orgs/zeroroot-ai/rulesets 2>&1) || true
             existing_id=""
             if echo "$list_out" | jq -e 'type == "array"' >/dev/null 2>&1; then
               existing_id=$(echo "$list_out" | jq -r ".[] | select(.name == \"$name\") | .id" | head -1)
@@ -59,13 +59,13 @@ jobs:
             fi
             if [[ "$existing_id" =~ ^[0-9]+$ ]]; then
               echo "Updating existing ruleset id=$existing_id"
-              if ! gh api --method PUT "/orgs/zero-day-ai/rulesets/$existing_id" --input "$f"; then
+              if ! gh api --method PUT "/orgs/zeroroot-ai/rulesets/$existing_id" --input "$f"; then
                 echo "::error::Failed to update org ruleset $name"
                 failures=$((failures+1))
               fi
             else
               echo "Creating new ruleset"
-              if ! gh api --method POST "/orgs/zero-day-ai/rulesets" --input "$f"; then
+              if ! gh api --method POST "/orgs/zeroroot-ai/rulesets" --input "$f"; then
                 echo "::error::Failed to create org ruleset $name (likely needs GitHub Team plan)"
                 failures=$((failures+1))
               fi
@@ -94,7 +94,7 @@ jobs:
             repo=$(basename "$f" .json)
             name=$(jq -r '.name' "$f")
             echo "::group::Repo ruleset: $repo / $name (from $f)"
-            list_out=$(gh api "/repos/zero-day-ai/$repo/rulesets" 2>&1) || true
+            list_out=$(gh api "/repos/zeroroot-ai/$repo/rulesets" 2>&1) || true
             existing_id=""
             if echo "$list_out" | jq -e 'type == "array"' >/dev/null 2>&1; then
               existing_id=$(echo "$list_out" | jq -r ".[] | select(.name == \"$name\") | .id" | head -1)
@@ -103,13 +103,13 @@ jobs:
             fi
             if [[ "$existing_id" =~ ^[0-9]+$ ]]; then
               echo "Updating existing ruleset id=$existing_id"
-              if ! gh api --method PUT "/repos/zero-day-ai/$repo/rulesets/$existing_id" --input "$f"; then
+              if ! gh api --method PUT "/repos/zeroroot-ai/$repo/rulesets/$existing_id" --input "$f"; then
                 echo "::error::Failed to update repo ruleset $repo/$name"
                 failures=$((failures+1))
               fi
             else
               echo "Creating new ruleset"
-              if ! gh api --method POST "/repos/zero-day-ai/$repo/rulesets" --input "$f"; then
+              if ! gh api --method POST "/repos/zeroroot-ai/$repo/rulesets" --input "$f"; then
                 echo "::error::Failed to create repo ruleset $repo/$name (likely needs GitHub Pro for private repos)"
                 failures=$((failures+1))
               fi

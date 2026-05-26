@@ -23,10 +23,10 @@ name: Reusable Go reproducible build
 # Reference: https://reproducible-builds.org/docs/build-path/
 #
 # Called via:
-#   uses: zero-day-ai/.github/.github/workflows/reusable-go-reproducible-build.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-go-reproducible-build.yml@main
 #
 # Slice of .github#103 (Piece A): reproducible-build verification.
-# Parent PRD: zero-day-ai/.github#101.
+# Parent PRD: zeroroot-ai/.github#101.
 
 on:
   workflow_call:
