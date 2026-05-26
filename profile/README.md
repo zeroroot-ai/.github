@@ -15,7 +15,7 @@
 
 # The zero-trust substrate for security agents.
 
-**Every identity proven. Every capability explicitly granted. Every execution isolated. Every discovery shared.**
+**Build your own agents. Run them on a platform that enforces zero trust at every layer.**
 
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/mkqd6mU3)
 [![Email](https://img.shields.io/badge/Contact-sales@zeroroot.ai-blue?style=for-the-badge&logo=gmail&logoColor=white)](mailto:sales@zeroroot.ai)
@@ -26,41 +26,140 @@
 
 ## Two organizations. One mission.
 
-**Zeroroot.ai** is the platform — a zero-trust substrate where security teams build, deploy, and run AI agents, tools, and missions. Zero trust isn't a feature here; it's the architecture. Every component proves its identity on connect. Every capability is explicitly granted. Every execution is hardware-isolated. Every discovery is audited and shared across the knowledge graph.
+**Zeroroot.ai** is the platform — a zero-trust substrate where security teams build, deploy, and run AI agents, tools, and missions. Zero trust isn't a feature here; it's the architecture. Every component proves its identity on connect. Every capability is explicitly granted. Every execution is hardware-isolated. Every discovery is shared across the knowledge graph.
 
-**[Zero-Day.ai Labs](https://zero-day.ai)** is the research and consulting arm. The Labs team stays at the forefront of AI and LLM security research so that organizations can fight AI threats with AI of their own. They build custom agents and tools deployed on the Zeroroot.ai platform for organizations that need a partner, not just a product — handling the research, the custom development, and the threat intelligence that keeps the platform's threat models current.
+**[Zero-Day.ai Labs](https://zero-day.ai)** is the research and consulting arm. The Labs team stays at the forefront of AI and LLM security research so that organizations can fight AI threats with AI of their own. They build custom agents and tools for organizations that need a partner, not just a product — delivering threat intelligence, custom development, and offensive AI research directly into the platform's threat models.
 
-Together: **the platform you deploy on, backed by the team that hunts on it.**
+**The SDK and ADK are open source.** Your team owns what they build. Zero-Day.ai Labs is there when you want expertise behind the wheel instead.
 
 ---
 
-## What makes it zero trust, not zero-trust-adjacent
+## Build your first agent in 30 minutes
 
-Most platforms call their network policy "zero trust." Zeroroot.ai bakes zero trust into the agent execution model itself.
+The [ADK](https://github.com/zeroroot-ai/adk) (`gibson` CLI) is designed for AI-assisted development. Scaffold a component, open your AI coding agent (Claude Code, Cursor), describe what you want — the scaffold contains everything the AI needs to write a complete, correct implementation without hand-holding.
 
-| Principle | How Zeroroot.ai implements it |
-|---|---|
-| **Verify every identity** | Every component — agent, tool, plugin, dashboard session, operator — carries a SPIFFE SVID. Every internal hop is mTLS pinned to a known peer. No "internal network we trust." |
-| **Grant least privilege explicitly** | OpenFGA-backed capability grants scoped to agent identity. Your PR-review bot cannot call the production exploit tool. Your red-team agent cannot touch ServiceNow. Every call checked, every call audited. |
-| **Assume breach** | Hardware isolation by default. Every tool invocation runs inside a Firecracker microVM via [Setec](https://github.com/zeroroot-ai/setec). A prompt-injected agent cannot reach adjacent tools. A compromised tool cannot escalate to the platform. |
-| **Inspect continuously** | OpenTelemetry traces on every hop. Langfuse on every prompt, completion, tool call, and graph write. Full replay of any mission step-by-step. |
-| **Minimize blast radius** | Multi-tenant by construction: per-tenant data planes, per-tenant secrets, per-tenant component registry. A breach in one tenant's workload is physically isolated from every other. |
+```bash
+# Install the CLI
+go install github.com/zeroroot-ai/adk/cmd/gibson@latest
+
+# One-time workspace setup
+gibson init --gibson-url https://api.zeroroot.ai
+
+# Scaffold the component you want to build
+gibson component init prom-scanner --kind tool
+cd prom-scanner
+
+# Open your AI editor — Claude Code, Cursor, whatever you use
+claude
+```
+
+Then tell your AI what you want:
+
+> *"Build a Gibson tool that probes HTTPS endpoints for exposed Prometheus /metrics routes. Read AGENTS.md first. Populate the Discovery field so findings land in the knowledge graph."*
+
+The AI reads `AGENTS.md` (the component contract baked into the scaffold), writes the proto definition, implements the tool, runs `make proto` and `gibson component validate`, and produces a working binary — without you touching the implementation. Then:
+
+```bash
+# Paste the enrollment command from the dashboard
+gibson component register --client-id <id> --client-secret - --gibson-url <url>
+gibson component run
+
+# That's it. Hardware-isolated, identity-scoped, audit-traced, graph-wired.
+```
+
+Every invocation now runs inside a Firecracker microVM. The component's SPIFFE identity gates what else it can call. Everything it discovers lands automatically in the shared knowledge graph.
+
+### What the scaffold gives your AI
+
+`gibson component init` produces a complete directory the AI navigates without prompting:
+
+```
+my-tool/
+├── AGENTS.md              ← AI contract: interfaces, harness API, proto layout, graph wiring
+├── CLAUDE.md              ← Claude Code shortcuts
+├── prompts/               ← step-by-step recipes: add-method, add-discovery, debug-enrollment
+├── component.yaml         ← kind, name, version
+├── main.go                ← serve.Tool(&MyTool{}) stub
+├── api/proto/             ← proto definition with field 100 = DiscoveryResult pre-reserved
+├── proto/vendor/          ← vendored SDK protos (no config needed)
+├── buf.yaml, buf.gen.yaml ← buf v2, STANDARD lint
+├── go.mod                 ← pinned to SDK release
+├── Makefile               ← proto / build / test / register / run / image
+├── Dockerfile             ← distroless, non-root
+└── .claude/settings.json  ← AI shell allowlist (make, gibson, buf, go test only)
+```
+
+The AI shell allowlist is intentional: Claude can scaffold, build, validate, and register, but cannot `kubectl apply`, `helm install`, or write outside the component directory.
+
+### Three component shapes
+
+| Kind | What it is | Built with |
+|------|------------|------------|
+| **agent** | LLM-driven gRPC service — reasons, plans, delegates to tools | `sdk.NewAgent` + `serve.Agent` |
+| **tool** | Stateless proto-in / proto-out executor, runs in microVM | `serve.Tool` |
+| **plugin** | Stateful integration with declared methods and lifecycle | `plugin.Serve` |
+
+Every tool response has **field 100 reserved for `DiscoveryResult`**. Fill it and the daemon's DiscoveryProcessor writes the entries into the knowledge graph automatically. No Cypher, no ingestion pipeline, no extra config.
+
+---
+
+## Open source SDK + ADK — own what you build
+
+The SDK and ADK are open source (BSL 1.1, converts to Apache 2.0 after 4 years). Your team builds against a stable, versioned, proto-first interface they can read, fork, and extend.
+
+```go
+import (
+    sdk "github.com/zeroroot-ai/sdk"
+    "github.com/zeroroot-ai/sdk/agent"
+    "github.com/zeroroot-ai/sdk/llm"
+)
+
+func execute(ctx context.Context, h agent.Harness, task agent.Task) (agent.Result, error) {
+    // Declare LLM slot requirements at build time.
+    // The platform picks the model at runtime — no model lock-in, no vendor SDK in your binary.
+    resp, _ := h.Complete(ctx, "primary", []llm.Message{
+        {Role: llm.RoleSystem, Content: "You are a security analyst."},
+        {Role: llm.RoleUser,   Content: task.Goal},
+    })
+
+    // Call another tool. Scoped by FGA grants. Runs in its own microVM.
+    var out scanpb.ScanResponse
+    _ = h.CallToolProto(ctx, "my-scanner", &scanpb.ScanRequest{Target: task.Goal}, &out)
+
+    // Three memory tiers: working (this run), mission (shared across agents), graph (permanent).
+    _ = h.Memory().Working().Set(ctx, "result", resp.Content)
+
+    return agent.NewSuccessResult("done"), nil
+}
+```
+
+What you don't write: transport, identity, secrets, mTLS setup, observability init, FGA check calls, graph ingestion, microVM orchestration. The substrate handles all of it.
 
 ---
 
 ## Fighting fire with fire
 
-Modern threats are AI-driven. Attackers iterate faster, chain vulnerabilities in minutes, and operate at a scale no human analyst can match unaided. Defending against AI-powered attacks with manual processes is a losing game.
+Modern threats are AI-driven. Attackers chain vulnerabilities in minutes, iterate at machine speed, and operate at a scale no human analyst can match unaided. Defending with manual processes is a losing game.
 
-Zeroroot.ai is built on the premise that the right response is **symmetric** — AI agents that recon, exploit, verify, and hunt at machine speed, under the same security guarantees you'd demand of any production workload.
+Zeroroot.ai is built on the premise that the right response is **symmetric** — your own AI agents that recon, exploit, verify, and hunt at machine speed, under the same security guarantees you'd demand of any production workload.
 
-**Zero-Day.ai Labs** provides the research side of that equation. The Labs team runs offensive AI research — prompt injection, jailbreak campaigns, RAG poisoning, LLM-assisted vulnerability chaining — so that the platform's threat models reflect what attackers actually deploy, not what researchers theorized three years ago. Their findings ship as platform hardening, new detection rules, and purpose-built agents available to every Zeroroot.ai customer.
+**Zero-Day.ai Labs** provides the research side of that equation. The Labs team runs continuous offensive AI research — prompt injection, jailbreak campaigns, RAG poisoning, LLM-assisted vulnerability chaining — so the platform's threat models reflect what attackers actually deploy. Their findings ship as platform hardening, new detection rules, and purpose-built agents available to every Zeroroot.ai customer.
 
 ---
 
-## The substrate in practice
+## What makes it zero trust, not zero-trust-adjacent
 
-Your team writes the agents. They run where you work — laptop, CI, VPS, your own Kubernetes — and connect to `api.zeroroot.ai` for orchestration, shared memory, and the knowledge graph. Your team decides what crosses the wire and what stays on the host.
+| Principle | How Zeroroot.ai implements it |
+|---|---|
+| **Verify every identity** | Every component carries a SPIFFE SVID. Every internal hop is mTLS pinned to a known peer. No "trusted internal network." |
+| **Grant least privilege explicitly** | OpenFGA capability grants scoped to agent identity. Your PR-review bot cannot call the production exploit tool. Your red-team agent cannot touch ServiceNow. Every call checked. |
+| **Assume breach** | Every tool invocation runs inside a Firecracker microVM via [Setec](https://github.com/zeroroot-ai/setec). A prompt-injected agent cannot reach adjacent tools. A compromised tool cannot escalate to the platform. |
+| **Inspect continuously** | OpenTelemetry traces on every hop. Langfuse on every prompt, completion, tool call, and graph write. Full replay of any mission step-by-step. |
+| **Minimize blast radius** | Multi-tenant by construction: per-tenant data planes, per-tenant secrets, per-tenant component registry. A breach in one tenant is physically isolated from every other. |
+
+---
+
+## Your agents run where you work
 
 ```
  EXECUTION PLANE                   │  CONTROL PLANE · api.zeroroot.ai
@@ -75,153 +174,83 @@ Your team writes the agents. They run where you work — laptop, CI, VPS, your o
  ● BYOK → anthropic · openai · bedrock · gemini · ollama
 ```
 
-**BYOK for LLMs** — keys live where your team puts them; the platform never custodies them. No model lock-in. **SPIFFE mTLS everywhere** — even the connection from your laptop to the control plane carries a workload identity. **Self-hosted Enterprise option** — full stack on your own Kubernetes cluster; same zero-trust guarantees, your perimeter.
-
----
-
-## What you ship with
-
-| Surface | What it gives your team |
-|---|---|
-| **ADK + `gibson` CLI** | Scaffold, build, validate, enroll, and submit missions against the platform. The `gibson` CLI is the client your team scripts. |
-| **Agent / Tool / Plugin SDK** | Public Go SDK with proto-first contracts. Declare LLM slot requirements; the framework picks the model. Rust and Python in the works. |
-| **Missions** | CUE-typed DAGs of agent and tool nodes parameterized by target. CUE catches misconfigurations at submit time — wrong agent name, missing field, bad enum — before the orchestrator runs a step. Pausable, resumable, checkpointed. |
-| **Knowledge graph** | Every discovery — hosts, ports, findings, techniques, attack chains — typed in Neo4j under a YAML-driven taxonomy. What one agent learns, the next one starts from. |
-| **Dashboard** | Tenant-scoped chat grounded in your graph, mission monitoring, RBAC, and full LLM trace replay. Ask your fleet questions in plain language. |
-| **Sandbox (Setec)** | Sub-100ms cold-start Firecracker microVMs. Hardware isolation for every tool invocation. Open-source. Useful on its own; Gibson is one consumer. |
-| **Zero-Day.ai Labs partnership** | Custom agent development, threat intelligence briefings, and LLM/AI security research delivered as platform updates and purpose-built tooling. |
-
----
-
-## Zero-Day.ai Labs — the research and consulting arm
-
-The Labs team operates at the edge of AI and LLM security:
-
-- **Custom agent development** — Labs engineers build agents, tools, and complete mission libraries tailored to your environment and deployed on your Zeroroot.ai instance.
-- **AI/LLM security research** — ongoing offensive research into prompt injection, jailbreak patterns, RAG poisoning, agentic tool-abuse, and LLM-assisted vulnerability chaining. Findings feed the platform's threat models directly.
-- **Red-team engagements** — structured assessments of your AI systems, LLM integrations, and agentic pipelines using the same techniques attackers are developing right now.
-- **Threat intelligence** — curated intelligence on the AI attack surface: new jailbreak families, real-world agentic exploits, and LLM-specific CVEs tracked and shipped to customers before they become incidents.
-
-**The Labs team doesn't just advise — they ship.** Every engagement produces artifacts (agents, detection rules, updated FGA models, custom tools) deployed into your Zeroroot.ai instance, not a PDF.
-
-[Engage Zero-Day.ai Labs →](mailto:labs@zero-day.ai)
-
----
-
-## The SDK in two minutes
-
-```go
-package main
-
-import (
-    "context"
-    sdk "github.com/zeroroot-ai/sdk"
-    "github.com/zeroroot-ai/sdk/agent"
-    "github.com/zeroroot-ai/sdk/llm"
-)
-
-func main() {
-    a, _ := sdk.NewAgent(
-        sdk.WithName("recon-agent"),
-        sdk.WithVersion("1.0.0"),
-        sdk.WithTargetTypes("network"),
-
-        // Declare LLM slot requirements — the framework matches a model.
-        // No vendor SDK in your binary, no model lock-in.
-        sdk.WithLLMSlot("primary", llm.SlotRequirements{
-            MinContextWindow: 32000,
-            RequiredFeatures: []string{"function_calling"},
-        }),
-
-        sdk.WithExecuteFunc(execute),
-    )
-    sdk.ServeAgent(a)
-}
-
-func execute(ctx context.Context, h agent.Harness, task agent.Task) (agent.Result, error) {
-    // Reason with the LLM the framework provisioned for you.
-    resp, _ := h.Complete(ctx, "primary", []llm.Message{
-        {Role: llm.RoleSystem, Content: "You are a security analyst."},
-        {Role: llm.RoleUser, Content: task.Goal},
-    })
-
-    // Call a tool. Inside a microVM. Scoped to this agent's grants.
-    var out fuzzerpb.FuzzResponse
-    _ = h.CallToolProto(ctx, "fuzzer-xyz", &fuzzerpb.FuzzRequest{Target: task.Goal}, &out)
-
-    // Three tiers of memory: working, mission, long-term graph.
-    _ = h.Memory().Working().Set(ctx, "last_completion", resp.Content)
-
-    return agent.NewSuccessResult("done"), nil
-}
-```
-
-Every invocation runs in a Firecracker microVM. The agent's SPIFFE identity gates what tools it can call. Every tool call, LLM completion, and graph write is traced and audited. No extra setup — the substrate handles it.
+**BYOK for LLMs** — keys stay where your team puts them; the platform never custodies them. No model lock-in. **Self-hosted Enterprise** — full stack on your own Kubernetes cluster; same zero-trust guarantees, your perimeter. [Contact sales →](mailto:sales@zeroroot.ai)
 
 ---
 
 ## Knowledge graph as shared memory
 
+Every discovery your agents make lands in a shared Neo4j graph with typed relationships. What one agent learns, the next one starts from.
+
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                                                                          │
-│   Mission ──[HAS_RUN]──▶ MissionRun ──[CONTAINS_AGENT_RUN]──▶ AgentRun  │
-│                                                                          │
-│   Host ──[HAS_PORT]──▶ Port ──[RUNS_SERVICE]──▶ Service                 │
-│   Service ──[HAS_ENDPOINT]──▶ Endpoint                                  │
-│                                                                          │
-│   Domain ──[HAS_SUBDOMAIN]──▶ Subdomain ──[RESOLVES_TO]──▶ Host         │
-│                                                                          │
-│   Finding ──[AFFECTS]──▶ {Host, Service, Endpoint}                      │
-│   Finding ──[HAS_EVIDENCE]──▶ Evidence                                  │
-│   Finding ──[USES_TECHNIQUE]──▶ Technique (MITRE ATT&CK / ATLAS)        │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+Mission ──[HAS_RUN]──▶ MissionRun ──[CONTAINS_AGENT_RUN]──▶ AgentRun
+
+Host ──[HAS_PORT]──▶ Port ──[RUNS_SERVICE]──▶ Service ──[HAS_ENDPOINT]──▶ Endpoint
+Domain ──[HAS_SUBDOMAIN]──▶ Subdomain ──[RESOLVES_TO]──▶ Host
+
+Finding ──[AFFECTS]──▶ {Host, Service, Endpoint}
+Finding ──[HAS_EVIDENCE]──▶ Evidence
+Finding ──[USES_TECHNIQUE]──▶ Technique  (MITRE ATT&CK / ATLAS)
 ```
 
-UUID identity with automatic deduplication. CEL validators on every node type. Taxonomy driven by a single YAML file in the SDK — edit it, regenerate, and the proto schema, Go types, graph schema, and query helpers all move together.
+UUID deduplication. CEL validators on every node type. Schema driven by a single YAML file in the SDK — edit it, regenerate, and the proto, Go types, graph schema, and query helpers all move together.
 
 ---
 
 ## Ask your fleet questions
 
-Every deployment ships a dashboard chat assistant scoped to your tenant's knowledge graph:
+Every deployment ships a dashboard chat assistant scoped to your tenant's graph. Once your agents are running:
 
-> *"How many critical CVEs are in production right now? Which ones were introduced this week?"*
+> *"How many critical CVEs are in production right now? Which ones appeared this week?"*
 >
-> *"Which services expose endpoints that haven't been scanned in the last 7 days?"*
+> *"Which services expose endpoints that haven't been scanned in 7 days?"*
+>
+> *"What changed in our external attack surface overnight?"*
 >
 > *"Show me findings mapped to CC6.1 from the last quarter."*
->
-> *"What LLM-assisted attack patterns have our red-team agents detected this month?"*
 
-No SQL. No Cypher. No custom dashboards. BYOK — no data leaves your perimeter. **On the roadmap:** tool-calling chat — *"run recon against 10.0.42.0/24"* → mission kicked off, scoped, audited, tenant-bounded.
+No SQL. No Cypher. BYOK — nothing leaves your perimeter. **On the roadmap:** tool-calling chat — *"run recon against 10.0.42.0/24"* → mission kicked off, scoped, audited, tenant-bounded.
+
+---
+
+## Zero-Day.ai Labs — the research and consulting arm
+
+When your team wants expertise behind the wheel rather than just the platform underneath:
+
+- **Custom agent development** — Labs engineers build agents, tools, and complete mission libraries tailored to your environment and deployed directly on your Zeroroot.ai instance.
+- **AI/LLM security research** — continuous offensive research into prompt injection, jailbreak patterns, RAG poisoning, agentic tool-abuse, and LLM-assisted vulnerability chaining. Findings feed platform hardening directly.
+- **Red-team engagements** — structured assessments of your AI systems, LLM integrations, and agentic pipelines using current attacker techniques.
+- **Threat intelligence** — curated intelligence on the AI attack surface shipped to customers before incidents, not after.
+
+Every Labs engagement produces deployable artifacts — agents, detection rules, updated FGA models, custom tools — not a PDF report.
+
+[Engage Zero-Day.ai Labs →](mailto:labs@zero-day.ai)
 
 ---
 
 ## Public repos
 
-| Repo | What it is |
-|---|---|
-| **[`sdk`](https://github.com/zeroroot-ai/sdk)** | Public Go SDK for agents, tools, and discovery extractors. BSL 1.1. |
-| **[`adk`](https://github.com/zeroroot-ai/adk)** | The `gibson` CLI — scaffold, build, enroll, submit missions. BSL 1.1. |
-| **[`setec`](https://github.com/zeroroot-ai/setec)** | Standalone Kubernetes operator for Firecracker microVMs via Kata. Apache 2.0. |
-| **[`gibson-tool-runner`](https://github.com/zeroroot-ai/gibson-tool-runner)** | One microVM image with parsers for nmap, nuclei, naabu, subfinder, httpx, masscan, dnsx, amass. Apache 2.0. |
+| Repo | What it is | License |
+|---|---|---|
+| **[`sdk`](https://github.com/zeroroot-ai/sdk)** | Go SDK for agents, tools, plugins. Contracts, harness API, LLM slots, graph wiring. | BSL 1.1 |
+| **[`adk`](https://github.com/zeroroot-ai/adk)** | `gibson` CLI — scaffold, build, validate, enroll, submit missions. AI-coder ergonomics baked in. | BSL 1.1 |
+| **[`setec`](https://github.com/zeroroot-ai/setec)** | Kubernetes operator for Firecracker microVMs via Kata. Useful standalone. | Apache 2.0 |
+| **[`gibson-tool-runner`](https://github.com/zeroroot-ai/gibson-tool-runner)** | One microVM image with nmap, nuclei, naabu, subfinder, httpx, masscan, dnsx, amass parsers. | Apache 2.0 |
 
-The control plane, dashboard, and platform charts are private during the active build-out. They open as the platform stabilizes.
+The control plane, dashboard, and platform charts open as the platform stabilizes — SDK and ADK are public first because that's where teams build.
 
 ---
 
 ## Two ways to run
 
-- **Managed SaaS** — sign up, point your agents at `api.zeroroot.ai`, ship. Two-week free trial.
-- **Self-hosted — Enterprise** — the full stack on your own Kubernetes cluster under a separate agreement. BYO Postgres, Redis, and identity provider. Same zero-trust guarantees; your perimeter. [Contact sales →](mailto:sales@zeroroot.ai)
+- **Managed SaaS** — sign up, `gibson init --gibson-url https://api.zeroroot.ai`, ship. Two-week free trial.
+- **Self-hosted — Enterprise** — the full stack on your own Kubernetes cluster. BYO Postgres, Redis, identity provider. Same zero-trust guarantees; your perimeter. [Contact sales →](mailto:sales@zeroroot.ai)
 
 ---
 
 ## Licensing
 
-**Business Source License (BSL 1.1)** for the SDK and platform — converts to Apache 2.0 after 4 years. Setec and the tool runner are Apache 2.0 today.
+BSL 1.1 converts to Apache 2.0 after 4 years. Same model as HashiCorp, Sentry, CockroachDB. Setec and the tool runner are Apache 2.0 today.
 
 | Use case | Tier |
 |---|---|
@@ -229,7 +258,7 @@ The control plane, dashboard, and platform charts are private during the active 
 | Internal security team | Commercial |
 | MSSP / consulting | Commercial |
 | Offering as a managed service | Commercial |
-| Custom agent development | [Zero-Day.ai Labs engagement](mailto:labs@zero-day.ai) |
+| Custom agent development + research | [Zero-Day.ai Labs](mailto:labs@zero-day.ai) |
 
 ---
 
@@ -237,7 +266,7 @@ The control plane, dashboard, and platform charts are private during the active 
 
 | Layer | Technology |
 |---|---|
-| Languages | Go 1.25, TypeScript 5.9 (Rust + Python SDKs in the works) |
+| Languages | Go 1.25, TypeScript 5.9 (Rust + Python SDKs in progress) |
 | Web | Next.js 16, React 19, Tailwind 4, Shadcn UI |
 | RPC | gRPC + Protocol Buffers, Buf |
 | Identity | SPIFFE/SPIRE, Zitadel OIDC |
@@ -254,9 +283,9 @@ The control plane, dashboard, and platform charts are private during the active 
 
 <div align="center">
 
-## Zero trust for the agents that protect you. Zero tolerance for the threats they face.
+## Your agents. Zero-trust substrate. Research-backed defense.
 
-**[Schedule a platform demo](mailto:sales@zeroroot.ai?subject=Zeroroot.ai%20Demo%20Request)** · **[Engage Zero-Day.ai Labs](mailto:labs@zero-day.ai?subject=Labs%20Engagement)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
+**[Build with the SDK →](https://github.com/zeroroot-ai/sdk)** · **[Get the ADK →](https://github.com/zeroroot-ai/adk)** · **[Schedule a demo](mailto:sales@zeroroot.ai?subject=Zeroroot.ai%20Demo)** · **[Engage Zero-Day.ai Labs](mailto:labs@zero-day.ai?subject=Labs%20Engagement)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
 
 ---
 
