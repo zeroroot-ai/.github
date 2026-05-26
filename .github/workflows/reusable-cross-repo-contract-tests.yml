@@ -22,7 +22,7 @@ name: Reusable cross-repo contract tests
 #
 #   jobs:
 #     contract-tests:
-#       uses: zero-day-ai/.github/.github/workflows/reusable-cross-repo-contract-tests.yml@main
+#       uses: zeroroot-ai/.github/.github/workflows/reusable-cross-repo-contract-tests.yml@main
 #       with:
 #         platform-sdk-ref: main
 #       secrets: inherit
@@ -31,30 +31,30 @@ on:
   workflow_call:
     inputs:
       platform-sdk-ref:
-        description: "git ref (branch/tag/SHA) of zero-day-ai/platform-sdk to test against"
+        description: "git ref (branch/tag/SHA) of zeroroot-ai/platform-sdk to test against"
         type: string
         required: false
         default: "main"
       daemon-image:
-        description: "Fully-qualified daemon image (ghcr.io/zero-day-ai/gibson:tag)."
+        description: "Fully-qualified daemon image (ghcr.io/zeroroot-ai/gibson:tag)."
         type: string
         required: false
-        default: "ghcr.io/zero-day-ai/gibson:main"
+        default: "ghcr.io/zeroroot-ai/gibson:main"
       tenant-operator-image:
         description: "Fully-qualified tenant-operator image."
         type: string
         required: false
-        default: "ghcr.io/zero-day-ai/tenant-operator:main"
+        default: "ghcr.io/zeroroot-ai/tenant-operator:main"
       platform-operator-image:
         description: "Fully-qualified platform-operator image."
         type: string
         required: false
-        default: "ghcr.io/zero-day-ai/platform-operator:main"
+        default: "ghcr.io/zeroroot-ai/platform-operator:main"
       ext-authz-image:
         description: "Fully-qualified ext-authz image."
         type: string
         required: false
-        default: "ghcr.io/zero-day-ai/ext-authz:main"
+        default: "ghcr.io/zeroroot-ai/ext-authz:main"
       runs-on:
         description: "Runner to use"
         type: string
@@ -70,7 +70,7 @@ on:
         required: false
         description: |
           Read-only PAT or GitHub App token for checking out private platform
-          repos (zero-day-ai/platform-sdk). If the calling repo passes
+          repos (zeroroot-ai/platform-sdk). If the calling repo passes
           secrets: inherit and its GITHUB_TOKEN has org private-repo read
           access, this can be omitted.
 
@@ -84,8 +84,8 @@ jobs:
     timeout-minutes: ${{ inputs.timeout-minutes }}
 
     env:
-      GOPRIVATE: "github.com/zero-day-ai/*"
-      GONOSUMCHECK: "github.com/zero-day-ai/*"
+      GOPRIVATE: "github.com/zeroroot-ai/*"
+      GONOSUMCHECK: "github.com/zeroroot-ai/*"
       DAEMON_IMAGE: ${{ inputs.daemon-image }}
       TENANT_OPERATOR_IMAGE: ${{ inputs.tenant-operator-image }}
       PLATFORM_OPERATOR_IMAGE: ${{ inputs.platform-operator-image }}
@@ -95,14 +95,14 @@ jobs:
       - name: Checkout org .github repo
         uses: actions/checkout@v6
         with:
-          repository: zero-day-ai/.github
+          repository: zeroroot-ai/.github
           token: ${{ secrets.GH_PAT_PLATFORM_RO || github.token }}
           path: dot-github
 
       - name: Checkout platform-sdk
         uses: actions/checkout@v6
         with:
-          repository: zero-day-ai/platform-sdk
+          repository: zeroroot-ai/platform-sdk
           ref: ${{ inputs.platform-sdk-ref }}
           token: ${{ secrets.GH_PAT_PLATFORM_RO || github.token }}
           path: platform-sdk
@@ -118,8 +118,8 @@ jobs:
           TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || github.token }}
         run: |
           git config --global \
-            url."https://x-access-token:${TOKEN}@github.com/zero-day-ai/".insteadOf \
-            "https://github.com/zero-day-ai/"
+            url."https://x-access-token:${TOKEN}@github.com/zeroroot-ai/".insteadOf \
+            "https://github.com/zeroroot-ai/"
 
       - name: Prepare contract-test module
         run: |

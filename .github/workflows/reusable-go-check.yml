@@ -12,7 +12,7 @@ name: Reusable Go check
 #   6. govulncheck (CVE-database lookup, fail on medium+)
 #
 # Called via:
-#   uses: zero-day-ai/.github/.github/workflows/reusable-go-check.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-go-check.yml@main
 #
 # govulncheck is the SECURITY surface — every Go repo runs it here.
 # Local invocation is forbidden per workspace CLAUDE.md (CPU thrash);

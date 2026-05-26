@@ -11,11 +11,11 @@ on:
   workflow_call:
     inputs:
       image_ref:
-        description: "Tagged image ref (e.g. ghcr.io/zero-day-ai/gibson:v1.2.3)"
+        description: "Tagged image ref (e.g. ghcr.io/zeroroot-ai/gibson:v1.2.3)"
         type: string
         required: true
       expected_subject_repo:
-        description: "Expected repo in SLSA provenance subject (e.g. zero-day-ai/gibson)"
+        description: "Expected repo in SLSA provenance subject (e.g. zeroroot-ai/gibson)"
         type: string
         required: true
       expected_commit_sha:

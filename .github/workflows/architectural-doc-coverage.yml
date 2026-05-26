@@ -1,6 +1,6 @@
 # Reusable workflow that requires every fix-PR to either:
 #
-#  (a) reference an open or merged companion PR on zero-day-ai/docs via the
+#  (a) reference an open or merged companion PR on zeroroot-ai/docs via the
 #      trailer `Docs-PR: <url>` in the PR body — used when the fix surfaces
 #      an architectural invariant, repo-wiring detail, or edge case worth
 #      capturing for the next agent; OR
@@ -17,12 +17,12 @@
 # documentation question impossible to skip.
 #
 # Called by per-repo workflows via:
-#   uses: zero-day-ai/.github/.github/workflows/architectural-doc-coverage.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/architectural-doc-coverage.yml@main
 #   secrets:
 #     DOCS_REPO_READ_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN }}
 #
 # DOCS_REPO_READ_TOKEN should be a fine-grained PAT or GitHub-App token with
-# `Pull requests: read` on zero-day-ai/docs. Stored as an organization-level
+# `Pull requests: read` on zeroroot-ai/docs. Stored as an organization-level
 # secret so every repo's workflow can read it. If absent, the workflow falls
 # back to URL-syntax-only validation and emits a loud warning — the gate is
 # weaker but the workflow still runs.
@@ -31,7 +31,7 @@
 # workflow's job id).
 #
 # Rationale + design notes:
-#   docs/README.md + docs/CONTEXT-MAP.md in zero-day-ai/docs.
+#   docs/README.md + docs/CONTEXT-MAP.md in zeroroot-ai/docs.
 
 name: architectural-doc-coverage
 
@@ -39,7 +39,7 @@ on:
   workflow_call:
     secrets:
       DOCS_REPO_READ_TOKEN:
-        description: "PAT/App token with pull_requests:read on zero-day-ai/docs"
+        description: "PAT/App token with pull_requests:read on zeroroot-ai/docs"
         required: false
 
 permissions:
@@ -139,9 +139,9 @@ jobs:
         if: steps.bypass.outputs.matched != 'true' && steps.na.outputs.matched != 'true'
         run: |
           set -euo pipefail
-          # Match: Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>
+          # Match: Docs-PR: https://github.com/zeroroot-ai/docs/pull/<N>
           # $body comes from $GITHUB_ENV — never template-substituted.
-          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zero-day-ai/docs/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
+          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zeroroot-ai/docs/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
           if [ -z "$URL" ]; then
             cat <<EOF >&2
 
@@ -150,11 +150,11 @@ jobs:
           This PR's body has no \`Docs-PR:\` trailer.
 
           Every fix in this workspace must either:
-            (a) Reference a companion PR on zero-day-ai/docs that updates the
+            (a) Reference a companion PR on zeroroot-ai/docs that updates the
                 relevant page (architecture/, repos/<repo>/, edge-cases/, or adr/).
                 Add this trailer to your PR body:
 
-                    Docs-PR: https://github.com/zero-day-ai/docs/pull/<N>
+                    Docs-PR: https://github.com/zeroroot-ai/docs/pull/<N>
 
             (b) Explicitly opt out for cosmetic/mechanical fixes:
 
@@ -186,13 +186,13 @@ jobs:
 
           if [ "$TOKEN_CONFIGURED" != "true" ]; then
             echo "::warning::DOCS_REPO_READ_TOKEN is not configured. Falling back to URL-syntax validation only — the docs PR's existence is not verified."
-            echo "::warning::To strengthen this gate, set the DOCS_REPO_READ_TOKEN org-level secret with pull_requests:read on zero-day-ai/docs."
+            echo "::warning::To strengthen this gate, set the DOCS_REPO_READ_TOKEN org-level secret with pull_requests:read on zeroroot-ai/docs."
             echo "Docs-PR URL is syntactically valid: $URL"
             exit 0
           fi
 
-          STATE=$(gh pr view "$NUM" --repo zero-day-ai/docs --json state --jq .state 2>/dev/null || echo "MISSING")
-          IS_DRAFT=$(gh pr view "$NUM" --repo zero-day-ai/docs --json isDraft --jq .isDraft 2>/dev/null || echo "true")
+          STATE=$(gh pr view "$NUM" --repo zeroroot-ai/docs --json state --jq .state 2>/dev/null || echo "MISSING")
+          IS_DRAFT=$(gh pr view "$NUM" --repo zeroroot-ai/docs --json isDraft --jq .isDraft 2>/dev/null || echo "true")
 
           case "$STATE" in
             OPEN|MERGED)
@@ -204,7 +204,7 @@ jobs:
               echo "✅ Docs-PR ${URL} is ${STATE}; doc-coverage gate satisfied."
               ;;
             MISSING)
-              echo "❌ Docs-PR ${URL} could not be resolved on zero-day-ai/docs."
+              echo "❌ Docs-PR ${URL} could not be resolved on zeroroot-ai/docs."
               echo "Either the URL is wrong, the PR was deleted, or DOCS_REPO_READ_TOKEN lacks pull_requests:read."
               exit 1
               ;;

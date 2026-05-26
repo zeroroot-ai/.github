@@ -25,11 +25,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
           MISSING=""
           for REPO in $REPOS; do
-            HAS_CLAUDE=$(gh api "/repos/zero-day-ai/$REPO/contents/CLAUDE.md" --silent 2>/dev/null && echo "yes" || echo "no")
-            HAS_AGENTS=$(gh api "/repos/zero-day-ai/$REPO/contents/AGENTS.md" --silent 2>/dev/null && echo "yes" || echo "no")
+            HAS_CLAUDE=$(gh api "/repos/zeroroot-ai/$REPO/contents/CLAUDE.md" --silent 2>/dev/null && echo "yes" || echo "no")
+            HAS_AGENTS=$(gh api "/repos/zeroroot-ai/$REPO/contents/AGENTS.md" --silent 2>/dev/null && echo "yes" || echo "no")
             if [ "$HAS_CLAUDE" = "no" ] && [ "$HAS_AGENTS" = "no" ]; then
               MISSING="$MISSING\n- $REPO"
             fi
@@ -41,13 +41,13 @@ jobs:
             exit 0
           fi
 
-          BODY="## Per-repo CLAUDE.md drift report\n\nThe following repos lack BOTH CLAUDE.md and AGENTS.md at the root:\n${MISSING}\n\nPer slice 6.3, every repo must have one. Template at https://github.com/zero-day-ai/.github/blob/main/templates/repo-CLAUDE.md"
+          BODY="## Per-repo CLAUDE.md drift report\n\nThe following repos lack BOTH CLAUDE.md and AGENTS.md at the root:\n${MISSING}\n\nPer slice 6.3, every repo must have one. Template at https://github.com/zeroroot-ai/.github/blob/main/templates/repo-CLAUDE.md"
 
-          EXISTING=$(gh issue list -R zero-day-ai/.github \
+          EXISTING=$(gh issue list -R zeroroot-ai/.github \
                        --state open --search 'in:title "Per-repo CLAUDE.md drift"' \
                        --json number --jq '.[0].number // empty')
           if [ -n "$EXISTING" ]; then
-            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zero-day-ai/.github --title "$TITLE" --body-file -
+            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file -
           else
-            printf "%b" "$BODY" | gh issue create -R zero-day-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+            printf "%b" "$BODY" | gh issue create -R zeroroot-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
           fi

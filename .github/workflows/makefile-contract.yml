@@ -40,12 +40,12 @@ jobs:
         run: |
           set -euo pipefail
           # Repos with code (exclude docs / gitops / org repo / pages site)
-          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | \
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | \
                   grep -vE '^(\.github|docs|gitops|.*\.github\.io)$')
 
           MISSING=""
           for REPO in $REPOS; do
-            MAKEFILE=$(gh api "/repos/zero-day-ai/$REPO/contents/Makefile" \
+            MAKEFILE=$(gh api "/repos/zeroroot-ai/$REPO/contents/Makefile" \
                        --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
             if [ -z "$MAKEFILE" ]; then
               MISSING="${MISSING}\n- $REPO: no Makefile"
@@ -71,11 +71,11 @@ jobs:
 
           BODY="## Makefile contract drift report\n\nPer slice 1.4 every repo's Makefile must expose \`build\`, \`test\`, \`check\` targets.\n\nDrifted repos:${MISSING}\n\nFor the canonical contract, see workspace CLAUDE.md + the production-readiness PRD at gibson#171."
 
-          EXISTING=$(gh issue list -R zero-day-ai/.github \
+          EXISTING=$(gh issue list -R zeroroot-ai/.github \
                        --state open --search 'in:title "Makefile contract drift"' \
                        --json number --jq '.[0].number // empty')
           if [ -n "$EXISTING" ]; then
-            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zero-day-ai/.github --title "$TITLE" --body-file -
+            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file -
           else
-            printf "%b" "$BODY" | gh issue create -R zero-day-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+            printf "%b" "$BODY" | gh issue create -R zeroroot-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
           fi

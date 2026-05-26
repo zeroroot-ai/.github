@@ -30,12 +30,12 @@ jobs:
           # Scan each repo in the org for runs in the past week with
           # flake.json artifacts. Aggregate by repo + test command.
           mkdir -p /tmp/flakes
-          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | grep -v '^\.github$')
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -v '^\.github$')
           for REPO in $REPOS; do
             # Get recent successful runs (flake counts only on green success)
-            RUNS=$(gh run list -R "zero-day-ai/$REPO" --limit 50 --status success --created ">$(date -u -d '7 days ago' +%Y-%m-%d)" --json databaseId --jq '.[].databaseId' 2>/dev/null || true)
+            RUNS=$(gh run list -R "zeroroot-ai/$REPO" --limit 50 --status success --created ">$(date -u -d '7 days ago' +%Y-%m-%d)" --json databaseId --jq '.[].databaseId' 2>/dev/null || true)
             for RUN_ID in $RUNS; do
-              gh run download "$RUN_ID" -R "zero-day-ai/$REPO" \
+              gh run download "$RUN_ID" -R "zeroroot-ai/$REPO" \
                 --name flake-log -D "/tmp/flakes/$REPO-$RUN_ID" 2>/dev/null || true
             done
           done
@@ -63,12 +63,12 @@ jobs:
           fi
 
           # Find existing open issue with the report title prefix
-          EXISTING=$(gh issue list -R zero-day-ai/.github \
+          EXISTING=$(gh issue list -R zeroroot-ai/.github \
                        --state open --search 'in:title "Weekly flake report"' \
                        --json number --jq '.[0].number // empty')
           TITLE="Weekly flake report — $(date -u +%Y-%m-%d)"
           if [ -n "$EXISTING" ]; then
-            printf "%b" "$REPORT" | gh issue edit "$EXISTING" -R zero-day-ai/.github --title "$TITLE" --body-file -
+            printf "%b" "$REPORT" | gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file -
           else
-            printf "%b" "$REPORT" | gh issue create -R zero-day-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+            printf "%b" "$REPORT" | gh issue create -R zeroroot-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
           fi

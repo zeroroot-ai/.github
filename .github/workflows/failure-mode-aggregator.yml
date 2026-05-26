@@ -2,7 +2,7 @@ name: failure-mode-aggregator
 
 # Walks every org repo for failure-mode.yaml manifests, validates them
 # against schemas/failure-mode.json, and emits a consolidated table to
-# docs/agents/failure-modes.md in zero-day-ai/docs.
+# docs/agents/failure-modes.md in zeroroot-ai/docs.
 #
 # Slice 6.5 of the production-readiness epic (gibson#176 → board #16).
 #
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          repository: zero-day-ai/.github
+          repository: zeroroot-ai/.github
           path: .github-repo
 
       - name: Install dependencies
@@ -38,13 +38,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/fm
-          REPOS=$(gh api orgs/zero-day-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
           for REPO in $REPOS; do
             # Use code search to find failure-mode.yaml files quickly
-            RESULTS=$(gh api -X GET search/code -F q="filename:failure-mode.yaml repo:zero-day-ai/$REPO" --jq '.items[].path' 2>/dev/null || true)
+            RESULTS=$(gh api -X GET search/code -F q="filename:failure-mode.yaml repo:zeroroot-ai/$REPO" --jq '.items[].path' 2>/dev/null || true)
             for P in $RESULTS; do
               mkdir -p "/tmp/fm/$REPO/$(dirname "$P")"
-              gh api "/repos/zero-day-ai/$REPO/contents/$P" --jq '.content' \
+              gh api "/repos/zeroroot-ai/$REPO/contents/$P" --jq '.content' \
                 | base64 -d > "/tmp/fm/$REPO/$P" 2>/dev/null || true
             done
           done
@@ -95,7 +95,7 @@ jobs:
           path: /tmp/failure-modes.md
           retention-days: 14
 
-      # Note: opening a PR against zero-day-ai/docs to update
+      # Note: opening a PR against zeroroot-ai/docs to update
       # docs/agents/failure-modes.md is a follow-up (requires a
       # cross-repo PAT with PR-write scope). The artifact is downloadable
       # in the meantime.
