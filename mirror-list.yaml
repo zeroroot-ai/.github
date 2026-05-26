@@ -1,7 +1,7 @@
-# Mirror list for ghcr.io/zero-day-ai/mirror/*.
+# Mirror list for ghcr.io/zeroroot-ai/mirror/*.
 #
 # The mirror-images.yml workflow reads this file and, for each entry,
-# copies the upstream image+tag to `ghcr.io/zero-day-ai/mirror/<dest>:<tag>`.
+# copies the upstream image+tag to `ghcr.io/zeroroot-ai/mirror/<dest>:<tag>`.
 # Tags are immutable once pushed to the mirror — to update an image,
 # add a new entry with a new tag rather than mutating an existing one.
 #
@@ -10,7 +10,7 @@
 # Schema:
 #   - source: <registry/repo>     fully-qualified upstream image (no tag)
 #     tag:    <tag>               immutable upstream tag to mirror
-#     dest:   <name>              local name under ghcr.io/zero-day-ai/mirror/
+#     dest:   <name>              local name under ghcr.io/zeroroot-ai/mirror/
 #                                 (omit to default to the last path segment of source)
 mirrors:
   # ---------------------------------------------------------------------------

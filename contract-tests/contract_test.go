@@ -27,13 +27,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	errorsv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/common/errors/v1"
+	errorsv1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/common/errors/v1"
 
-	adminv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/admin/v1"
-	authzv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/authz/v1"
-	discoveryv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/daemon/discovery/v1"
-	operatorv1 "github.com/zero-day-ai/platform-sdk/gen/gibson/daemon/operator/v1"
-	usagev1 "github.com/zero-day-ai/platform-sdk/gen/gibson/usage/v1"
+	adminv1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/admin/v1"
+	authzv1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/authz/v1"
+	discoveryv1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/daemon/discovery/v1"
+	operatorv1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/daemon/operator/v1"
+	usagev1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/usage/v1"
 )
 
 // errorDetailStatus builds a gRPC status with an ErrorDetail in the details

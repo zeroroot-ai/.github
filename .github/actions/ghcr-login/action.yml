@@ -8,10 +8,10 @@
 # nick-fields/retry@v3 with exponential backoff so transient GHCR blips
 # resolve themselves inside the same run.
 #
-# Tracked at: zero-day-ai/.github#69
+# Tracked at: zeroroot-ai/.github#69
 #
 # Used by per-repo workflows via:
-#   - uses: zero-day-ai/.github/.github/actions/ghcr-login@main
+#   - uses: zeroroot-ai/.github/.github/actions/ghcr-login@main
 #     with:
 #       password: ${{ secrets.GITHUB_TOKEN }}
 #

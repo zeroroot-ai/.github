@@ -42,7 +42,7 @@ Today, they can't:
 
 Your team writes the agents. They run where you work — laptop, CI, VPS, your own Kubernetes — and dial out to `api.zero-day.ai` for orchestration, shared memory, and the knowledge graph. Your team decides what crosses the wire and what stays on the host. **BYOK** for LLM keys: Anthropic, OpenAI, Bedrock, Gemini, Ollama. No model lock-in.
 
-Untrusted payloads, LLM-generated code, and novel binaries detonate inside [Setec](https://github.com/zero-day-ai/setec) microVMs. Hardware isolation, not containers.
+Untrusted payloads, LLM-generated code, and novel binaries detonate inside [Setec](https://github.com/zeroroot-ai/setec) microVMs. Hardware isolation, not containers.
 
 ```
  EXECUTION PLANE                 │  CONTROL PLANE · api.zero-day.ai
@@ -65,7 +65,7 @@ Enterprise customers can self-host the whole stack on their own Kubernetes clust
 
 When a new agent or tool lands in Gibson, the substrate gives it:
 
-- **Hardware-isolated execution.** Every tool invocation runs inside a Firecracker microVM via [Setec](https://github.com/zero-day-ai/setec). Untrusted code, LLM-generated payloads, and novel binaries cannot escape the VM boundary.
+- **Hardware-isolated execution.** Every tool invocation runs inside a Firecracker microVM via [Setec](https://github.com/zeroroot-ai/setec). Untrusted code, LLM-generated payloads, and novel binaries cannot escape the VM boundary.
 - **Workload identity by default.** Every component gets a verifiable identity; every internal hop is mTLS pinned to a known peer. There is no "internal network we trust."
 - **Scoped capabilities, not shared credentials.** Agents, users, teams, and tools each carry their own grants. Your PR-review bot can't touch production; your red-team agent can't touch ServiceNow. Every action audited.
 - **Multi-tenant by construction.** Per-tenant data planes, per-tenant secrets, per-tenant component registry. Not retrofitted.
@@ -98,7 +98,7 @@ Gibson assumes things will go wrong — a tool will misbehave, an agent will get
 | **Missions** | CUE-typed DAGs of agent + tool nodes wired by edges and parameterized by target | CUE catches misconfigurations at submit time — wrong agent name, missing field, bad enum — before the orchestrator runs a step. Pausable, resumable, checkpointed. |
 | **Knowledge graph** | Every discovery — hosts, ports, findings, techniques, attack chains — typed in Neo4j under a YAML-driven taxonomy with CEL-validated schemas | What one agent learns, the next one starts from. |
 | **Dashboard** | A web console with tenant-scoped chat grounded in your graph, mission monitoring, RBAC, and full LLM trace replay | The view across everything your agents have done — and a place to ask plain-language questions about your fleet. |
-| **Sandbox** | [Setec](https://github.com/zero-day-ai/setec) — sub-100ms cold-start microVMs via Firecracker + Kata | Hardware isolation for every tool invocation. Open-source. Useful on its own; Gibson is just one consumer. |
+| **Sandbox** | [Setec](https://github.com/zeroroot-ai/setec) — sub-100ms cold-start microVMs via Firecracker + Kata | Hardware isolation for every tool invocation. Open-source. Useful on its own; Gibson is just one consumer. |
 
 ---
 
@@ -141,9 +141,9 @@ package main
 
 import (
     "context"
-    sdk "github.com/zero-day-ai/sdk"
-    "github.com/zero-day-ai/sdk/agent"
-    "github.com/zero-day-ai/sdk/llm"
+    sdk "github.com/zeroroot-ai/sdk"
+    "github.com/zeroroot-ai/sdk/agent"
+    "github.com/zeroroot-ai/sdk/llm"
 )
 
 func main() {
@@ -264,10 +264,10 @@ Gibson is purpose-built for security work. The agents, tools, and plugins your t
 
 | Repo | What it is |
 |---|---|
-| **[`sdk`](https://github.com/zero-day-ai/sdk)** | Public Go SDK for agents, tools, and discovery extractors. BSL 1.1. |
-| **[`adk`](https://github.com/zero-day-ai/adk)** | The `gibson` CLI — scaffold, build, enroll, submit missions. BSL 1.1. |
-| **[`setec`](https://github.com/zero-day-ai/setec)** | Standalone Kubernetes operator orchestrating Firecracker microVMs via Kata. Apache 2.0. Useful on its own. |
-| **[`gibson-tool-runner`](https://github.com/zero-day-ai/gibson-tool-runner)** | One microVM image, one Go binary, parsers for nmap, nuclei, naabu, subfinder, httpx, masscan, dnsx, amass. Apache 2.0. |
+| **[`sdk`](https://github.com/zeroroot-ai/sdk)** | Public Go SDK for agents, tools, and discovery extractors. BSL 1.1. |
+| **[`adk`](https://github.com/zeroroot-ai/adk)** | The `gibson` CLI — scaffold, build, enroll, submit missions. BSL 1.1. |
+| **[`setec`](https://github.com/zeroroot-ai/setec)** | Standalone Kubernetes operator orchestrating Firecracker microVMs via Kata. Apache 2.0. Useful on its own. |
+| **[`gibson-tool-runner`](https://github.com/zeroroot-ai/gibson-tool-runner)** | One microVM image, one Go binary, parsers for nmap, nuclei, naabu, subfinder, httpx, masscan, dnsx, amass. Apache 2.0. |
 
 The control plane, dashboard, and platform charts are private during the active build-out. They open as the platform stabilizes — the SDK and the sandbox are public first because that's where the community can build.
 

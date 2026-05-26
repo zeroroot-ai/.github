@@ -2,7 +2,7 @@
 
 This file is a vendored, parse-stable snapshot of the `### Deny-list`
 section in
-[zero-day-ai/docs/adr/0009-jwt-spiffe-everywhere.md](https://github.com/zero-day-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md).
+[zeroroot-ai/docs/adr/0009-jwt-spiffe-everywhere.md](https://github.com/zeroroot-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md).
 
 The reusable workflow at
 `.github/workflows/vault-auth-method-deny-list.yml` reads this file
@@ -12,7 +12,7 @@ PRs that introduce any of these strings on a non-allowlisted line.
 
 **Why a vendored copy?**
 
-`zero-day-ai/docs` is a private repository. Some consumer repos (notably
+`zeroroot-ai/docs` is a private repository. Some consumer repos (notably
 `setec`, an OSS repo) don't have access to the `DOCS_REPO_READ_TOKEN`
 org-level secret, so cross-repo `actions/checkout` of the docs repo
 fails. Vendoring the deny-list eliminates the docs-repo dependency
@@ -20,11 +20,11 @@ entirely, at the cost of an extra sync step when ADR-0009 grows.
 
 **Sync contract.** When the deny-list table in ADR-0009 changes:
 
-1. Open a PR on `zero-day-ai/docs` that updates the ADR.
-2. After the ADR PR merges, open a follow-up PR on `zero-day-ai/.github`
+1. Open a PR on `zeroroot-ai/docs` that updates the ADR.
+2. After the ADR PR merges, open a follow-up PR on `zeroroot-ai/.github`
    that updates this file to match. The two are reviewed together; the
    intent is that this file never lags the ADR by more than one PR cycle.
-3. A future workflow on `zero-day-ai/docs` may auto-open the
+3. A future workflow on `zeroroot-ai/docs` may auto-open the
    `.github`-repo sync PR — tracked separately.
 
 The parser only emits tokens from rows whose first column is exclusively

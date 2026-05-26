@@ -3,7 +3,7 @@
 #
 # Scans the calling-repo's source tree for ADR-0009 deny-list tokens.
 #
-# Source of truth: zero-day-ai/docs / adr/0009-jwt-spiffe-everywhere.md
+# Source of truth: zeroroot-ai/docs / adr/0009-jwt-spiffe-everywhere.md
 # The "### Deny-list" Markdown table is parsed at workflow run time so the
 # scanner and the ADR cannot diverge.
 #
@@ -49,7 +49,7 @@ set -euo pipefail
 ADR_PATH="${ADR_PATH:-./docs-repo/adr/0009-jwt-spiffe-everywhere.md}"
 REPO_ROOT="${REPO_ROOT:-${GITHUB_WORKSPACE:-.}}"
 ALLOWLIST="${ALLOWLIST:-$REPO_ROOT/.github/.vault-auth-deny-list-allowlist.json}"
-ADR_URL="https://github.com/zero-day-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md"
+ADR_URL="https://github.com/zeroroot-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md"
 
 MODE="${1:-scan}"
 
@@ -126,7 +126,7 @@ extract_deny_list() {
 #   .github/workflows/vault-auth-method-deny-list.yml  — the caller workflow
 #   .github/workflows/adr-0009-deny-list.yml          — legacy alternate name
 #
-# The reusable workflow file in zero-day-ai/.github is on a different
+# The reusable workflow file in zeroroot-ai/.github is on a different
 # checkout (docs-repo/ is the docs sibling; the calling repo is at $REPO_ROOT)
 # so it does not appear in the scan.
 scan_repo() {
