@@ -25,8 +25,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
-
 	errorsv1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/common/errors/v1"
 
 	adminv1 "github.com/zeroroot-ai/platform-sdk/gen/gibson/admin/v1"
@@ -84,8 +82,8 @@ func assertErrorDetail(t *testing.T, err error, wantGRPC codes.Code, wantCode er
 // --- Stub servers --- //
 
 // DaemonOperatorService: Shutdown(force=false) → ok, Shutdown(force=true) → forced failure.
-// GetReservedNames() → ok.
 // RefreshToolCatalog(force=false) → ok, RefreshToolCatalog(force=true) → forced failure.
+// Note: GetReservedNames/ListTeams/ListTeamMembers were removed in platform-sdk#44.
 type stubDaemonOperator struct{ operatorv1.UnimplementedDaemonOperatorServiceServer }
 
 func (s *stubDaemonOperator) Shutdown(_ context.Context, req *operatorv1.ShutdownRequest) (*operatorv1.ShutdownResponse, error) {
@@ -93,10 +91,6 @@ func (s *stubDaemonOperator) Shutdown(_ context.Context, req *operatorv1.Shutdow
 		return nil, errorDetailStatus(codes.PermissionDenied, errorsv1.ErrorCode_ERROR_CODE_PERMISSION_DENIED, "forced shutdown denied")
 	}
 	return &operatorv1.ShutdownResponse{}, nil
-}
-
-func (s *stubDaemonOperator) GetReservedNames(_ context.Context, _ *operatorv1.GetReservedNamesRequest) (*operatorv1.GetReservedNamesResponse, error) {
-	return &operatorv1.GetReservedNamesResponse{}, nil
 }
 
 func (s *stubDaemonOperator) RefreshToolCatalog(_ context.Context, req *operatorv1.RefreshToolCatalogRequest) (*operatorv1.RefreshToolCatalogResponse, error) {
@@ -188,7 +182,7 @@ func TestContractSuite(t *testing.T) {
 	start := time.Now()
 	results := map[string]string{}
 
-	// DaemonOperatorService: Shutdown + GetReservedNames + RefreshToolCatalog (wire-compat check)
+	// DaemonOperatorService: Shutdown + RefreshToolCatalog (wire-compat check)
 	t.Run("DaemonOperatorService/Shutdown", func(t *testing.T) {
 		c := operatorv1.NewDaemonOperatorServiceClient(conn)
 		rpcStart := time.Now()
@@ -198,22 +192,6 @@ func TestContractSuite(t *testing.T) {
 		_, err := c.Shutdown(context.Background(), &operatorv1.ShutdownRequest{Force: true})
 		assertErrorDetail(t, err, codes.PermissionDenied, errorsv1.ErrorCode_ERROR_CODE_PERMISSION_DENIED)
 		results["DaemonOperatorService/Shutdown"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
-	})
-
-	t.Run("DaemonOperatorService/GetReservedNames", func(t *testing.T) {
-		c := operatorv1.NewDaemonOperatorServiceClient(conn)
-		rpcStart := time.Now()
-		resp, err := c.GetReservedNames(context.Background(), &operatorv1.GetReservedNamesRequest{})
-		if err != nil {
-			t.Errorf("happy path: %v", err)
-		}
-		// Wire-compat: round-trip marshal must not introduce Unknown fields.
-		b, _ := proto.Marshal(resp)
-		var check operatorv1.GetReservedNamesResponse
-		if uerr := proto.Unmarshal(b, &check); uerr != nil {
-			t.Errorf("round-trip unmarshal (Unknown fields?): %v", uerr)
-		}
-		results["DaemonOperatorService/GetReservedNames"] = fmt.Sprintf("ok (%s)", time.Since(rpcStart).Round(time.Millisecond))
 	})
 
 	t.Run("DaemonOperatorService/RefreshToolCatalog", func(t *testing.T) {
