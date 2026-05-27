@@ -7,7 +7,7 @@ override only when explicitly noted.
 
 ## tl;dr (for agents skimming)
 
-1. **Never push to `main`.** Branch, open a PR, wait for CI.
+1. **Never push to `main`.** Branch, open a PR, wait for CI (or test locally and merge if GitHub Actions credits are exhausted — see §5).
 2. **Every user-reported issue starts with a tracker search — open AND closed.**
    Before reading code, sketching a fix, or filing a new issue, search the
    relevant repo(s) across both states for matching text. Three outcomes
@@ -27,9 +27,11 @@ override only when explicitly noted.
 7. **Agents merge their own PRs once required CI is green — across all repos, all commit types**
    ([ADR-0007](https://github.com/zeroroot-ai/docs/blob/main/adr/0007-agent-merge-autonomy.md)).
    The CI rulesets are the gate; commit-type prefix, repo tier, and `BREAKING CHANGE` status
-   are not. The single remaining filter is agent judgment: if a human decision is genuinely
-   needed, halt and surface an `AGENT BLOCKED` banner at the top of the terminal reply, then
-   stop. No polling, no wake-up loops, no background monitors on human replies — see §5.
+   are not. **Exception: if GitHub Actions credits are exhausted, run local tests and merge on
+   local pass — do not stop work waiting for credits to replenish.** The single remaining
+   filter is agent judgment: if a human decision is genuinely needed, halt and surface an
+   `AGENT BLOCKED` banner at the top of the terminal reply, then stop. No polling, no
+   wake-up loops, no background monitors on human replies — see §5.
 8. **CI failures must be root-caused, not retried.** Open or update a
    `ci-failure` issue (the `ci-failure-triage` workflow does this automatically;
    you add the diagnosis as a comment) before pushing a fix or rerunning.
@@ -296,6 +298,40 @@ failure.
 When the gate isn't met, leave the PR for a human and move on to the next
 task in your queue. Do not "encourage" the merge with comments or pings.
 
+### Credits-exhausted exception
+
+If GitHub Actions runners are not starting because the org's Actions billing
+limit is hit (jobs stay queued indefinitely, or you see a "You have exceeded
+your included minutes" error in the run log), **do not stop work.** Follow
+this procedure instead:
+
+1. **Confirm it is a credits problem**, not a real failure. Look for: jobs
+   stuck in `queued` state with no logs, a billing error in the Actions UI,
+   or `gh run list` showing every recent run as `queued` or `cancelled` with
+   zero log output.
+2. **Run the repo's standard local test suite:**
+   ```bash
+   # Go repos
+   make test          # or: go test -race ./...
+   make check         # lint / static analysis if present
+
+   # Dashboard
+   pnpm typecheck && pnpm lint && pnpm test
+
+   # Operators
+   make test && make manifests
+   ```
+   Use the per-repo commands in the workspace `CLAUDE.md` "Common per-repo
+   commands" section as the authoritative list.
+3. **If local tests pass, merge normally** (`gh pr merge <n> --squash --delete-branch`).
+   Add a note to the PR body: `CI skipped: GitHub Actions credits exhausted; local tests passed.`
+4. **Continue work.** Credits exhaustion does not block PRs, does not block
+   new branches, and does not require a halt-and-alert. Keep shipping.
+5. **Do NOT file a `ci-failure` issue for the credits condition** — the
+   billing situation is not a code defect. If credits are exhausted for an
+   extended period (>1 session), mention it in conversation but do not block
+   on it.
+
 **Full pre-merge checklist:** the four conditions above are the mechanical part; the complete canonical list (walker gates, CodeQL findings, coverage delta, ADR + trap obligations, escape-hatch ban, `Docs-PR:` trailer) lives at [`docs/agents/pr-checklist.md`](https://github.com/zeroroot-ai/docs/blob/main/agents/pr-checklist.md) in the workspace docs repo. Single source of truth — do not restate items here.
 
 
@@ -362,6 +398,10 @@ When a required check fails on your PR (or on `main` after merge):
      it's not a flake; treat as real and fix.
    - **Infra** (runner died, action upstream broke, secrets rotated badly) —
      comment with the diagnosis and `@`-mention the operator. Do not rerun.
+   - **Credits exhausted** (jobs stuck in `queued` with no logs, billing limit
+     hit) — this is **not** a CI failure. Do not file a `ci-failure` issue.
+     Switch to the local-test path described in §5 "Credits-exhausted
+     exception" and keep working.
 3. **Never rerun a failing job without posting the diagnosis as a comment
    first.** The issue trail is how we notice patterns across repos.
 4. **Never `--no-verify` past a failing pre-commit hook**, never disable a
