@@ -24,16 +24,6 @@
 
 ---
 
-## Two organizations. One mission.
-
-**Zeroroot.ai** is the platform — a zero-trust substrate where security teams build, deploy, and run AI agents, tools, and missions. Zero trust isn't a feature here; it's the architecture. Every component proves its identity on connect. Every capability is explicitly granted. Every execution is hardware-isolated. Every discovery is shared across the knowledge graph.
-
-**[Zero-Day.ai Labs](https://zero-day.ai)** is the research and consulting arm. The Labs team stays at the forefront of AI and LLM security research so that organizations can fight AI threats with AI of their own. They build custom agents and tools for organizations that need a partner, not just a product — delivering threat intelligence, custom development, and offensive AI research directly into the platform's threat models.
-
-**The SDK and ADK are open source.** Your team owns what they build. Zero-Day.ai Labs is there when you want expertise behind the wheel instead.
-
----
-
 ## Build your first agent in 30 minutes
 
 The [ADK](https://github.com/zeroroot-ai/adk) (`gibson` CLI) is designed for AI-assisted development. Scaffold a component, open your AI coding agent (Claude Code, Cursor), describe what you want — the scaffold contains everything the AI needs to write a complete, correct implementation without hand-holding.
@@ -143,8 +133,6 @@ Modern threats are AI-driven. Attackers chain vulnerabilities in minutes, iterat
 
 Zeroroot.ai is built on the premise that the right response is **symmetric** — your own AI agents that recon, exploit, verify, and hunt at machine speed, under the same security guarantees you'd demand of any production workload.
 
-**Zero-Day.ai Labs** provides the research side of that equation. The Labs team runs continuous offensive AI research — prompt injection, jailbreak campaigns, RAG poisoning, LLM-assisted vulnerability chaining — so the platform's threat models reflect what attackers actually deploy. Their findings ship as platform hardening, new detection rules, and purpose-built agents available to every Zeroroot.ai customer.
-
 ---
 
 ## What makes it zero trust, not zero-trust-adjacent
@@ -213,21 +201,6 @@ No SQL. No Cypher. BYOK — nothing leaves your perimeter. **On the roadmap:** t
 
 ---
 
-## Zero-Day.ai Labs — the research and consulting arm
-
-When your team wants expertise behind the wheel rather than just the platform underneath:
-
-- **Custom agent development** — Labs engineers build agents, tools, and complete mission libraries tailored to your environment and deployed directly on your Zeroroot.ai instance.
-- **AI/LLM security research** — continuous offensive research into prompt injection, jailbreak patterns, RAG poisoning, agentic tool-abuse, and LLM-assisted vulnerability chaining. Findings feed platform hardening directly.
-- **Red-team engagements** — structured assessments of your AI systems, LLM integrations, and agentic pipelines using current attacker techniques.
-- **Threat intelligence** — curated intelligence on the AI attack surface shipped to customers before incidents, not after.
-
-Every Labs engagement produces deployable artifacts — agents, detection rules, updated FGA models, custom tools — not a PDF report.
-
-[Engage Zero-Day.ai Labs →](mailto:labs@zero-day.ai)
-
----
-
 ## Public repos
 
 | Repo | What it is | License |
@@ -256,9 +229,7 @@ BSL 1.1 converts to Apache 2.0 after 4 years. Same model as HashiCorp, Sentry, C
 |---|---|
 | Bug bounty / independent research | Free |
 | Internal security team | Commercial |
-| MSSP / consulting | Commercial |
-| Offering as a managed service | Commercial |
-| Custom agent development + research | [Zero-Day.ai Labs](mailto:labs@zero-day.ai) |
+| MSSP / managed service | Commercial |
 
 ---
 
@@ -285,10 +256,10 @@ BSL 1.1 converts to Apache 2.0 after 4 years. Same model as HashiCorp, Sentry, C
 
 ## Your agents. Zero-trust substrate. Research-backed defense.
 
-**[Build with the SDK →](https://github.com/zeroroot-ai/sdk)** · **[Get the ADK →](https://github.com/zeroroot-ai/adk)** · **[Schedule a demo](mailto:sales@zeroroot.ai?subject=Zeroroot.ai%20Demo)** · **[Engage Zero-Day.ai Labs](mailto:labs@zero-day.ai?subject=Labs%20Engagement)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
+**[Build with the SDK →](https://github.com/zeroroot-ai/sdk)** · **[Get the ADK →](https://github.com/zeroroot-ai/adk)** · **[Schedule a demo](mailto:sales@zeroroot.ai?subject=Zeroroot.ai%20Demo)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
 
 ---
 
-**Zeroroot.ai** — the platform &nbsp;|&nbsp; **[Zero-Day.ai Labs](https://zero-day.ai)** — the research arm
+**Zeroroot.ai** — the zero-trust substrate for security agents
 
 </div>
