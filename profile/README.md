@@ -177,7 +177,7 @@ What you don't write: transport, identity, secrets, mTLS setup, observability in
 
 Every discovery your agents make lands in a shared Neo4j graph with typed relationships. What one agent learns, the next one starts from.
 
-**The schema is yours.** It's driven by a single YAML file in the SDK — define your own node types and relationships, regenerate, and the proto, Go types, graph schema, and query helpers all move together. The platform ships a security-domain schema as a worked example:
+**The taxonomy is yours.** The graph is defined by a single source-of-truth taxonomy in the SDK (`taxonomy/core.yaml`) — node types, properties, enums, relationships, and validation rules. `taxonomy-gen` compiles it into the proto, Go types, graph schema, CEL validators, and query helpers all at once, so the whole stack moves together when you change it. The platform ships a security-domain taxonomy as a worked example:
 
 ```
 Mission ──[HAS_RUN]──▶ MissionRun ──[CONTAINS_AGENT_RUN]──▶ AgentRun   (domain-agnostic core)
@@ -191,6 +191,31 @@ Finding ──[USES_TECHNIQUE]──▶ Technique
 ```
 
 Swap those entity types for `Invoice`, `Incident`, `Control`, `Dataset` — whatever your domain models. UUID deduplication and CEL validators apply to every node type you define.
+
+### Customize the taxonomy for your company
+
+You don't fork the base taxonomy to make it yours — you **extend** it. Layer a `TaxonomyExtension` with your own node types, relationships, properties, and rules on top of the core, and they compose into one coherent graph. Every type carries its provenance: the registry's `NodeTypeSource` tells you whether a given type came from the Gibson core or from *your* extension, so upgrades to the base never silently clobber your model and your additions never get mistaken for platform defaults.
+
+```go
+ext := graphrag.TaxonomyExtension{
+    NodeTypes: []graphrag.NodeTypeDefinition{
+        {Name: "vendor",   Category: "asset",    Description: "A third-party vendor in scope"},
+        {Name: "contract", Category: "evidence", Description: "A signed agreement with a vendor"},
+    },
+    Relationships: []graphrag.RelationshipDefinition{
+        {Name: "GOVERNED_BY", FromTypes: []string{"vendor"}, ToTypes: []string{"contract"}},
+    },
+}
+```
+
+This makes the platform fit how *your* organization actually thinks:
+
+- **Your own entity model** — model the nouns your business cares about (`Vendor`, `Asset`, `Account`, `Patient`, `Shipment`) and the edges between them, not a generic schema you bend to fit.
+- **Your own classification scheme** — finding categories, severity ladders, risk tiers, asset criticality: define the enums and ontology your teams already use, and the validators enforce them on every write.
+- **Your own compliance frameworks** — the taxonomy ships a compliance-rules layer (`compliance_rules.yaml`); point it at the control sets you report against (SOC 2, ISO 27001, your internal policy catalog) and findings map to *your* controls automatically.
+- **One regenerate, everything moves** — edit the YAML or register the extension, run `taxonomy-gen`, and the proto, Go types, graph schema, validators, and the dashboard's natural-language graph queries all update in lockstep. No drift between layers.
+
+The result: every agent your company builds speaks your company's vocabulary, and the shared graph reflects your domain — not ours.
 
 ---
 
