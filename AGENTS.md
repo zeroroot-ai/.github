@@ -243,7 +243,7 @@ in history confuses release-please's commit walking.
 regenerate from source rather than hand-resolving conflicts:
 
 ```bash
-# In core/gibson:
+# In gibson (enterprise/platform/gibson):
 make authz-registry && make proto
 
 # In dashboard:
@@ -466,9 +466,9 @@ foundation modules. Each is a separate workflow firing on its own repo's
   Go consumers that still depend on the public SDK: `gibson`, `adk` CLI,
   `gibson-tool-runner`, `debug-plugin`, plus any external example repos.
   PRs auto-merge if their CI passes. See §9 for the topology.
-- **`enterprise/platform/platform-sdk` tag** (internal protos: admin,
-  platform-operator, tenant-admin, budget, usage, authz, discovery,
-  DaemonAdminService) → fans out to internal consumers: `gibson`,
+- **`enterprise/platform/platform-sdk` tag** (the genuinely-private protos
+  remaining after ADR-0039: `DaemonOperatorService`, `BillingService`,
+  `DiscoveryService`) → fans out to internal consumers: `gibson`,
   `ext-authz`, `tenant-operator`, `platform-operator`,
   `spiffe-jwks-exporter`, `dashboard` (TypeScript regen).
 - **`enterprise/platform/platform-clients` tag** (shared Go library:
@@ -495,14 +495,10 @@ Anything spanning ≥2 repos is an epic. Each epic gets:
 The Project board is the single source of truth for "what is in flight." Use
 it instead of grepping branches across 12 directories.
 
-**Active epics today** (each has an existing branch in 5+ repos that needs to
-be renamed to `epic/<id>` during housekeeping):
-
-- `epic/agent-credentials-cutover`
-- `epic/tenant-role-taxonomy`
-- `epic/zero-trust-hardening`
-- `epic/discovery-bitfield-coherence`
-- `epic/self-mode-authz`
+**Do not rely on a hardcoded epic list here — it goes stale.** Query the live
+set instead (the §1b commands): `gh project list --owner zeroroot-ai` for the
+boards, and `gh search prs "org:zeroroot-ai" --state open --head "epic/<id>"`
+to see which epic branches still have open work.
 
 ---
 
@@ -565,7 +561,7 @@ The procedure for any future 1.0.0 cut on any repo:
 Reviewers should reject any PR titled with a `1.0.0` or `2.0.0` (etc.)
 bump unless the proposing issue exists and was approved.
 
-Historical context: on 2026-05-17 a `feat!:` PR on `core/sdk` reflexively
+Historical context: on 2026-05-17 a `feat!:` PR on `opensource/sdk` reflexively
 crossed the polyrepo from 1.9.0 to 2.0.0, then bricked the SDK fan-out
 because Go's v2+ module-path rule requires `/v2` and the SDK doesn't have
 it. Recovery: full polyrepo reset back to 0.x (PRD
@@ -596,15 +592,19 @@ structural change that prevents repeat.
   extract it to its own package in the module that owns it and depend via
   BSR. Reviewers should grep new PRs for vendored `.proto` files and M-map
   overrides and reject if present.
-- **No admin / infra protos in `opensource/sdk`.** The customer-facing OSS
-  SDK is a stripe-go-like API client and ships only what 3rd-party
-  agent/tool/plugin authors and customer integrations need to call. Every
-  admin RPC, every secret-bearing message type, every platform-operator /
-  tenant-admin / authz-admin / discovery / DaemonAdminService proto lives
-  in `enterprise/platform/platform-sdk` and nowhere else. Reintroducing a
-  `gibson.admin.v1` / `gibson.usage.v1` / `gibson.authz.v1` /
-  `gibson.daemon.discovery.v1` / `gibson.platform.v1` / `gibson.tenant.v1`
-  directory under `opensource/sdk/api/proto/` is rejected by review.
+- **No infra protos, and no genuinely-private operator protos, in
+  `opensource/sdk`.** The customer-facing OSS SDK is a stripe-go-like API
+  client. Per ADR-0039 (2026-06-01) tenant administration is **customer-facing**,
+  so `gibson.tenant.v1.*` (TenantService, MembershipService, GrantsService,
+  ProviderService, SecretsService, PluginAdminService, BudgetService,
+  AgentIdentityService, UserService, UsageService, ModelAccessService) lives in
+  the OSS SDK — that is correct, not a violation. What must NOT appear in
+  `opensource/sdk/api/proto/` is the genuinely-private operator surface that
+  stayed in platform-sdk: `gibson.daemon.operator.v1` (`DaemonOperatorService`),
+  `gibson.billing.v1` (`BillingService`), `gibson.daemon.discovery.v1`
+  (`DiscoveryService`), plus any secret-bearing internal message type.
+  Reintroducing one of those private packages under the OSS SDK is rejected by
+  review.
 - **No infra-client deps in `opensource/sdk/go.mod`.** The CodeQL deny-list
   query (in `zeroroot-ai/codeql-go-queries`) fails CI when the OSS SDK's
   module graph pulls Vault / OpenBao / AWS Secrets Manager / GCP Secret
@@ -642,8 +642,8 @@ before merge.
 
 | Module | Repo | Audience | What lives here |
 |--------|------|----------|-----------------|
-| Customer-facing SDK | `opensource/sdk` | 3rd-party customers (agent / tool / plugin authors and integrations) | Authoring protos (agent/tool/plugin/component/harness v1) + customer-callable daemon RPCs (member-scoped `DaemonService`, graph, intelligence, identity `WhoAmI`). Customer-facing OAuth2 helper (`auth/oidc/`). Zero admin RPCs, zero infra deps. Released as a customer artifact, semver line independent. |
-| Internal protos | `enterprise/platform/platform-sdk` | Internal services (gibson, ext-authz, tenant-operator, platform-operator, spiffe-jwks-exporter, dashboard) | Every admin proto: `DaemonAdminService`, platform-operator service, tenant-admin, authz, usage, discovery, plus any RPC requiring `relation:"admin"` / `relation:"writer"`. Independent BSR module, independent semver. |
+| Customer-facing SDK | `opensource/sdk` | 3rd-party customers (agent / tool / plugin authors and integrations) | Authoring protos (agent/tool/plugin/component/harness v1) + customer-callable daemon RPCs (member-scoped `DaemonService`, graph, intelligence, identity `WhoAmI`) + the customer-facing tenant-administration surface `gibson.tenant.v1.*` (per ADR-0039 — includes admin-relation RPCs like Membership/Grants/Secrets/Provider/PluginAdmin/Usage). Customer-facing OAuth2 helper (`auth/oidc/`). Zero infra deps. Released as a customer artifact, semver line independent. |
+| Internal protos | `enterprise/platform/platform-sdk` | Internal services (gibson, ext-authz, tenant-operator, platform-operator, spiffe-jwks-exporter, dashboard) | The genuinely-private surface remaining after ADR-0039: `DaemonOperatorService` (`gibson.daemon.operator.v1`), `BillingService` (`gibson.billing.v1`), `DiscoveryService` (`gibson.daemon.discovery.v1`). Independent BSR module, independent semver. |
 | Shared Go library | `enterprise/platform/platform-clients` | Same internal services | Transport (ConnectRPC builders with full interceptor chain), secrets (broker with lease renewal + circuit breaker), readiness (probe aggregator + `/readyz`), pools (Neo4j/Redis/pgx with mandated overrides), observability (OTel + slog + correlation), authz (FGA wrapper + identity-header validation). Consumes `platform-sdk` types; never consumed by `opensource/sdk`. |
 
 Composability comes from narrow public interfaces, not a monorepo. A new
@@ -676,22 +676,19 @@ major-only — so workflow drift does not produce per-PR build differences.
 The architectural decisions behind this contract are tracked in the
 `zeroroot-ai/docs` ADR series:
 
-<!-- TODO: replace placeholders with the actual ADR numbers once
-zeroroot-ai/.github#101 slice #27 lands the ADR PR on zeroroot-ai/docs.
-The 5 ADRs are: two-surface contract; platform-clients mandate;
-wholesale-flip discipline; proto hygiene contract (protovalidate +
-idempotency_key + pagination + buf breaking); reproducible-CI mandate
-(pinned tools + CodeQL deny-list + cross-repo contract tests). -->
+- [ADR-0025](https://github.com/zeroroot-ai/docs/blob/main/adr/0025-two-surface-platform-contract.md) — Two-surface platform contract (OSS SDK vs platform-sdk vs platform-clients)
+- [ADR-0026](https://github.com/zeroroot-ai/docs/blob/main/adr/0026-platform-clients-shared-library-mandate.md) — `platform-clients` shared-library mandate for internal Go services
+- [ADR-0027](https://github.com/zeroroot-ai/docs/blob/main/adr/0027-wholesale-flip-discipline.md) — Wholesale-flip discipline (no parallel codepaths, no compat shims)
+- [ADR-0028](https://github.com/zeroroot-ai/docs/blob/main/adr/0028-proto-hygiene-contract.md) — Proto hygiene contract (`protovalidate`, `idempotency_key`, pagination, `buf breaking`)
+- [ADR-0029](https://github.com/zeroroot-ai/docs/blob/main/adr/0029-reproducible-ci-mandate.md) — Reproducible-CI mandate (pinned tool versions, CodeQL deny-list, contract tests, reproducible-build hash compare)
 
-- ADR-NNNN — Two-surface platform contract (OSS SDK vs platform-sdk vs platform-clients)
-- ADR-NNNN — `platform-clients` shared-library mandate for internal Go services
-- ADR-NNNN — Wholesale-flip discipline (no parallel codepaths, no compat shims)
-- ADR-NNNN — Proto hygiene contract (`protovalidate`, `idempotency_key`, pagination, `buf breaking`)
-- ADR-NNNN — Reproducible-CI mandate (pinned tool versions, CodeQL deny-list, contract tests, reproducible-build hash compare)
-
-If a memory-loaded session shows ADR numbers above as `NNNN`, that means
-the docs PR has not landed yet — follow up at `zeroroot-ai/.github#117`
-and `zeroroot-ai/.github#101`.
+The contract was later refined by
+[ADR-0037](https://github.com/zeroroot-ai/docs/blob/main/adr/0037-one-customer-surface-collapse-admin-services.md)
+(collapse `DaemonAdminService`/`TenantAdminService` onto `DaemonService`/`TenantService`),
+[ADR-0039](https://github.com/zeroroot-ai/docs/blob/main/adr/0039-tenant-administration-is-customer-facing.md)
+(tenant administration is customer-facing — the `gibson.tenant.v1` surface lives in the OSS SDK), and
+[ADR-0040](https://github.com/zeroroot-ai/docs/blob/main/adr/0040-admin-service-decomposition.md)
+(admin-service decomposition). The §11 tables above reflect the post-ADR-0039 split.
 
 ---
 
