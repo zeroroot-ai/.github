@@ -28,6 +28,9 @@ mirrors:
   - source: docker.io/library/golang
     tag: "1.25-alpine"
     dest: golang
+  - source: docker.io/library/golang
+    tag: "1.25.11-alpine"  # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); floating 1.25-alpine never refreshes (immutable mirror tags)
+    dest: golang
 
   # ---------------------------------------------------------------------------
   # Data plane images
@@ -75,6 +78,9 @@ mirrors:
     dest: alpine
   - source: docker.io/library/golang
     tag: "1.25"           # debian-based; tenant-operator builder needs CGO_ENABLED toggles
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.25.11"        # pinned patch (go1.25.11 stdlib CVE fixes, .github#173)
     dest: golang
   - source: docker.io/library/node
     tag: "20-alpine"
