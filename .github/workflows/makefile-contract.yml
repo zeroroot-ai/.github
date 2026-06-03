@@ -10,8 +10,19 @@ name: makefile-contract
 #   test-integration / test-e2e (where applicable)
 #
 # A repo's Makefile that's missing any required target fails this gate.
-# Repos without Go code (gitops, docs) are exempt; the workflow skips
-# them via the matrix exclusion.
+#
+# Exempt repos (no Go service/library — a Makefile build/test/check
+# contract does not apply): docs, gitops, deploy (Helm + Terraform
+# cluster bootstrap), dashboard (pnpm/TypeScript), the org repo, and the
+# pages site.
+#
+# IMPORTANT — token scope: enumeration uses GH_PAT_PLATFORM_RO so the audit
+# can see PRIVATE org repos. With the default GITHUB_TOKEN `gh api
+# orgs/.../repos` returns only PUBLIC repos, so the audit silently skips
+# every private repo and reports a false "all clear" (this is exactly how
+# .github#170 came to list only the single public drift). The job hard-fails
+# below if a known private repo is not visible, so the blind spot can never
+# silently return.
 #
 # Runs weekly + on workflow_dispatch + on PR to .github repo (to validate
 # updates to this workflow against current repos).
@@ -36,12 +47,24 @@ jobs:
     steps:
       - name: Audit each repo
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PLATFORM_RO PAT enumerates PRIVATE repos; GITHUB_TOKEN sees only
+          # public ones and would make this audit silently incomplete.
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Repos with code (exclude docs / gitops / org repo / pages site)
+          # Exclude infra/non-Go repos: org repo, docs, gitops, deploy
+          # (Helm + Terraform), dashboard (pnpm), and the pages site.
           REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | \
-                  grep -vE '^(\.github|docs|gitops|.*\.github\.io)$')
+                  grep -vE '^(\.github|docs|gitops|deploy|dashboard|.*\.github\.io)$')
+
+          # Blind-spot guard: if the token cannot see private repos, `gibson`
+          # (a known private Go repo) is absent and the audit would be a false
+          # all-clear. Fail loudly instead of silently skipping every private
+          # repo (the root cause of .github#170 under-reporting).
+          if ! printf '%s\n' "$REPOS" | grep -qx 'gibson'; then
+            echo "::error::repo enumeration is missing private repos (gibson not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
+            exit 1
+          fi
 
           MISSING=""
           for REPO in $REPOS; do
@@ -66,6 +89,15 @@ jobs:
           TITLE="Makefile contract drift — $(date -u +%Y-%m-%d)"
           if [ -z "$MISSING" ]; then
             echo "::notice::all repos pass Makefile contract"
+            # Self-heal: close any stale open drift issue so the tracker
+            # reflects the now-clean state instead of lingering open.
+            CLEAN_EXISTING=$(gh issue list -R zeroroot-ai/.github \
+                               --state open --search 'in:title "Makefile contract drift"' \
+                               --json number --jq '.[0].number // empty')
+            if [ -n "$CLEAN_EXISTING" ]; then
+              gh issue close "$CLEAN_EXISTING" -R zeroroot-ai/.github \
+                --comment "All repos now satisfy the Makefile contract (build/test/check). Auto-closed by the makefile-contract audit."
+            fi
             exit 0
           fi
 
