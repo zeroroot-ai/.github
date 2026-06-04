@@ -259,7 +259,7 @@ Read the ADR for the reasoning; this section is the operational contract.
 holds across all repos in the org and all commit types — including `feat:`,
 `feat!:`, and `BREAKING CHANGE`. The CI rulesets — `pr-title-lint`,
 `no-monorepo-shortcuts`, per-repo required checks, and the
-`tier-platform-release` signed-commits + CODEOWNERS-review ruleset on `sdk`,
+`tier-platform-release` CODEOWNERS-review ruleset on `sdk`,
 `deploy`, `gitops` — are the merge gate. They are sufficient.
 
 | # | Condition |
@@ -578,7 +578,6 @@ structural change that prevents repeat.
 - **No `--no-verify`** on commits.
 - **No `--force-push` to main** (rejected by ruleset).
 - **No direct push to main** (rejected by ruleset).
-- **No `--no-gpg-sign`** (signed commits required by ruleset on production-tier repos).
 - **No rerunning a failed CI job without first posting a root-cause comment**
   on the `ci-failure` issue the triage workflow opened (see §6).
 - **No local proto includes — cross-module proto sharing goes through BSR.**
