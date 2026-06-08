@@ -258,18 +258,18 @@ Read the ADR for the reasoning; this section is the operational contract.
 **Agents merge their own PRs once every required CI check is `success`.** This
 holds across all repos in the org and all commit types — including `feat:`,
 `feat!:`, and `BREAKING CHANGE`. The CI rulesets — `pr-title-lint`,
-`no-monorepo-shortcuts`, per-repo required checks, and the
-`tier-platform-release` CODEOWNERS-review ruleset on `sdk`,
-`deploy`, `gitops` — are the merge gate. They are sufficient.
+`no-monorepo-shortcuts`, and per-repo required checks — are the merge gate.
+They are sufficient. **No repo requires a CODEOWNERS review, a human approval,
+or signed commits** — agents self-merge everywhere, including `sdk`, `deploy`,
+and `gitops`.
 
 | # | Condition |
 |---|-----------|
 | 1 | Every required status check is `success` (not `pending`, not `neutral`, not skipped). Verify with `gh pr checks <num>`. |
 | 2 | No unresolved review threads (the `tier-core` ruleset already blocks otherwise; check first to avoid the wasted merge call). |
 | 3 | Branch is rebased onto the current `origin/main` (no "out of date" warning in the PR). |
-| 4 | On `tier-platform-release` repos (`sdk` / `deploy` / `gitops`): the required CODEOWNERS review has been submitted as approve. That review *is* the human checkpoint for these repos; the merge button is not a second checkpoint. |
 
-When all four hold, merge with:
+When all three hold, merge with:
 
 ```bash
 gh pr merge <pr-number> --squash --delete-branch
@@ -549,14 +549,14 @@ The procedure for any future 1.0.0 cut on any repo:
 
 1. Open an issue proposing the stability claim — what's stable, what's
    covered by SemVer guarantees going forward, what's still out of scope.
-2. Get explicit sign-off from a code owner. Async is fine; the explicit
-   approval is the gate.
+2. Get explicit sign-off from the repo owner. Async is fine; the explicit
+   approval is the gate (this is a process agreement, not a ruleset-enforced
+   review — no repo requires CODEOWNERS approval).
 3. In the same PR that cuts 1.0: remove `"bump-minor-pre-major": true`
    from that repo's `release-please-config.json`, write a commit body that
    names the stability claim, merge.
 4. release-please's next cycle proposes `1.0.0` from the accumulated
-   commit history; that release PR gets the same code-owner sign-off
-   before merge.
+   commit history; that release PR gets the same owner sign-off before merge.
 
 Reviewers should reject any PR titled with a `1.0.0` or `2.0.0` (etc.)
 bump unless the proposing issue exists and was approved.
