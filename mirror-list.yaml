@@ -85,6 +85,13 @@ mirrors:
   - source: docker.io/library/node
     tag: "20-alpine"
     dest: node
+  # Python base for the gibson belief-field pgmpy sidecar (gibson#750, deploy#936).
+  # The sidecar is a published first-party image, so its base must come from the
+  # mirror like every other production image (test fixtures may use docker.io
+  # directly; published images may not).
+  - source: docker.io/library/python
+    tag: "3.12-slim"
+    dest: python
   # gcr.io/distroless/* — the Google-published distroless runtime bases.
   # We mirror to ghcr.io so workspace-wide policy holds.
   - source: gcr.io/distroless/static-debian12
