@@ -27,6 +27,9 @@
             "context": "security"
           },
           {
+            "context": "no-secrets-in-snapshot"
+          },
+          {
             "context": "vault-auth-method-deny-list"
           }
         ]
