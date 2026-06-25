@@ -39,14 +39,17 @@ override only when explicitly noted.
    Every dependency is required at chart render, at process boot, and at runtime.
    No `.enabled: false` toggles, graceful-nil branches, silent env fallbacks,
    `failurePolicy: Ignore`, or `--dev-mode` flags. CI enforces (see §10).
-10. **Two-surface platform contract** (§11). `opensource/sdk` is the
-    customer-facing API client and ships zero admin RPCs and zero infra
-    deps. Every internal proto lives in `enterprise/platform/platform-sdk`;
-    every shared Go primitive (transport, secrets, readiness, pools,
-    observability, authz wrapper) lives in
-    `enterprise/platform/platform-clients`. Cross-module proto sharing
-    goes through BSR — never vendored `.proto`, never M-mapped
-    `go_package`.
+10. **Open-core API boundary** (§11). There is ONE public API surface:
+    the Apache `sdk` (component-dev protos only — agent / tool / plugin /
+    component). It ships zero admin RPCs and zero infra deps and must not
+    import the daemon (`make check-no-gibson`). Admin / operator / billing
+    protos are daemon-local inside the ELv2 `gibson` monorepo (under
+    `internal/server/daemon/api/gibson/<pkg>/v1`), not a separate module.
+    The former `platform-sdk` and `platform-clients` repos are retired:
+    their protos and shared Go primitives (transport, secrets, readiness,
+    pools, observability, authz wrapper) now live in-module in `gibson`
+    (`internal/infra/*`). No more cross-module BSR proto sharing between
+    those modules.
 
 ---
 
@@ -102,9 +105,8 @@ Run, in this order:
 
 ```bash
 # What's already in flight under your name?
-for repo in gibson sdk platform-sdk platform-clients ext-authz dashboard \
-            tenant-operator platform-operator deploy gitops debug-plugin \
-            setec adk gibson-tool-runner spiffe-jwks-exporter; do
+for repo in gibson sdk dashboard deploy gitops billing \
+            setec adk gibson-executor; do
   gh pr list -R zeroroot-ai/$repo --state open \
     --search "author:@me OR assignee:@me" --json number,title,headRefName
 done
@@ -458,29 +460,19 @@ perspective, otherwise the remote wouldn't have been deleted).
 **Project board automation:** the board's "PR merged → Done" automation
 flips the item state. **Do not** edit the board manually.
 
-Three independent fan-outs run after release-please tags one of the
-foundation modules. Each is a separate workflow firing on its own repo's
-`v*` tag; the consumer set differs:
+One fan-out runs after release-please tags the public `sdk`. It fires on
+the `opensource/sdk` `v*` tag and bumps the Go consumers that depend on
+the public component-dev SDK: `gibson`, `adk` CLI, and `gibson-executor`.
+PRs auto-merge if their CI passes. See §9 for the topology.
 
-- **`opensource/sdk` tag** (customer-facing client SDK) → fans out to the
-  Go consumers that still depend on the public SDK: `gibson`, `adk` CLI,
-  `gibson-tool-runner`, `debug-plugin`, plus any external example repos.
-  PRs auto-merge if their CI passes. See §9 for the topology.
-- **`enterprise/platform/platform-sdk` tag** (the genuinely-private protos
-  remaining after ADR-0039: `DaemonOperatorService`, `BillingService`,
-  `DiscoveryService`) → fans out to internal consumers: `gibson`,
-  `ext-authz`, `tenant-operator`, `platform-operator`,
-  `spiffe-jwks-exporter`, `dashboard` (TypeScript regen).
-- **`enterprise/platform/platform-clients` tag** (shared Go library:
-  transport / secrets / readiness / pools / observability / authz) →
-  fans out to every internal Go service: `gibson`, `ext-authz`,
-  `tenant-operator`, `platform-operator`, `spiffe-jwks-exporter`,
-  `gibson-tool-runner`.
+The former `platform-sdk` and `platform-clients` fan-outs no longer exist:
+those repos were retired (ADR-0053) and their protos / Go primitives now
+live in-module in `gibson`, so a daemon proto change is just a normal
+`gibson` PR — no external consumer bump.
 
-Wait for the relevant fan-out PRs to appear before starting downstream
-work in those consumers; landing both a fan-out PR and an unrelated
-feature branch on the same consumer in the same window causes avoidable
-rebase churn.
+Wait for the SDK fan-out PRs to appear before starting downstream work in
+those consumers; landing both a fan-out PR and an unrelated feature branch
+on the same consumer in the same window causes avoidable rebase churn.
 
 ---
 
@@ -509,25 +501,23 @@ You do **not** cut releases by hand. release-please runs on every push to
 version + writes the CHANGELOG. When a human merges the release PR, the tag
 is created automatically and the per-repo image-build workflow fires.
 
-**Three foundation modules each trigger their own fan-out** on tag-publish.
-The consumer sets are distinct; do not assume one fan-out's PR opening
-implies another will:
+**Only the public `sdk` triggers a fan-out** on tag-publish. The
+component-dev protos are the one cross-module surface; everything else is
+in-module in `gibson` and needs no consumer bump.
 
 | Foundation module | Repo | Fan-out workflow | Consumer set |
 |-------------------|------|------------------|--------------|
-| Customer-facing SDK | `opensource/sdk` | `sdk/.github/workflows/fan-out.yml` (GitHub App `zeroday-sdk-fanout`) | `gibson`, `adk`, `gibson-tool-runner`, `debug-plugin` (+ external examples) |
-| Internal protos | `enterprise/platform/platform-sdk` | `platform-sdk/.github/workflows/fan-out.yml` | `gibson`, `ext-authz`, `tenant-operator`, `platform-operator`, `spiffe-jwks-exporter`, `dashboard` (TS regen) |
-| Shared Go library | `enterprise/platform/platform-clients` | `platform-clients/.github/workflows/fan-out.yml` | `gibson`, `ext-authz`, `tenant-operator`, `platform-operator`, `spiffe-jwks-exporter`, `gibson-tool-runner` |
+| Component-dev SDK | `opensource/sdk` | `sdk/.github/workflows/fan-out.yml` (GitHub App `zeroday-sdk-fanout`) | `gibson`, `adk`, `gibson-executor` |
 
-Each fan-out opens `chore(deps): bump <module> to vX.Y.Z` PRs in its
-consumer set. Those PRs auto-merge if their CI passes. A summary issue is
-filed in the source module listing all outcomes.
+The fan-out opens `chore(deps): bump sdk to vX.Y.Z` PRs in its consumer
+set. Those PRs auto-merge if their CI passes. A summary issue is filed in
+the SDK listing all outcomes.
 
-A change that touches both an internal proto AND a shared-library helper
-that wraps it should be sequenced: land the `platform-sdk` PR first, let
-fan-out land in `platform-clients`, then land the `platform-clients` PR
-that consumes the new proto. Reversing the order leaves the wrapper
-referring to a proto type that does not yet exist in any tagged module.
+Because admin / operator / billing protos and the shared Go primitives are
+now daemon-local in `gibson` (`internal/server/daemon/api/...`,
+`internal/infra/...`), a change that used to span `platform-sdk` +
+`platform-clients` is now a single `gibson` PR — no inter-module
+sequencing, no waiting on a tag.
 
 If you need an out-of-band release (rare), open an issue first; do not hand-tag.
 
@@ -580,39 +570,35 @@ structural change that prevents repeat.
 - **No direct push to main** (rejected by ruleset).
 - **No rerunning a failed CI job without first posting a root-cause comment**
   on the `ci-failure` issue the triage workflow opened (see §6).
-- **No local proto includes — cross-module proto sharing goes through BSR.**
-  Proto reuse between any two of the three foundation modules (`opensource/sdk`,
-  `platform-sdk`, `platform-clients`) MUST go through BSR module deps:
-  `buf.build/zeroroot-ai-platform/<module>` declared in `buf.yaml` `deps:`,
-  pinned by `buf.lock`. Never vendor `.proto` files (no `cp` of one module's
-  proto into another's tree). Never M-map `go_package` via
-  `buf.gen.yaml managed.override.file_option`. Never duplicate a proto type
-  across modules. If a shared type does not yet exist as a separate package,
-  extract it to its own package in the module that owns it and depend via
-  BSR. Reviewers should grep new PRs for vendored `.proto` files and M-map
-  overrides and reject if present.
-- **No infra protos, and no genuinely-private operator protos, in
-  `opensource/sdk`.** The customer-facing OSS SDK is a stripe-go-like API
-  client. Per ADR-0039 (2026-06-01) tenant administration is **customer-facing**,
-  so `gibson.tenant.v1.*` (TenantService, MembershipService, GrantsService,
-  ProviderService, SecretsService, PluginAdminService, BudgetService,
-  AgentIdentityService, UserService, UsageService, ModelAccessService) lives in
-  the OSS SDK — that is correct, not a violation. What must NOT appear in
-  `opensource/sdk/api/proto/` is the genuinely-private operator surface that
-  stayed in platform-sdk: `gibson.daemon.operator.v1` (`DaemonOperatorService`),
-  `gibson.billing.v1` (`BillingService`), `gibson.daemon.discovery.v1`
-  (`DiscoveryService`), plus any secret-bearing internal message type.
-  Reintroducing one of those private packages under the OSS SDK is rejected by
-  review.
+- **The public `sdk` must not import the daemon — `make check-no-gibson`.**
+  The Apache `sdk` is the component-dev surface only; its `go.mod` must not
+  pull `github.com/zeroroot-ai/gibson` (mechanical grep in the SDK Makefile,
+  required in CI). Admin / operator / billing protos and the shared Go
+  primitives are daemon-local in the `gibson` monorepo now (ADR-0053), so
+  there is no cross-module proto sharing to police between separate
+  foundation modules. Within `gibson`, platform protos live under
+  `internal/server/daemon/api/gibson/<pkg>/v1` — plain in-module includes,
+  no BSR dep, no M-mapped `go_package`, no vendored `.proto`.
+- **No admin / operator / billing protos in the public `sdk`.** The Apache
+  SDK ships only the component-dev surface — agent / tool / plugin /
+  component / harness / mission protos (ADR-0058). What must NOT appear in
+  `opensource/sdk/api/proto/` is the platform surface that now lives
+  daemon-local in `gibson`: tenant administration (`gibson.tenant.v1.*` —
+  Tenant/Membership/Grants/Provider/Secrets/User/Usage/Budget/ModelAccess),
+  the operator surface (`gibson.daemon.operator.v1`), billing, discovery,
+  plus any secret-bearing internal message type. Billing has no proto in
+  the SDK at all — it is a CLOSED `billing` repo injected through gibson's
+  `pkg/billing` / `internal/billing` seam. Reintroducing any of those
+  packages under the SDK is rejected by review.
 - **No infra-client deps in `opensource/sdk/go.mod`.** The CodeQL deny-list
-  query (in `zeroroot-ai/codeql-go-queries`) fails CI when the OSS SDK's
-  module graph pulls Vault / OpenBao / AWS Secrets Manager / GCP Secret
-  Manager / Azure Key Vault / SPIFFE / Redis / Neo4j / OpenFGA admin /
-  pgx / any other first-party-internal infra client. Those clients live
-  in `platform-clients` and are consumed only by internal services.
-  Smoke check: `go mod why` from a clean SDK consumer returns nothing for
-  any of those modules. Adding such a dep on the SDK is a fundamental
-  category error; rewrite the work into platform-clients instead.
+  query (in `zeroroot-ai/codeql-go-queries`) fails CI when the SDK's module
+  graph pulls Vault / OpenBao / AWS Secrets Manager / GCP Secret Manager /
+  Azure Key Vault / SPIFFE / Redis / Neo4j / OpenFGA admin / pgx / any other
+  first-party-internal infra client. Those clients now live in `gibson`'s
+  `internal/infra/*` (ex `platform-clients`) and are consumed only inside
+  the gibson module. Smoke check: `go mod why` from a clean SDK consumer
+  returns nothing for any of those modules. Adding such a dep on the SDK is
+  a fundamental category error; the work belongs in `gibson/internal/infra`.
 - **One code path — see [ADR-0003](https://github.com/zeroroot-ai/docs/blob/main/adr/0003-one-code-path.md).**
   Never re-introduce `.enabled: false` defaults, `| default ""` silent template
   fallbacks, `failurePolicy: Ignore` webhooks, `optional: true` env refs,
@@ -630,40 +616,49 @@ or `.gitmodules`.
 
 ---
 
-## 11. Two-surface API contract and required CI checks per repo type
+## 11. Open-core API surface and required CI checks per repo type
 
-The org's Go module graph is intentionally split across three foundation
-modules, each with a distinct audience and a distinct CI contract.
-Knowing which one you are editing decides which checks must be green
-before merge.
+The open-core re-architecture (ADRs 0050–0058) collapsed the old
+three-module split into a licensing-driven topology. There is now ONE
+public API surface — the Apache `sdk` — and everything else is in-module
+inside the ELv2 `gibson` monorepo. Knowing which repo and which license
+tier you are editing decides which checks must be green before merge.
 
-### Two-surface model
+### Licensing tiers and where things live
 
-| Module | Repo | Audience | What lives here |
-|--------|------|----------|-----------------|
-| Customer-facing SDK | `opensource/sdk` | 3rd-party customers (agent / tool / plugin authors and integrations) | Authoring protos (agent/tool/plugin/component/harness v1) + customer-callable daemon RPCs (member-scoped `DaemonService`, graph, intelligence, identity `WhoAmI`) + the customer-facing tenant-administration surface `gibson.tenant.v1.*` (per ADR-0039 — includes admin-relation RPCs like Membership/Grants/Secrets/Provider/PluginAdmin/Usage). Customer-facing OAuth2 helper (`auth/oidc/`). Zero infra deps. Released as a customer artifact, semver line independent. |
-| Internal protos | `enterprise/platform/platform-sdk` | Internal services (gibson, ext-authz, tenant-operator, platform-operator, spiffe-jwks-exporter, dashboard) | The genuinely-private surface remaining after ADR-0039: `DaemonOperatorService` (`gibson.daemon.operator.v1`), `BillingService` (`gibson.billing.v1`), `DiscoveryService` (`gibson.daemon.discovery.v1`). Independent BSR module, independent semver. |
-| Shared Go library | `enterprise/platform/platform-clients` | Same internal services | Transport (ConnectRPC builders with full interceptor chain), secrets (broker with lease renewal + circuit breaker), readiness (probe aggregator + `/readyz`), pools (Neo4j/Redis/pgx with mandated overrides), observability (OTel + slog + correlation), authz (FGA wrapper + identity-header validation). Consumes `platform-sdk` types; never consumed by `opensource/sdk`. |
+| Tier | Repos | Role |
+|------|-------|------|
+| Apache-2.0 (build + run components) | `sdk`, `python-sdk`, `adk`, `setec`, `gibson-executor` | Customer / community surface. `sdk` = component-dev protos ONLY (agent / tool / plugin / component / harness / mission). |
+| Elastic License v2 (operate the platform) | `gibson` (monorepo), `dashboard`, `deploy` | `gibson` absorbed the former `ext-authz` (`cmd/ext-authz`), `tenant-operator` (`operators/tenant`), `platform-operator` (`operators/platform`), `spiffe-jwks-exporter` (`cmd/spiffe-jwks-exporter`), `platform-clients` (`internal/infra/*`), and the `platform-sdk` admin protos (daemon-local under `internal/server/daemon/api/gibson/<pkg>/v1`). |
+| Closed (commercial) | `billing` | Stripe backend, injected into `gibson` through the `pkg/billing` / `internal/billing` seam; on-prem links a no-op bypass. |
+| Private (not distributed) | `gitops` | ZeroRoot Cloud ops. |
 
-Composability comes from narrow public interfaces, not a monorepo. A new
-internal service depends on both `platform-sdk` and `platform-clients` at
-pinned tags; a customer integration depends on `opensource/sdk` and
-nothing else.
+The single public API module is `sdk`. Admin / operator / billing /
+discovery protos are daemon-local in `gibson` — not a separate module, no
+BSR cross-module dep. The shared Go primitives (transport, secrets,
+readiness, pools, observability, authz wrapper) that used to live in
+`platform-clients` are now `gibson/internal/infra/*`, consumed only inside
+the gibson module. `platform-sdk` and `platform-clients` are retired and
+deleted (ADR-0053); `gibson-tool-runner` was renamed `gibson-executor`.
+
+The boundary that matters: the `sdk` must not import `gibson`
+(`make check-no-gibson`) and must carry zero infra deps; everything
+platform-side is internal to `gibson`.
 
 ### Required CI checks per repo type
 
-The checks below are the ones specific to the platform-contract refactor.
-Per-repo rulesets layer additional repo-specific required checks on top
-(see `gh ruleset list --org zeroroot-ai`).
+The checks below are the ones specific to the open-core boundary. Per-repo
+rulesets layer additional repo-specific required checks on top (see
+`gh ruleset list --org zeroroot-ai`).
 
-| Check | OSS SDK (`opensource/sdk`) | platform-sdk | platform-clients | Internal Go services |
-|-------|---------------------------|--------------|------------------|----------------------|
-| `buf breaking` against last published BSR tag (`WIRE_JSON`) | required | — | — | — |
-| `buf breaking` against last published BSR tag (`FILE`) | — | required | — | — |
-| Reproducible-build hash compare (two independent runners) | required | required | required | required |
-| CodeQL deny-list (no infra deps in `go.mod`) | required | — | — | — |
-| Cross-repo contract tests (round-trip one RPC per service against testcontainer FGA/Neo4j/Redis) | — | required | required | required |
-| Dependency-graph size smoke (under 30 transitive modules from an empty consumer) | required | — | — | — |
+| Check | Public SDK (`opensource/sdk`) | `gibson` monorepo (ELv2) | Other Apache repos (`adk`, `setec`, `gibson-executor`) |
+|-------|-------------------------------|--------------------------|--------------------------------------------------------|
+| `buf breaking` against last published BSR tag (`WIRE_JSON`) | required | — | — |
+| `make check-no-gibson` (SDK go.mod must not depend on the daemon) | required | — | — |
+| CodeQL deny-list (no infra deps in `go.mod`) | required | — | — |
+| Dependency-graph size smoke (bounded transitive module count from an empty consumer) | required | — | — |
+| Reproducible-build hash compare (two independent runners) | required | required | required |
+| Contract tests (round-trip one RPC per service against testcontainer FGA/Neo4j/Redis) | — | required | — |
 
 The reusable workflows for all of these live in this org `.github` repo
 under `.github/workflows/` and are called from each consumer repo. Tool
@@ -672,22 +667,17 @@ major-only — so workflow drift does not produce per-PR build differences.
 
 ### Cross-link to ADRs
 
-The architectural decisions behind this contract are tracked in the
-`zeroroot-ai/docs` ADR series:
+The open-core boundary is tracked in the `zeroroot-ai/docs` ADR series and
+the migration map at `architecture/open-core/MIGRATION-MAP.md`:
 
-- [ADR-0025](https://github.com/zeroroot-ai/docs/blob/main/adr/0025-two-surface-platform-contract.md) — Two-surface platform contract (OSS SDK vs platform-sdk vs platform-clients)
-- [ADR-0026](https://github.com/zeroroot-ai/docs/blob/main/adr/0026-platform-clients-shared-library-mandate.md) — `platform-clients` shared-library mandate for internal Go services
-- [ADR-0027](https://github.com/zeroroot-ai/docs/blob/main/adr/0027-wholesale-flip-discipline.md) — Wholesale-flip discipline (no parallel codepaths, no compat shims)
-- [ADR-0028](https://github.com/zeroroot-ai/docs/blob/main/adr/0028-proto-hygiene-contract.md) — Proto hygiene contract (`protovalidate`, `idempotency_key`, pagination, `buf breaking`)
-- [ADR-0029](https://github.com/zeroroot-ai/docs/blob/main/adr/0029-reproducible-ci-mandate.md) — Reproducible-CI mandate (pinned tool versions, CodeQL deny-list, contract tests, reproducible-build hash compare)
+- [ADR-0050](https://github.com/zeroroot-ai/docs/blob/main/adr/0050-open-core-boundary.md) — Open-core licensing boundary (Apache vs ELv2 vs closed vs private)
+- [ADR-0053](https://github.com/zeroroot-ai/docs/blob/main/adr/0053-retire-platform-sdk-and-clients.md) — Retire `platform-sdk` and `platform-clients`; fold into the `gibson` monorepo
+- [ADR-0056](https://github.com/zeroroot-ai/docs/blob/main/adr/0056-repo-topology-consolidation.md) — Repo-topology consolidation (operators, ext-authz, spiffe-jwks-exporter into `gibson`)
+- [ADR-0058](https://github.com/zeroroot-ai/docs/blob/main/adr/0058-sdk-scope-component-dev-surface.md) — The public SDK is the component-dev surface only (admin protos move daemon-local)
 
-The contract was later refined by
-[ADR-0037](https://github.com/zeroroot-ai/docs/blob/main/adr/0037-one-customer-surface-collapse-admin-services.md)
-(collapse `DaemonAdminService`/`TenantAdminService` onto `DaemonService`/`TenantService`),
-[ADR-0039](https://github.com/zeroroot-ai/docs/blob/main/adr/0039-tenant-administration-is-customer-facing.md)
-(tenant administration is customer-facing — the `gibson.tenant.v1` surface lives in the OSS SDK), and
-[ADR-0040](https://github.com/zeroroot-ai/docs/blob/main/adr/0040-admin-service-decomposition.md)
-(admin-service decomposition). The §11 tables above reflect the post-ADR-0039 split.
+These supersede the former two-surface contract (ADR-0025/0026/0028) and
+its refinements (ADR-0037/0039/0040), which described the now-retired
+`platform-sdk` / `platform-clients` split.
 
 ---
 

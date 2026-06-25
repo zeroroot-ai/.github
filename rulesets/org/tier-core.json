@@ -12,14 +12,9 @@
       "include": [
         "gibson",
         "sdk",
-        "ext-authz",
         "dashboard",
-        "tenant-operator",
         "deploy",
-        "gitops",
-        "platform-debug",
-        "platform-sdk",
-        "platform-clients"
+        "gitops"
       ],
       "exclude": [],
       "protected": false

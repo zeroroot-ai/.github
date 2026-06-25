@@ -1,5 +1,5 @@
 {
-  "name": "ext-authz-required-checks",
+  "name": "gibson-executor-required-checks",
   "target": "branch",
   "enforcement": "evaluate",
   "bypass_actors": [],
