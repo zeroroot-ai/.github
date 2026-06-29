@@ -169,6 +169,14 @@ scan_repo() {
           line = $2
           rest = ""
           for (i = 3; i <= NF; i++) rest = rest (i == 3 ? "" : ":") $i
+          # Strip the source line indentation. grep -rn emits
+          # "file:line:<line text>" verbatim, so a tab-indented source line
+          # carries a leading TAB in $3. Without stripping it, the printf below
+          # would prepend a *second* TAB, producing a double-TAB row whose $4
+          # is empty (the text spilling into $5) — content-based allowlist
+          # entries (index($4, content)) then never match tab-indented lines.
+          # See .github#191.
+          sub(/^[ \t]+/, "", rest)
           # Strip leading $REPO_ROOT/ from the path for stable display.
           printf "%s\t%s\t%s\t%s\n", rel, line, t, rest
         }' >>"$VIOL_FILE"
