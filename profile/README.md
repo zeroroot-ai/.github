@@ -108,6 +108,18 @@ Zero Root answers those once, at the substrate, so every agent you build inherit
 
 ---
 
+## Gibson: the flagship security brain
+
+The factory's first flagship is **Gibson** — an autonomous security engine. Point it at your environment and it builds a *living model* of how risk actually connects, reasons over it to find the way through, and replays every move. One engine for the team breaking in and the team locking down.
+
+- **A living model of your environment.** Gibson builds one coherent picture as it works: every asset, access path, and exposure it discovers, kept current as the engagement unfolds — not a one-time scan.
+- **It thinks in paths, not checklists.** Gibson reasons about how weaknesses chain and where they lead, so you get the handful of paths that are real risk. Offense walks the path; defense cuts it; purple works from one shared picture.
+- **Replayable, move by move.** Every engagement is an event-sourced record you can rewind and scrub: exactly what Gibson saw, weighed, and did, fully reproducible. The audit answer, built in.
+
+Gibson puts the substrate to work on the hardest autonomous-security problem — the same identity, isolation, grants, memory, and audit every agent inherits. It's the worked example of what the factory produces; build your own flagship for any domain on the same foundation.
+
+---
+
 ## What makes it zero trust, not zero-trust-adjacent
 
 | Principle | How Zeroroot.ai implements it |
