@@ -2,16 +2,27 @@
 #
 # The mirror-images.yml workflow reads this file and, for each entry,
 # copies the upstream image+tag to `ghcr.io/zeroroot-ai/mirror/<dest>:<tag>`.
-# Tags are immutable once pushed to the mirror — to update an image,
+# Pinned tags are immutable once pushed to the mirror — to update an image,
 # add a new entry with a new tag rather than mutating an existing one.
+#
+# Floating tags (e.g. `golang:1.25-alpine`, `node:20-alpine`, bare `registry:2`,
+# distroless `nonroot`) move upstream while keeping the same tag name. The
+# default skip-if-exists behaviour would freeze them at the patch they were
+# first mirrored as, so such entries MUST set `refresh: true` to be re-copied
+# on every run. See .github#175 / #173 (the go1.25.11 GOTOOLCHAIN cascade).
 #
 # Spec: .spec-workflow/specs/deploy-simplification (Phase 1, R2.3).
 #
 # Schema:
-#   - source: <registry/repo>     fully-qualified upstream image (no tag)
-#     tag:    <tag>               immutable upstream tag to mirror
-#     dest:   <name>              local name under ghcr.io/zeroroot-ai/mirror/
+#   - source:  <registry/repo>    fully-qualified upstream image (no tag)
+#     tag:     <tag>              upstream tag to mirror
+#     dest:    <name>             local name under ghcr.io/zeroroot-ai/mirror/
 #                                 (omit to default to the last path segment of source)
+#     refresh: true|false         re-copy on every run instead of skip-if-exists.
+#                                 Set true for FLOATING tags (no patch component);
+#                                 omit/false for fully-pinned, immutable tags.
+#                                 skopeo copy is a no-op when digests match, so
+#                                 refreshing is cheap.
 mirrors:
   # ---------------------------------------------------------------------------
   # Build & shell base images
@@ -26,10 +37,11 @@ mirrors:
     tag: "1.36"
     dest: busybox
   - source: docker.io/library/golang
-    tag: "1.25-alpine"
+    tag: "1.25-alpine"     # floating: tracks the latest 1.25.x-alpine patch
     dest: golang
+    refresh: true
   - source: docker.io/library/golang
-    tag: "1.25.11-alpine"  # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); floating 1.25-alpine never refreshes (immutable mirror tags)
+    tag: "1.25.11-alpine"  # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); kept as an explicit floor alongside the refreshing 1.25-alpine
     dest: golang
   - source: docker.io/library/golang
     tag: "1.26.4-alpine"   # gibson go.mod pins go 1.26.4 (govulncheck stdlib fix gibson#612); builders must match (gibson#777)
@@ -70,8 +82,9 @@ mirrors:
     tag: "v1.2.0"
     dest: oras
   - source: docker.io/library/registry
-    tag: "2"
+    tag: "2"               # floating: bare major tag tracks latest 2.x
     dest: registry
+    refresh: true
 
   # ---------------------------------------------------------------------------
   # Dockerfile bases for first-party images
@@ -80,17 +93,19 @@ mirrors:
     tag: "3.20"
     dest: alpine
   - source: docker.io/library/golang
-    tag: "1.25"           # debian-based; tenant-operator builder needs CGO_ENABLED toggles
+    tag: "1.25"           # floating debian-based; tenant-operator builder needs CGO_ENABLED toggles
     dest: golang
+    refresh: true
   - source: docker.io/library/golang
-    tag: "1.25.11"        # pinned patch (go1.25.11 stdlib CVE fixes, .github#173)
+    tag: "1.25.11"        # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); explicit floor alongside the refreshing 1.25
     dest: golang
   - source: docker.io/library/golang
     tag: "1.26.4"         # debian-based; gibson go.mod pins go 1.26.4 (gibson#612); operator builders must match (gibson#777)
     dest: golang
   - source: docker.io/library/node
-    tag: "20-alpine"
+    tag: "20-alpine"      # floating: tracks the latest 20.x-alpine patch
     dest: node
+    refresh: true
   # Python base for the gibson belief-field pgmpy sidecar (gibson#750, deploy#936).
   # The sidecar is a published first-party image, so its base must come from the
   # mirror like every other production image (test fixtures may use docker.io
@@ -101,11 +116,13 @@ mirrors:
   # gcr.io/distroless/* — the Google-published distroless runtime bases.
   # We mirror to ghcr.io so workspace-wide policy holds.
   - source: gcr.io/distroless/static-debian12
-    tag: nonroot
+    tag: nonroot          # floating: distroless rebuilds nonroot continuously
     dest: distroless-static-debian12
+    refresh: true
   - source: gcr.io/distroless/static
-    tag: nonroot
+    tag: nonroot          # floating: distroless rebuilds nonroot continuously
     dest: distroless-static
+    refresh: true
 
   # ---------------------------------------------------------------------------
   # Chart-side tags the existing helm chart references (Phase 1.7 sweep targets).

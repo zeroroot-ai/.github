@@ -91,11 +91,23 @@ jobs:
               continue
             fi
 
-            # Skip if target tag already exists.
-            if skopeo inspect "${to}" >/dev/null 2>&1; then
+            # refresh: floating tags (e.g. golang:1.25-alpine) move upstream
+            # but keep the same tag name, so the immutable skip-if-exists check
+            # below would freeze them at whatever patch they were first
+            # mirrored as. Entries marked `refresh: true` are re-copied on every
+            # run. skopeo copy is a no-op when the source and destination
+            # digests already match, so re-copying is cheap. Pinned entries omit
+            # the flag and keep the immutable skip. See .github#175 / #173.
+            refresh=$(jq -r '.refresh // false' <<<"$entry")
+
+            # Skip if target tag already exists (immutable, non-refresh entries).
+            if [[ "${refresh}" != "true" ]] && skopeo inspect "${to}" >/dev/null 2>&1; then
               echo "skip (already mirrored): ${target}"
               skipped=$((skipped + 1))
               continue
+            fi
+            if [[ "${refresh}" == "true" ]]; then
+              echo "refresh (floating tag, re-copy): ${target}"
             fi
 
             echo "::group::mirror ${source}:${tag} → ${target}"
