@@ -24,12 +24,16 @@ name: makefile-contract
 # below if a known private repo is not visible, so the blind spot can never
 # silently return.
 #
-# Runs weekly + on workflow_dispatch + on PR to .github repo (to validate
+# Runs monthly + on workflow_dispatch + on PR to .github repo (to validate
 # updates to this workflow against current repos).
+#
+# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
+# board #44) — low-signal maintenance cron, workflow_dispatch still
+# available for on-demand runs.
 
 on:
   schedule:
-    - cron: "30 11 * * 1"  # Monday 11:30 UTC
+    - cron: "30 11 1 * *"  # monthly: 1st of month, 11:30 UTC
   workflow_dispatch:
   pull_request:
     paths:

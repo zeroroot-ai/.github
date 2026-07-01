@@ -6,12 +6,16 @@ name: failure-mode-aggregator
 #
 # Slice 6.5 of the production-readiness epic (gibson#176 → board #16).
 #
-# Runs weekly + manually. Drift detector: regenerated table must match
+# Runs monthly + manually. Drift detector: regenerated table must match
 # the in-tree copy on docs; if not, opens a PR with the update.
+#
+# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
+# board #44) — low-signal maintenance cron, workflow_dispatch still
+# available for on-demand runs.
 
 on:
   schedule:
-    - cron: "0 12 * * 1"
+    - cron: "0 12 1 * *" # monthly: 1st of month, 12:00 UTC
   workflow_dispatch:
 
 permissions:

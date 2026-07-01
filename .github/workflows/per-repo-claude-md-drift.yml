@@ -1,13 +1,17 @@
 name: per-repo-claude-md-drift
 
-# Weekly check: every repo in the org has either CLAUDE.md or AGENTS.md
+# Monthly check: every repo in the org has either CLAUDE.md or AGENTS.md
 # at the root. Posts a tracked issue listing missing repos.
 #
 # Slice 6.3 of the production-readiness epic (gibson#176 → board #16).
+#
+# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
+# board #44) — low-signal maintenance cron, workflow_dispatch still
+# available for on-demand runs.
 
 on:
   schedule:
-    - cron: "0 11 * * 1"
+    - cron: "0 11 1 * *" # monthly: 1st of month, 11:00 UTC
   workflow_dispatch:
 
 permissions:

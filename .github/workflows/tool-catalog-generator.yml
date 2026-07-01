@@ -1,7 +1,7 @@
 name: tool-catalog-generator
 
 # Slice 6.4 of the production-readiness epic (gibson#176 → board #16).
-# Weekly cron that scans every org repo for tool-emitting artifacts:
+# Monthly cron that scans every org repo for tool-emitting artifacts:
 #   - AST walker tests (`cmd/*/structural_*_test.go`, `cmd/*/no_*_test.go`)
 #   - Linters (golangci-lint configs)
 #   - CodeQL queries (qlpack.yml files)
@@ -12,10 +12,14 @@ name: tool-catalog-generator
 # Emits a consolidated docs/agents/tools.md to zeroroot-ai/docs as a
 # workflow artifact. PR to actually open the cross-repo PR is a follow-up
 # (needs cross-repo PAT).
+#
+# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
+# board #44) — low-signal maintenance cron, workflow_dispatch still
+# available for on-demand runs.
 
 on:
   schedule:
-    - cron: "30 12 * * 1"
+    - cron: "30 12 1 * *" # monthly: 1st of month, 12:30 UTC
   workflow_dispatch:
 
 permissions:

@@ -8,10 +8,13 @@ name: mirror-images
 
 on:
   schedule:
-    # Nightly at 04:00 UTC. Pick up new upstream patch releases if any.
+    # Weekly, Monday 04:00 UTC. Pick up new upstream patch releases if any.
     # Most entries are tag-pinned and won't change; the cron just catches
-    # any drift from the small set of floating major-version tags.
-    - cron: "0 4 * * *"
+    # any drift from the small set of floating major-version tags, and
+    # skopeo copy is a cheap no-op when source/dest digests already match.
+    # No live dependency needs daily freshness — cadence pruned daily→weekly
+    # by .github#201 (cicd-efficiency epic, board #44).
+    - cron: "0 4 * * 1"
   workflow_dispatch:
     inputs:
       only:
