@@ -1,14 +1,18 @@
 name: flake-report
 
-# Weekly aggregator that scans recent CI runs across the org for flake
+# Monthly aggregator that scans recent CI runs across the org for flake
 # events emitted by actions/flake-quarantine. Updates (or creates) a
 # single open issue listing flaky tests.
 #
 # Slice 5.11 of the production-readiness epic (gibson#175 → board #16).
+#
+# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
+# board #44) — low-signal maintenance cron, workflow_dispatch still
+# available for on-demand runs.
 
 on:
   schedule:
-    - cron: "0 10 * * 1"  # Monday 10:00 UTC, after gremlins-pilot at 09:00
+    - cron: "0 10 1 * *"  # monthly: 1st of month, 10:00 UTC
   workflow_dispatch:
 
 permissions:
