@@ -1,0 +1,75 @@
+# Reusable workflow that rejects any `runs-on:` label that is not a
+# sanctioned GitHub-hosted runner or the org's ephemeral ARC scale-set.
+#
+# Epic: cicd-efficiency (board #44) / zeroroot-ai/deploy#1067 / ADR-0060
+# ("GitHub-hosted runners are the default for every CI job that does not
+# require bare metal; the only jobs allowed off GitHub-hosted are those
+# needing /dev/kvm, and those run on ephemeral runner pods in staging that
+# are torn down after each job. No persistent self-hosted runners exist.").
+#
+# Allowed:
+#   - ubuntu-* (any GitHub-hosted Ubuntu label: ubuntu-latest, ubuntu-24.04,
+#     ubuntu-22.04, the *-cores variants, etc.)
+#   - staging-ephemeral (the org's ARC gha-runner-scale-set label —
+#     zeroroot-ai/gitops envs/staging/arc-runners.yaml)
+#
+# Rejected: everything else, including any `self-hosted` array form
+# (`runs-on: [self-hosted, <label>]`) and any other custom label. There is
+# no allowance for windows-*/macos-* or other GitHub-hosted families — add
+# them here explicitly if a real need arises; do not silently widen the
+# allowlist in a calling repo.
+#
+# Called by via:
+#   uses: zeroroot-ai/.github/.github/workflows/runs-on-lint.yml@main
+#
+# Required check name: runs-on-lint (declared in the calling workflow's job
+# id — see rulesets/org/tier-core.json / tier-opensource.json).
+
+name: runs-on-lint
+
+on:
+  workflow_call:
+
+jobs:
+  runs-on-lint:
+    name: runs-on-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Reject non-sanctioned runs-on labels
+        run: |
+          set -euo pipefail
+          violations=0
+
+          while IFS= read -r -d '' f; do
+            while IFS= read -r line; do
+              # Strip the `runs-on:` key, then strip array brackets/quotes so
+              # both `runs-on: ubuntu-latest` and
+              # `runs-on: [self-hosted, some-label]` parse the same way.
+              val="$(echo "$line" | sed -E 's/^[[:space:]]*runs-on:[[:space:]]*//')"
+              val="$(echo "$val" | tr -d '[]"'"'"'')"
+              IFS=',' read -ra labels <<< "$val"
+              for raw in "${labels[@]}"; do
+                label="$(echo "$raw" | xargs)"
+                [ -z "$label" ] && continue
+                case "$label" in
+                  ubuntu-*) ;;
+                  staging-ephemeral) ;;
+                  *)
+                    echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or staging-ephemeral (the org's ephemeral ARC scale-set) are allowed. See ADR-0060 (zeroroot-ai/docs)."
+                    violations=$((violations+1))
+                    ;;
+                esac
+              done
+            done < <(grep -nE '^[[:space:]]*runs-on:' "$f" 2>/dev/null || true)
+          done < <(find . -path ./.git -prune -o \
+                         \( -path '*/.github/workflows/*.yml' -o -path '*/.github/workflows/*.yaml' \) \
+                         -print0 2>/dev/null)
+
+          if [ "$violations" -gt 0 ]; then
+            echo "::error::$violations forbidden runs-on label(s) found — no persistent self-hosted runners are permitted anywhere in the org (ADR-0060)."
+            exit 1
+          fi
+          echo "OK: every runs-on label is ubuntu-* or staging-ephemeral."

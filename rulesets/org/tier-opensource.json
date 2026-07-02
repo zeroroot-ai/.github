@@ -37,7 +37,8 @@
           {"context": "pr-title-lint"},
           {"context": "release-please"},
           {"context": "Analyze (go)"},
-          {"context": "Scorecard analysis"}
+          {"context": "Scorecard analysis"},
+          {"context": "runs-on-lint"}
         ]
       }
     }
