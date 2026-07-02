@@ -31,13 +31,13 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "heavy / node-ci (heavy)"
+            "context": "heavy"
           },
           {
-            "context": "security / npm audit"
+            "context": "npm audit"
           },
           {
-            "context": "CodeQL / Analyze TypeScript"
+            "context": "Analyze TypeScript"
           }
         ]
       }
