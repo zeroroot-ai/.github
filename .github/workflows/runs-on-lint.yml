@@ -63,7 +63,7 @@ jobs:
                     ;;
                 esac
               done
-            done < <(grep -nE '^[[:space:]]*runs-on:' "$f" 2>/dev/null || true)
+            done < <(grep -E '^[[:space:]]*runs-on:' "$f" 2>/dev/null || true)
           done < <(find . -path ./.git -prune -o \
                          \( -path '*/.github/workflows/*.yml' -o -path '*/.github/workflows/*.yaml' \) \
                          -print0 2>/dev/null)
