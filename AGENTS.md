@@ -211,6 +211,16 @@ non-draft alike, but the merge button is disabled while a PR is draft — so
 draft PRs make a human flip a toggle for no reason. If you want CI to run
 without inviting a merge yet, just say so in the PR body.
 
+**Closing keywords: use `Fixes #N` or `Fixes zeroroot-ai/<repo>#N` — never
+`Fixes <repo>#N`.** The bare `<repo>#N` shorthand (`Closes deploy#1063`,
+`Fixes dashboard#921`) is NOT a valid GitHub closing reference — GitHub only
+recognizes `#N` (same repo) and the fully-qualified `owner/repo#N` form. The
+shorthand renders as a link, so it *looks* right, but the issue silently stays
+open after the fix merges. The 2026-07-02 org-wide audit found six
+fixed-but-open issues caused by exactly this. In squash-merge repos the
+keyword must survive into the PR **body** (or the squashed commit message),
+not just an intermediate commit.
+
 **Add to the epic board** if this PR is part of one:
 
 ```bash
