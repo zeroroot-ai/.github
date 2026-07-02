@@ -21,6 +21,15 @@
 #   secrets:
 #     DOCS_REPO_READ_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN }}
 #
+# Works from either a `pull_request` or a `merge_group` caller trigger. The
+# `merge_group` event payload carries no `pull_request` object (no number, no
+# author, no title) — only merge_group.base_sha/head_sha/base_ref/head_ref.
+# The "Resolve merge_group PR context" step below recovers the PR number by
+# parsing it out of head_ref (`refs/heads/gh-readonly-queue/<base>/pr-<N>-<sha>`)
+# and looks up author/title/head-ref-name via `gh pr view` so every later step
+# can read a uniform set of fields regardless of which event triggered the run.
+# The pull_request path is untouched — same fields, same source (github.event.pull_request.*).
+#
 # DOCS_REPO_READ_TOKEN should be a fine-grained PAT or GitHub-App token with
 # `Pull requests: read` on zeroroot-ai/docs. Stored as an organization-level
 # secret so every repo's workflow can read it. If absent, the workflow falls
@@ -52,6 +61,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Resolve merge_group PR context
+        # merge_group runs have no `pull_request` object in the event payload
+        # — there is no PR number field at all. It is embedded in head_ref as
+        # `refs/heads/gh-readonly-queue/<base>/pr-<N>-<sha>`; parse it out and
+        # resolve author/title/head-ref-name via `gh pr view` so the steps
+        # below have the same fields available under both trigger types.
+        # No-op (skipped) on pull_request — those steps read
+        # github.event.pull_request.* directly, unchanged.
+        if: github.event_name == 'merge_group'
+        id: mg
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          NUM=$(printf '%s' "$HEAD_REF" | grep -oE 'pr-[0-9]+-' | grep -oE '[0-9]+' | head -1)
+          if [ -z "$NUM" ]; then
+            echo "::error::could not parse a PR number out of merge_group head_ref '$HEAD_REF'"
+            exit 1
+          fi
+
+          AUTHOR=$(gh pr view "$NUM" --repo "$REPO" --json author --jq .author.login)
+          TITLE=$(gh pr view "$NUM" --repo "$REPO" --json title --jq .title)
+          HEAD_REF_NAME=$(gh pr view "$NUM" --repo "$REPO" --json headRefName --jq .headRefName)
+          {
+            echo "number=$NUM"
+            echo "author=$AUTHOR"
+            echo "title=$TITLE"
+            echo "head_ref_name=$HEAD_REF_NAME"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Bypass for automated PRs (Dependabot, release-please)
         # Two classes of automated PRs are exempt from the Docs-PR trailer
         # requirement:
@@ -70,9 +111,9 @@ jobs:
         id: bypass
         env:
           ACTOR: ${{ github.actor }}
-          PR_USER: ${{ github.event.pull_request.user.login }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_USER: ${{ github.event_name == 'merge_group' && steps.mg.outputs.author || github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.event_name == 'merge_group' && steps.mg.outputs.head_ref_name || github.event.pull_request.head.ref }}
+          PR_TITLE: ${{ github.event_name == 'merge_group' && steps.mg.outputs.title || github.event.pull_request.title }}
         run: |
           set -euo pipefail
           # 1. Dependabot check (actor or PR author).
@@ -103,7 +144,7 @@ jobs:
         id: body
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event_name == 'merge_group' && steps.mg.outputs.number || github.event.pull_request.number }}
           PR_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
