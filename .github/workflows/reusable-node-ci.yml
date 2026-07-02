@@ -129,11 +129,60 @@ jobs:
         run: pnpm test -- --run
 
       # ---- HEAVY tier (merge_group): authoritative gate before landing ----
-      # `pnpm build` = `next build`, gated by the `prebuild` npm hook (every
+      # The build runs `next build`, gated by the `prebuild` npm hook (every
       # policy-guard script, including `test:ast-checks` and `knip`) and
       # followed by the `postbuild` secret-leak guards. NEVER disable any
       # guard in that chain to make this step pass -- fix the underlying
       # violation instead.
-      - name: build (prebuild guard chain + next build + postbuild guards)
+      #
+      # Lockfile parity (dashboard#949 unwedge, vercel/next.js#67998 /
+      # #86390): a DUAL-lockfile repo (package-lock.json alongside
+      # pnpm-lock.yaml) ships its container image via `npm ci` +
+      # package-lock.json -- a flat node_modules. Turbopack's `next build`
+      # currently emits broken references to
+      # next/dist/server/route-modules/app-route/vendored/contexts/* under
+      # pnpm's symlinked layout whenever a route handler transitively imports
+      # `next/navigation` (next-auth does), while the identical build is
+      # green under the npm flat layout the Dockerfile uses. The
+      # authoritative merge gate must build the way the product builds, so
+      # when the repo carries a package-lock.json the heavy build
+      # installs+builds via npm, mirroring the Dockerfile exactly
+      # (`npm ci --ignore-scripts --legacy-peer-deps` + `npm run build`,
+      # which runs the same prebuild/postbuild hook chain). Single-lockfile
+      # (pnpm-only) repos keep `pnpm build`. Revisit when the upstream
+      # Turbopack bug is fixed.
+      - name: detect dual-lockfile (npm-built image repo)
         if: ${{ inputs.tier == 'heavy' }}
+        id: lockfiles
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "npm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: build (prebuild guard chain + next build + postbuild guards)
+        if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm != 'true' }}
         run: pnpm build
+
+      - name: npm ci (Dockerfile-parity flat layout)
+        if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm == 'true' }}
+        env:
+          # A repo-level .npmrc may reference ${NODE_AUTH_TOKEN} for the
+          # GitHub Packages registry; npm (unlike pnpm) hard-fails when the
+          # env var is unset even if no scoped package is installed. The
+          # workflow token satisfies the reference; repos with real GitHub
+          # Packages deps get read access via the installation token.
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf node_modules
+          npm ci --ignore-scripts --legacy-peer-deps
+          # Dockerfile parity: extract native binaries for packages that
+          # need a per-arch rebuild after --ignore-scripts.
+          if [ -d node_modules/lightningcss ]; then npm rebuild lightningcss; fi
+
+      - name: build (prebuild guard chain + next build + postbuild guards, npm)
+        if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm run build
