@@ -18,6 +18,22 @@
 # Error handling: each apply step is wrapped in `set +e` so one repo's
 # failure (e.g. API plan-gate) doesn't block the others. Failures are
 # tallied and the job exits non-zero only if any apply failed.
+#
+# Gotcha -- emergency live edits diverge from this directory until the next
+# push-triggered run: an emergency `gh api --method PUT
+# repos/<org>/<repo>/rulesets/<id>` edit straight against a live ruleset
+# (e.g. stripping `required_status_checks` to unblock a frozen merge queue,
+# per epic cicd-efficiency board #44) bypasses this workflow entirely, so the
+# live ruleset silently drifts from the committed `rulesets/*.json` it was
+# generated from. The committed file is NOT touched by that kind of
+# emergency edit and may already be correct/unchanged. To force a resync
+# once the underlying issue is fixed, land any commit that touches the
+# affected `rulesets/*.json` path (even a no-op formatting change, or a
+# touch to this workflow file itself, since it's also in the paths filter
+# above) on `main` -- the push trigger reapplies every file's current
+# committed content via PUT, restoring live state to match source of truth.
+# `gh workflow run apply-rulesets.yml -R zeroroot-ai/.github` (manual
+# workflow_dispatch) does the same without waiting for a push.
 
 name: apply-rulesets
 
