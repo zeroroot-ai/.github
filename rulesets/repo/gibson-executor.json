@@ -1,7 +1,7 @@
 {
   "name": "gibson-executor-required-checks",
   "target": "branch",
-  "enforcement": "evaluate",
+  "enforcement": "active",
   "bypass_actors": [],
   "conditions": {
     "ref_name": {
@@ -13,21 +13,25 @@
   },
   "rules": [
     {
+      "type": "merge_queue",
+      "parameters": {
+        "merge_method": "SQUASH",
+        "check_response_timeout_minutes": 60,
+        "grouping_strategy": "ALLGREEN",
+        "max_entries_to_build": 5,
+        "max_entries_to_merge": 5,
+        "min_entries_to_merge": 1,
+        "min_entries_to_merge_wait_minutes": 5
+      }
+    },
+    {
       "type": "required_status_checks",
       "parameters": {
         "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "test"
-          },
-          {
-            "context": "security"
-          },
-          {
-            "context": "architectural-doc-coverage"
-          },
-          {
-            "context": "vault-auth-method-deny-list"
+            "context": "policy-guards / vault-auth-method-deny-list"
           }
         ]
       }
