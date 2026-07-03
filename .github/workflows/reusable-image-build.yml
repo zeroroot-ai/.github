@@ -50,6 +50,10 @@ on:
         type: string
         default: "HIGH,CRITICAL"
         description: Comma-separated Trivy severities that fail the build.
+    outputs:
+      digest:
+        description: Manifest digest of the pushed image (sha256:…)
+        value: ${{ jobs.build-and-push.outputs.digest }}
     secrets:
       ghtoken:
         required: false
