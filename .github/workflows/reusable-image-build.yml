@@ -50,6 +50,29 @@ on:
         type: string
         default: "HIGH,CRITICAL"
         description: Comma-separated Trivy severities that fail the build.
+      platforms:
+        required: false
+        type: string
+        default: "linux/amd64"
+        description: |
+          Comma-separated target platforms passed to docker/build-push-action
+          (e.g. `linux/amd64,linux/arm64`). Default is the historical
+          amd64-only behaviour. Multi-platform builds need a Dockerfile whose
+          build stage cross-compiles (`FROM --platform=$BUILDPLATFORM` +
+          GOOS/GOARCH from TARGETOS/TARGETARCH) or QEMU emulation — QEMU is
+          set up automatically when this input requests more than amd64.
+      version_tag:
+        required: false
+        type: string
+        default: ""
+        description: |
+          Optional explicit version tag (e.g. `v1.2.3`) added to the built
+          image on non-PR runs. Lets release workflows publish version-tagged
+          images by chaining a workflow_call in the same run as
+          release-please — tags pushed with the default GITHUB_TOKEN never
+          fire `on: push: tags:` triggers (GitHub anti-recursion, gibson#96),
+          so ref-derived `tag_pattern` matching alone misses releases in
+          repos without a release PAT. Empty (default) adds nothing.
     outputs:
       digest:
         description: Manifest digest of the pushed image (sha256:…)
@@ -98,6 +121,14 @@ jobs:
           large-packages: true
           docker-images: false
           swap-storage: false
+      # QEMU is only needed when a requested platform differs from the amd64
+      # runner AND the Dockerfile runs foreign-arch stages. Cross-compiling
+      # Dockerfiles don't strictly need it, but installing it whenever a
+      # non-amd64 platform is requested keeps the workflow correct for both
+      # Dockerfile styles at the cost of a few seconds. amd64-only callers
+      # (the default) are untouched.
+      - if: inputs.platforms != 'linux/amd64'
+        uses: docker/setup-qemu-action@v4.2.0 # pin: 96fe6ef7f33517b61c61be40b68a1882f3264fb8
       - uses: docker/setup-buildx-action@v4.0.0 # pin: 4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd
       - uses: docker/login-action@v4.1.0 # pin: 4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
@@ -120,12 +151,17 @@ jobs:
             # produces a fresh image but consumers pinning `:latest` keep
             # pulling the stale one — defeating the rebuild's purpose.
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+            # Explicit version tag from the caller (see the version_tag input
+            # docs): release workflows that chain this build in the same run
+            # as release-please pass the fresh release tag here because the
+            # GITHUB_TOKEN tag push never re-triggers tag-pattern builds.
+            type=raw,value=${{ inputs.version_tag }},enable=${{ inputs.version_tag != '' && github.event_name != 'pull_request' }}
       - id: build
         uses: docker/build-push-action@v7.1.0 # pin: bcafcacb16a39f128d818304e6c9c0c18556b85f
         with:
           context: ${{ inputs.component_path }}
           file: ${{ inputs.dockerfile_path }}
-          platforms: linux/amd64
+          platforms: ${{ inputs.platforms }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           push: ${{ github.event_name != 'pull_request' }}
