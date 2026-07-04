@@ -165,12 +165,17 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     # continue-on-error: scan results inform but never block the image push.
-    # Two known failure modes in cross-repo reusable workflow context:
+    # Three known failure modes in cross-repo reusable workflow context:
     #   1. codeql-action/upload-sarif returns "Bad credentials" because the
     #      GITHUB_TOKEN JWT's workflow-repo claim (zeroroot-ai/.github) doesn't
     #      match the target repo's code-scanning API expectation (.github#135).
     #   2. trivy exits 1 on CVEs that are tracked but not yet fixed (e.g.
     #      swiper@11.x GHSA-hmx5-qpq5-p643, tracked in dashboard#258).
+    #   3. Private repos without Code Security enabled reject the SARIF upload
+    #      outright (zitadel-login#2), so the Security tab never sees trivy
+    #      findings there. The job therefore ALWAYS writes the findings table
+    #      to the run's step summary — that is the guaranteed-readable surface;
+    #      the Security-tab upload is opportunistic on top.
     # Artifacts + Security-tab upload are best-effort; the image push is the gate.
     continue-on-error: true
     if: startsWith(github.ref, 'refs/tags/')
@@ -196,7 +201,35 @@ jobs:
           output: trivy-${{ inputs.component_name }}.sarif
           severity: ${{ inputs.trivy_severity }}
           exit-code: 1
+      # Guaranteed-readable findings surface (failure mode 3 above): render the
+      # findings table into the run's step summary so agents/humans can read
+      # them on ANY repo, Code Security or not. Reuses the local vuln DB the
+      # SARIF step just populated; never fails the step chain (exit-code 0).
+      - name: Findings to step summary
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0 # pin: ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ inputs.image_name }}@${{ needs.build-and-push.outputs.digest }}
+          format: table
+          output: trivy-${{ inputs.component_name }}.txt
+          severity: ${{ inputs.trivy_severity }}
+          exit-code: 0
+          skip-setup-trivy: true
+      - name: Append findings to summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Trivy findings — ${{ inputs.component_name }} (${{ inputs.trivy_severity }})"
+            echo '```'
+            cat "trivy-${{ inputs.component_name }}.txt" 2>/dev/null || echo "(no table output produced)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Opportunistic Security-tab upload: continue-on-error because private
+      # repos without Code Security reject it (failure mode 3) and the JWT
+      # mismatch (failure mode 1) also 403s — the summary above is canonical.
       - if: always()
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v4.35.5 # pin: 9e0d7b8d25671d64c341c19c0152d693099fb5ba
         with:
           sarif_file: trivy-${{ inputs.component_name }}.sarif
