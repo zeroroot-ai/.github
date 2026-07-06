@@ -177,7 +177,19 @@ jobs:
       - if: github.event_name != 'pull_request'
         name: Cosign sign image
         run: |
-          cosign sign --yes ${{ inputs.image_name }}@${{ steps.build.outputs.digest }}
+          # Rekor rejects concurrent same-identity signing bursts: when a
+          # caller builds several images in one run (setec: 5, gibson-executor:
+          # 2), the slower job's POST to /api/v1/log/entries can fail after
+          # cosign's two quick internal retries (.github#223 — bridge image
+          # unsigned 3/3 while its sibling signed fine in the same runs).
+          # Retry with real backoff; re-signing a fresh digest is idempotent.
+          for i in 1 2 3 4; do
+            cosign sign --yes ${{ inputs.image_name }}@${{ steps.build.outputs.digest }} && exit 0
+            echo "cosign sign attempt $i failed; retrying in $((i * 30))s..."
+            sleep $((i * 30))
+          done
+          echo "cosign sign failed after 4 attempts" >&2
+          exit 1
       - if: github.event_name != 'pull_request'
         name: Install syft (SBOM generator)
         uses: anchore/sbom-action/download-syft@v0.24.0 # pin: e22c389904149dbc22b58101806040fa8d37a610
@@ -191,10 +203,17 @@ jobs:
           # upload — attestation is the canonical shape per slice 1.1.
           syft "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" \
                -o spdx-json=sbom.spdx.json
-          cosign attest --yes \
-                --predicate sbom.spdx.json \
-                --type spdxjson \
-                "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}"
+          # Same rekor burst-rejection backoff as the sign step (.github#223).
+          for i in 1 2 3 4; do
+            cosign attest --yes \
+                  --predicate sbom.spdx.json \
+                  --type spdxjson \
+                  "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" && exit 0
+            echo "cosign attest attempt $i failed; retrying in $((i * 30))s..."
+            sleep $((i * 30))
+          done
+          echo "cosign attest failed after 4 attempts" >&2
+          exit 1
 
   vuln-scan:
     name: Vulnerability scan
