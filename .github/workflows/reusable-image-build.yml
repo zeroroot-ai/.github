@@ -203,9 +203,21 @@ jobs:
           # upload — attestation is the canonical shape per slice 1.1.
           syft "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" \
                -o spdx-json=sbom.spdx.json
-          # Same rekor burst-rejection backoff as the sign step (.github#223).
+          # --no-tlog-upload: the public rekor good-instance rejects log
+          # entries above its max body size, and large images produce large
+          # SBOM predicates — gibson-executor's mcp-bridge-runner SBOM is 26 MB
+          # / 2115 pkgs and its attest POST was rejected 4/4 deterministically
+          # (.github#223), which fails this gating job and blocks the release.
+          # The attestation is still generated, keyless-signed via Fulcio, and
+          # stored as an OCI referrer on the image manifest — only its public
+          # transparency-log inclusion is dropped. The image SIGNATURE above
+          # keeps full tlog inclusion, so verification's inclusion proof is
+          # unchanged; verify the SBOM attestation with
+          # `cosign verify-attestation --insecure-ignore-tlog`.
+          # Retry preserved for the transient/concurrency class (.github#223).
           for i in 1 2 3 4; do
             cosign attest --yes \
+                  --no-tlog-upload \
                   --predicate sbom.spdx.json \
                   --type spdxjson \
                   "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" && exit 0
