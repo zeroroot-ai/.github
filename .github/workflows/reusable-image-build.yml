@@ -203,7 +203,7 @@ jobs:
           # upload — attestation is the canonical shape per slice 1.1.
           syft "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" \
                -o spdx-json=sbom.spdx.json
-          # --no-tlog-upload: the public rekor good-instance rejects log
+          # --tlog-upload=false: the public rekor good-instance rejects log
           # entries above its max body size, and large images produce large
           # SBOM predicates — gibson-executor's mcp-bridge-runner SBOM is 26 MB
           # / 2115 pkgs and its attest POST was rejected 4/4 deterministically
@@ -214,10 +214,13 @@ jobs:
           # keeps full tlog inclusion, so verification's inclusion proof is
           # unchanged; verify the SBOM attestation with
           # `cosign verify-attestation --insecure-ignore-tlog`.
-          # Retry preserved for the transient/concurrency class (.github#223).
+          # NB: the flag is `--tlog-upload=false` (a bool defaulting true) —
+          # NOT `--no-tlog-upload` (unknown flag) and NOT `--no-upload` (which
+          # skips the registry push entirely). Retry preserved for the
+          # transient/concurrency class (.github#223).
           for i in 1 2 3 4; do
             cosign attest --yes \
-                  --no-tlog-upload \
+                  --tlog-upload=false \
                   --predicate sbom.spdx.json \
                   --type spdxjson \
                   "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" && exit 0
