@@ -9,7 +9,7 @@
       "exclude": []
     },
     "repository_name": {
-      "include": ["setec", "adk", "gibson-executor"],
+      "include": ["setec", "adk", "gibson-executor", "zerocool"],
       "exclude": [],
       "protected": false
     }
