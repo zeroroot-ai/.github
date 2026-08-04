@@ -1,5 +1,5 @@
 {
-  "name": "zerocool-branch-protection",
+  "name": "zerocool-plugins-branch-protection",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [],
