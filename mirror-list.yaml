@@ -148,3 +148,91 @@ mirrors:
   - source: public.ecr.aws/aws-ec2/aws-node-termination-handler
     tag: "v1.22.0"
     dest: aws-node-termination-handler
+
+  # ---------------------------------------------------------------------------
+  # Gibson umbrella-chart third-party images (deploy#1170).
+  #
+  # Every one of these was pulled straight from Docker Hub, unauthenticated,
+  # by the rendered chart. On EKS all node pulls share the NAT gateway IP, so
+  # the anonymous 100-pulls/6h limit is a single shared budget: replacing a
+  # node group pulls the whole set at once and can 429 a bringup. Envoy is the
+  # entire ingress edge, and alpine/k8s is the init/Job image on a dozen
+  # workloads, so a throttled pull is an outage rather than a slow start.
+  #
+  # Tags track enterprise/deploy helm/gibson*/values.yaml + the third-party
+  # subchart overrides in helm/gibson/values.yaml. All are fully pinned, so
+  # none needs `refresh: true`. When a chart bump moves a tag, add the new
+  # entry here FIRST, let this workflow run, and only then repoint the chart —
+  # the chart must never reference a mirror tag that does not exist yet.
+  # ---------------------------------------------------------------------------
+
+  # Ingress edge — highest blast radius of the set.
+  - source: docker.io/envoyproxy/envoy
+    tag: "v1.34.0"
+    dest: envoy
+
+  # alpine/k8s — curl + jq + bash + kubectl in one image; the chart's default
+  # init-container/Job image. 1.31.0 is the chart's own pin, 1.30.0 the Zitadel
+  # bootstrap Job's, 1.33.0 the upstream zitadel chart's cleanup Job.
+  - source: docker.io/alpine/k8s
+    tag: "1.30.0"
+    dest: alpine-k8s
+  - source: docker.io/alpine/k8s
+    tag: "1.31.0"
+    dest: alpine-k8s
+  - source: docker.io/alpine/k8s
+    tag: "1.33.0"
+    dest: alpine-k8s
+
+  # Data plane
+  - source: docker.io/redis/redis-stack-server
+    tag: "7.4.0-v1"
+    dest: redis-stack-server
+  - source: docker.io/oliver006/redis_exporter
+    tag: "v1.63.0"
+    dest: redis-exporter
+  - source: docker.io/library/redis
+    tag: "7.4.1-alpine"
+    dest: redis
+
+  # Identity / authz / secrets
+  - source: docker.io/openfga/openfga
+    tag: "v1.15.1"
+    dest: openfga
+  - source: docker.io/openbao/openbao
+    tag: "2.5.3"
+    dest: openbao
+  # wait4x — init container on the upstream zitadel chart's login Deployment.
+  - source: docker.io/wait4x/wait4x
+    tag: "3.6"
+    dest: wait4x
+
+  # Observability (chart-gated, but the images must exist when it is on)
+  - source: docker.io/jaegertracing/all-in-one
+    tag: "1.64.0"
+    dest: jaeger-all-in-one
+  - source: docker.io/prom/prometheus
+    tag: "v2.55.1"
+    dest: prometheus
+  - source: docker.io/grafana/grafana
+    tag: "11.4.0"
+    dest: grafana
+  - source: docker.io/grafana/loki
+    tag: "3.3.2"
+    dest: loki
+  - source: docker.io/grafana/promtail
+    tag: "3.3.2"
+    dest: promtail
+
+  # Job / test tooling
+  - source: docker.io/amazon/aws-cli
+    tag: "2.17.50"
+    dest: aws-cli
+  # Dev/test surfaces (kind + CI profiles). Mirrored so a dev cluster does not
+  # spend the shared Docker Hub budget either.
+  - source: docker.io/stripe/stripe-mock
+    tag: "v0.200.0"
+    dest: stripe-mock
+  - source: docker.io/axllent/mailpit
+    tag: "v1.28.3"
+    dest: mailpit
