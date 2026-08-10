@@ -76,6 +76,14 @@ on:
 
 permissions:
   contents: read
+  # A reusable workflow's own permissions block is a ceiling on its jobs'
+  # GITHUB_TOKEN, independent of what the caller repo's default token
+  # permissions allow — `contents: read` alone left the pnpm/npm install
+  # steps with no scope to read org-internal-visibility GitHub Packages
+  # (npm.pkg.github.com), 401ing even after NODE_AUTH_TOKEN was wired
+  # (zeroroot-ai/dashboard#1030 / this repo's #237). reusable-image-build.yml
+  # already has this covered via its broader `packages: write`.
+  packages: read
 
 jobs:
   node-ci:
