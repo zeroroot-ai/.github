@@ -77,6 +77,16 @@ on:
       digest:
         description: Manifest digest of the pushed image (sha256:…)
         value: ${{ jobs.build-and-push.outputs.digest }}
+    # Note: a second buildx secret, `npm_token`, is passed to every build in
+    # build-and-push below and is NOT declared as a workflow_call secret here.
+    # It always carries this run's own `secrets.GITHUB_TOKEN` — the same token
+    # the ghcr `docker/login-action` step below already uses — so no caller
+    # wiring is required. Org-internal-visibility GitHub Packages (the npm
+    # registry) grant automatic GITHUB_TOKEN read access to every repo in the
+    # same org regardless of which repo owns the package, unlike ghcr.io
+    # images which are public by default. Dockerfiles that `npm ci` /
+    # `pnpm install` a `npm.pkg.github.com`-hosted dependency read it via
+    # `--mount=type=secret,id=npm_token` (dashboard#915).
     secrets:
       ghtoken:
         required: false
@@ -170,6 +180,7 @@ jobs:
           build-args: ${{ inputs.build_args }}
           secrets: |
             ghtoken=${{ secrets.ghtoken }}
+            npm_token=${{ secrets.GITHUB_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - if: github.event_name != 'pull_request'
