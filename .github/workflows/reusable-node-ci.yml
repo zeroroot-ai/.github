@@ -113,6 +113,18 @@ jobs:
           cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
 
       - name: pnpm install (frozen lockfile)
+        env:
+          # Same reasoning as the npm ci step below: a repo-level .npmrc may
+          # reference ${NODE_AUTH_TOKEN} for the GitHub Packages registry.
+          # pnpm does not hard-fail when it's unset (unlike npm), it just
+          # warns "Failed to replace env in config" -- but a real fetch from
+          # npm.pkg.github.com then 401s, because the unresolved
+          # _authToken=${NODE_AUTH_TOKEN} line sends no credential at all.
+          # This was invisible until a caller repo had a real GitHub-Packages
+          # pnpm dependency (dashboard#1030, @zeroroot-ai/brand) -- every
+          # prior caller's pnpm-lock.yaml had nothing to fetch from that
+          # registry, so the missing token silently never mattered.
+          NODE_AUTH_TOKEN: ${{ github.token }}
         run: pnpm install --frozen-lockfile
 
       # ---- FAST tier (pull_request): quick contributor signal ----
