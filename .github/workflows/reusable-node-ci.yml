@@ -76,20 +76,26 @@ on:
 
 permissions:
   contents: read
-  # A reusable workflow's own permissions block is a ceiling on its jobs'
-  # GITHUB_TOKEN, independent of what the caller repo's default token
-  # permissions allow — `contents: read` alone left the pnpm/npm install
-  # steps with no scope to read org-internal-visibility GitHub Packages
-  # (npm.pkg.github.com), 401ing even after NODE_AUTH_TOKEN was wired
-  # (zeroroot-ai/dashboard#1030 / this repo's #237). reusable-image-build.yml
-  # already has this covered via its broader `packages: write`.
-  packages: read
 
 jobs:
   node-ci:
     name: node-ci (${{ inputs.tier }})
     runs-on: ubuntu-latest
     timeout-minutes: ${{ inputs.tier == 'heavy' && 20 || 10 }}
+    # Job-level permissions, not the workflow-root block above: a root-level
+    # `permissions:` combined with a cross-repository workflow_call caused a
+    # startup_failure with zero jobs created (observed on
+    # zeroroot-ai/dashboard#1030 immediately after #238 added `packages:
+    # read` at the root — reverted here). reusable-image-build.yml already
+    # grants its buildx job packages access this same way
+    # (jobs.build-and-push.permissions), which is the pattern GitHub
+    # documents as supported for workflow_call. `packages: read` is needed
+    # so the pnpm/npm install steps' GITHUB_TOKEN can read org-internal-
+    # visibility GitHub Packages (npm.pkg.github.com) — NODE_AUTH_TOKEN alone
+    # (#237) authenticates the request but the token still needs the scope.
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
