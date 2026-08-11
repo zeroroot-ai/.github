@@ -126,6 +126,19 @@ jobs:
           cache: pnpm
           cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
 
+      - name: Authenticate pnpm to GitHub Packages (user-level ~/.npmrc)
+        # pnpm v10 refuses to expand ${NODE_AUTH_TOKEN} referenced from a
+        # COMMITTED project .npmrc (it could leak the token to an attacker-
+        # controlled registry), so the install step's NODE_AUTH_TOKEN env is
+        # silently ignored and npm.pkg.github.com 401s (dashboard#1030,
+        # @zeroroot-ai/brand). Writing the credential to the user-level
+        # ~/.npmrc — which pnpm trusts for env expansion — is pnpm's own
+        # documented fix. Harmless for callers with no GitHub-Packages
+        # dependency: the line is simply never used.
+        run: printf '//npm.pkg.github.com/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+
       - name: pnpm install (frozen lockfile)
         env:
           # Same reasoning as the npm ci step below: a repo-level .npmrc may
