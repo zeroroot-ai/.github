@@ -13,8 +13,10 @@ name: makefile-contract
 #
 # Exempt repos (no Go service/library — a Makefile build/test/check
 # contract does not apply): docs, gitops, deploy (Helm + Terraform
-# cluster bootstrap), dashboard (pnpm/TypeScript), the org repo, and the
-# pages site.
+# cluster bootstrap), the pnpm/TypeScript repos (dashboard, sdk-ts,
+# zerocool-plugins — their contract is package.json scripts; a stub
+# Makefile wrapping pnpm would be a second entrypoint that drifts), the
+# org repo, and the pages site.
 #
 # IMPORTANT — token scope: enumeration uses GH_PAT_PLATFORM_RO so the audit
 # can see PRIVATE org repos. With the default GITHUB_TOKEN `gh api
@@ -56,19 +58,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Exclude infra/non-Go repos: org repo, docs, gitops, deploy
-          # (Helm + Terraform), dashboard (pnpm), and the pages site.
-          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | \
-                  grep -vE '^(\.github|docs|gitops|deploy|dashboard|.*\.github\.io)$')
+          ALL_REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name')
 
-          # Blind-spot guard: if the token cannot see private repos, `gibson`
-          # (a known private Go repo) is absent and the audit would be a false
-          # all-clear. Fail loudly instead of silently skipping every private
-          # repo (the root cause of .github#170 under-reporting).
-          if ! printf '%s\n' "$REPOS" | grep -qx 'gibson'; then
-            echo "::error::repo enumeration is missing private repos (gibson not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
+          # Blind-spot guard: if the token cannot see private repos, they
+          # silently vanish from the enumeration and the audit becomes a
+          # false all-clear (the root cause of .github#170 under-reporting).
+          # Canary is `gitops` — private and long-lived — checked against the
+          # UNFILTERED enumeration (it is exempt from the audit itself).
+          # Previously the canary was `gibson`, which went public with the
+          # oss flip; a public canary can never fire, so the guard had
+          # quietly stopped guarding (.github#231/#232 verification).
+          if ! printf '%s\n' "$ALL_REPOS" | grep -qx 'gitops'; then
+            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
             exit 1
           fi
+
+          # Exclude infra/non-Go repos: org repo, docs, gitops, deploy
+          # (Helm + Terraform), the pnpm/TypeScript repos (dashboard,
+          # sdk-ts, zerocool-plugins), and the pages site.
+          REPOS=$(printf '%s\n' "$ALL_REPOS" | \
+                  grep -vE '^(\.github|docs|gitops|deploy|dashboard|sdk-ts|zerocool-plugins|.*\.github\.io)$')
 
           MISSING=""
           for REPO in $REPOS; do
