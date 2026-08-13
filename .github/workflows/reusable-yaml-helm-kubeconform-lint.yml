@@ -148,10 +148,25 @@ jobs:
           set -euo pipefail
           # Render subchart deps first if Chart.yaml declares any. Avoids
           # a different lint outcome local-vs-CI.
-          if [ -f "${{ matrix.chart }}/Chart.yaml" ] && \
-             grep -q '^dependencies:' "${{ matrix.chart }}/Chart.yaml"; then
-            helm dependency update "${{ matrix.chart }}"
-          fi
+          # Build file:// dependencies DEPTH-FIRST so a packaged local
+          # subchart carries its own subcharts. `helm dependency update
+          # <umbrella>` packages each file:// dependency directory AS-IS —
+          # if that directory's own file:// deps were never built (fresh
+          # checkout), the packaged subchart is missing them and lint/
+          # template fails with "no template <lib>.x associated" (deploy
+          # umbrella: gibson → gibson-workloads → gibson-common). Recurse
+          # into each local dep before updating the chart itself.
+          build_local_deps() {
+            local chart="$1"
+            [ -f "$chart/Chart.yaml" ] || return 0
+            grep -q '^dependencies:' "$chart/Chart.yaml" || return 0
+            local dep
+            for dep in $(grep -oE 'file://[^"'"'"' ]+' "$chart/Chart.yaml" | sed 's|^file://||'); do
+              build_local_deps "$(realpath -m --relative-to=. "$chart/$dep")"
+            done
+            helm dependency update "$chart"
+          }
+          build_local_deps "${{ matrix.chart }}"
           # Note: deliberately NOT using --strict. --strict promotes
           # INFO-level diagnostics to errors, which fails when a chart's
           # {{ required "..." }} template values aren't provided. But the
@@ -197,10 +212,25 @@ jobs:
             echo "::notice::${{ matrix.chart }} is a library chart — skipping helm template + kubeconform (helm-lint job already covered it)"
             exit 0
           fi
-          if [ -f "${{ matrix.chart }}/Chart.yaml" ] && \
-             grep -q '^dependencies:' "${{ matrix.chart }}/Chart.yaml"; then
-            helm dependency update "${{ matrix.chart }}"
-          fi
+          # Build file:// dependencies DEPTH-FIRST so a packaged local
+          # subchart carries its own subcharts. `helm dependency update
+          # <umbrella>` packages each file:// dependency directory AS-IS —
+          # if that directory's own file:// deps were never built (fresh
+          # checkout), the packaged subchart is missing them and lint/
+          # template fails with "no template <lib>.x associated" (deploy
+          # umbrella: gibson → gibson-workloads → gibson-common). Recurse
+          # into each local dep before updating the chart itself.
+          build_local_deps() {
+            local chart="$1"
+            [ -f "$chart/Chart.yaml" ] || return 0
+            grep -q '^dependencies:' "$chart/Chart.yaml" || return 0
+            local dep
+            for dep in $(grep -oE 'file://[^"'"'"' ]+' "$chart/Chart.yaml" | sed 's|^file://||'); do
+              build_local_deps "$(realpath -m --relative-to=. "$chart/$dep")"
+            done
+            helm dependency update "$chart"
+          }
+          build_local_deps "${{ matrix.chart }}"
           # Render the chart with default values. Apply caller-provided
           # values files if any.
           HELM_TEMPLATE_ARGS=()
