@@ -185,15 +185,17 @@ jobs:
           cache-to: type=gha,mode=max
       - if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@v4.1.2 # pin: 6f9f17788090df1f26f669e9d70d6ae9567deba6
-        with:
-          # Pin cosign to the v2 line: v3 (installer default v3.0.6) deprecated
-          # `--tlog-upload` and rejects `--tlog-upload=false` outright — skipping
-          # the tlog there requires a fetched, rekor-stripped --signing-config
-          # file + --new-bundle-format (a bigger change; tracked as a follow-up).
-          # The attest step below needs --tlog-upload=false so large-SBOM images
-          # (mcp-bridge-runner's 26 MB SBOM) don't fail on rekor's entry-size
-          # limit (.github#223). v2.4.1 supports it directly and cleanly.
-          cosign-release: v2.4.1
+        # Installer default cosign (v3.1.x). History: .github#223 pinned
+        # cosign-release: v2.4.1 here because the attest step needed
+        # `--tlog-upload=false` (large-SBOM images — mcp-bridge-runner's
+        # 26 MB SBOM — exceeded rekor's entry-size limit) and v3 rejects
+        # that flag. Unpinned by .github#229: the attest step now skips the
+        # tlog the v3-idiomatic way (rekor-stripped --signing-config +
+        # --new-bundle-format, below). Follow-up tracked in #229: cosign
+        # v3.1.1+ logs DSSE attestations to Rekor v2 as hashed entries,
+        # which likely removes the size limit entirely — once a >26 MB
+        # attestation is confirmed to upload, delete the tlog-skipping
+        # altogether.
       - if: github.event_name != 'pull_request'
         name: Cosign sign image
         run: |
@@ -223,24 +225,34 @@ jobs:
           # upload — attestation is the canonical shape per slice 1.1.
           syft "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" \
                -o spdx-json=sbom.spdx.json
-          # --tlog-upload=false: the public rekor good-instance rejects log
+          # Tlog-skipping, v3 shape: the public rekor instance rejected log
           # entries above its max body size, and large images produce large
           # SBOM predicates — gibson-executor's mcp-bridge-runner SBOM is 26 MB
           # / 2115 pkgs and its attest POST was rejected 4/4 deterministically
           # (.github#223), which fails this gating job and blocks the release.
-          # The attestation is still generated, keyless-signed via Fulcio, and
-          # stored as an OCI referrer on the image manifest — only its public
-          # transparency-log inclusion is dropped. The image SIGNATURE above
-          # keeps full tlog inclusion, so verification's inclusion proof is
-          # unchanged; verify the SBOM attestation with
-          # `cosign verify-attestation --insecure-ignore-tlog`.
-          # NB: the flag is `--tlog-upload=false` (a bool defaulting true) —
-          # NOT `--no-tlog-upload` (unknown flag) and NOT `--no-upload` (which
-          # skips the registry push entirely). Retry preserved for the
-          # transient/concurrency class (.github#223).
+          # cosign v2 skipped the tlog with `--tlog-upload=false`; v3 rejects
+          # that flag and instead wants a signing config with no transparency
+          # log service (this exact curl|jq recipe is what cosign v3's own
+          # error message prescribes). `--signing-config` requires
+          # `--new-bundle-format`. The attestation is still generated,
+          # keyless-signed via Fulcio, RFC 3161-timestamped by the public TSA
+          # (kept in the signing config), and stored as an OCI referrer on the
+          # image manifest — only its public transparency-log inclusion is
+          # dropped. The image SIGNATURE above keeps full tlog inclusion, so
+          # verification's inclusion proof is unchanged; verify the SBOM
+          # attestation with
+          # `cosign verify-attestation --insecure-ignore-tlog --use-signed-timestamps`.
+          # Follow-up (#229): cosign v3.1.1+ logs DSSE attestations to Rekor
+          # v2 as hashed entries, which likely lifts the size limit — once a
+          # >26 MB attestation is confirmed to upload, delete this signing-
+          # config detour and attest with full tlog inclusion.
+          # Retry preserved for the transient/concurrency class (.github#223).
+          curl -fsSL --retry 3 https://raw.githubusercontent.com/sigstore/root-signing/refs/heads/main/targets/signing_config.v0.2.json \
+            | jq 'del(.rekorTlogUrls)' > /tmp/signing-config-no-tlog.json
           for i in 1 2 3 4; do
             cosign attest --yes \
-                  --tlog-upload=false \
+                  --new-bundle-format \
+                  --signing-config /tmp/signing-config-no-tlog.json \
                   --predicate sbom.spdx.json \
                   --type spdxjson \
                   "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" && exit 0
