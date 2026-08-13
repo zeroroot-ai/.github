@@ -19,8 +19,9 @@ inputs:
       org aggregator downloads by that prefix — flake-report.yml) and must
       be unique within a workflow run: artifact names collide across matrix
       legs and across multiple wrapped commands in one job, so such callers
-      MUST override this with a distinguishing suffix
-      (e.g. flake-log-test-${{ matrix.leg }}).
+      MUST override this with a distinguishing suffix (e.g. append the
+      matrix leg value). NB do not write a literal expression example here;
+      the runner template-parses this description (see git history).
     required: false
     default: "flake-log-${{ github.job }}"
 
