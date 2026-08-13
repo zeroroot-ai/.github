@@ -28,6 +28,15 @@ name: Reusable Node CI (tiered)
 # Callers pin a RELEASE TAG, never @main (ADR-0060 blast-radius):
 #   uses: zeroroot-ai/.github/.github/workflows/reusable-node-ci.yml@v2
 #
+# CALLER PERMISSIONS CONTRACT: the node-ci job requests `packages: read`
+# (GitHub Packages, #240). A private-repo caller whose workflow grants only
+# `contents: read` fails validation as a JOBLESS startup_failure — no error
+# text anywhere in the UI or API (observed on zerocool-plugins#30 and
+# sdk-ts#10, 2026-08-13). Callers must grant at least:
+#   permissions:
+#     contents: read
+#     packages: read
+#
 # Sibling-repo-dependent generators (plans.ts, stripe_gen.ts, the authz
 # registry, the RBAC helm-template check) cannot run in a single-repo
 # checkout -- there is no polyrepo sibling on disk. Callers whose `prebuild`
