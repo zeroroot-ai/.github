@@ -21,11 +21,22 @@ jobs:
     steps:
       - name: Scan code-scanning alerts across org
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PLATFORM_RO PAT enumerates PRIVATE repos; the default GITHUB_TOKEN
+          # only returns PUBLIC org repos, so the triage would silently skip
+          # every private repo (.github#241, same blind spot as .github#170).
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | \
                   grep -vE '^(\.github|.*\.github\.io)$')
+
+          # Blind-spot guard: `gitops` is a known private, long-lived repo.
+          # If it is absent the token cannot see private repos and the triage
+          # would be a false all-clear for them — fail loudly instead.
+          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
+            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; triage would silently cover public repos only"
+            exit 1
+          fi
 
           for REPO in $REPOS; do
             # Get open code-scanning alerts ≥ medium severity

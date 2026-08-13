@@ -1,18 +1,20 @@
 name: flake-report
 
-# Monthly aggregator that scans recent CI runs across the org for flake
+# Weekly aggregator that scans recent CI runs across the org for flake
 # events emitted by actions/flake-quarantine. Updates (or creates) a
 # single open issue listing flaky tests.
 #
 # Slice 5.11 of the production-readiness epic (gibson#175 → board #16).
 #
-# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
-# board #44) — low-signal maintenance cron, workflow_dispatch still
-# available for on-demand runs.
+# Cadence history: pruned weekly→monthly by .github#201, but the 7-day
+# lookback window and the "Weekly" report title were left behind, so a
+# monthly run silently discarded ~23 of every 30 days. Restored to weekly
+# by .github#241 so cadence, window and title agree; the aggregation is a
+# handful of API calls, not a heavy job.
 
 on:
   schedule:
-    - cron: "0 10 1 * *"  # monthly: 1st of month, 10:00 UTC
+    - cron: "0 10 * * 1"  # weekly: Monday 10:00 UTC (matches the 7-day window)
   workflow_dispatch:
 
 permissions:
@@ -28,35 +30,66 @@ jobs:
       - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Aggregate from last 7 days of CI runs
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PLATFORM_RO PAT enumerates PRIVATE repos; the default GITHUB_TOKEN
+          # only returns PUBLIC org repos, so the scan would silently skip
+          # every private repo and under-report (same blind spot that made the
+          # makefile-contract audit under-report — .github#170, and shared by
+          # this workflow's first incarnation — .github#241).
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Scan each repo in the org for runs in the past week with
-          # flake.json artifacts. Aggregate by repo + test command.
+          # Scan each repo in the org for runs in the past week carrying
+          # flake-log* artifacts (uploaded by actions/flake-quarantine).
+          # Aggregate by repo + test command.
           mkdir -p /tmp/flakes
-          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -v '^\.github$')
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name')
+
+          # Blind-spot guard: if the token cannot see private repos, the
+          # enumeration silently shrinks to public repos only. Canary is
+          # `gitops` — private and long-lived (NOT `gibson`, which the
+          # sibling audits use: gibson is public now, so it can no longer
+          # detect this). Fail loudly instead of under-reporting.
+          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
+            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; the flake scan would silently cover public repos only"
+            exit 1
+          fi
+
+          DOWNLOAD_FAILURES=0
           for REPO in $REPOS; do
-            # Get recent successful runs (flake counts only on green success)
+            # Recent successful runs only (a flake by definition ended green:
+            # the wrapped command eventually passed on retry).
             RUNS=$(gh run list -R "zeroroot-ai/$REPO" --limit 50 --status success --created ">$(date -u -d '7 days ago' +%Y-%m-%d)" --json databaseId --jq '.[].databaseId' 2>/dev/null || true)
             for RUN_ID in $RUNS; do
-              gh run download "$RUN_ID" -R "zeroroot-ai/$REPO" \
-                --name flake-log -D "/tmp/flakes/$REPO-$RUN_ID" 2>/dev/null || true
+              # Ask the API which flake-log* artifacts the run actually has
+              # instead of blind-downloading and swallowing errors — the
+              # original `2>/dev/null || true` here is what let the missing
+              # upload half of the contract sit undetected (.github#241).
+              NAMES=$(gh api "repos/zeroroot-ai/$REPO/actions/runs/$RUN_ID/artifacts" \
+                        --jq '.artifacts[] | select(.expired | not) | .name | select(startswith("flake-log"))' || true)
+              [ -z "$NAMES" ] && continue
+              if ! gh run download "$RUN_ID" -R "zeroroot-ai/$REPO" \
+                     --pattern 'flake-log*' -D "/tmp/flakes/$REPO-$RUN_ID"; then
+                echo "::warning::failed to download flake-log artifacts from zeroroot-ai/$REPO run $RUN_ID"
+                DOWNLOAD_FAILURES=$((DOWNLOAD_FAILURES + 1))
+              fi
             done
           done
 
-          # Render aggregated report
+          # Render aggregated report. `gh run download --pattern` nests each
+          # artifact in a directory named after it, so find the logs rather
+          # than assuming a fixed depth.
+          LOGS=$(find /tmp/flakes -type f -name '*.json' 2>/dev/null | sort || true)
           REPORT="## Weekly flake report — $(date -u +%Y-%m-%d)"
           REPORT="$REPORT\n\n"
-          if [ ! "$(ls -A /tmp/flakes 2>/dev/null)" ]; then
-            REPORT="${REPORT}No flake events found in the last 7 days. "
-            REPORT="${REPORT}\n\nThis means either (a) every test passed on attempt 1, or (b) no repo has adopted actions/flake-quarantine yet."
+          if [ -z "$LOGS" ]; then
+            REPORT="${REPORT}No flake events found in the last 7 days: no run in the scanned repos "
+            REPORT="${REPORT}retried under actions/flake-quarantine this week."
           else
             REPORT="${REPORT}| Repo | Test command | Run | Failed attempts |\n"
             REPORT="${REPORT}|---|---|---|---|\n"
-            for f in /tmp/flakes/*/flake.json; do
-              REPO_RUN=$(dirname "$f" | xargs basename)
-              REPO=$(echo "$REPO_RUN" | cut -d- -f1)
-              RUN=$(echo "$REPO_RUN" | cut -d- -f2-)
+            for f in $LOGS; do
+              REPO=$(jq -r '.repo | sub("^zeroroot-ai/"; "")' "$f")
+              RUN=$(basename "$(dirname "$(dirname "$f")")" | sed "s/^$REPO-//")
               CMD=$(jq -r .cmd "$f")
               IS_FLAKE=$(jq -r .is_flake "$f")
               FAILED=$(jq -r '.failed_attempts | length' "$f")
@@ -64,6 +97,9 @@ jobs:
                 REPORT="${REPORT}| $REPO | \`$CMD\` | $RUN | $FAILED |\n"
               fi
             done
+          fi
+          if [ "$DOWNLOAD_FAILURES" -gt 0 ]; then
+            REPORT="${REPORT}\n\n⚠ $DOWNLOAD_FAILURES artifact download(s) failed this run — the table above may be incomplete (see the workflow log)."
           fi
 
           # Find existing open issue with the report title prefix
