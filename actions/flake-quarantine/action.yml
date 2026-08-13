@@ -13,6 +13,16 @@ inputs:
     description: "Where to write flake event log (uploaded as artifact)"
     required: false
     default: "flake.json"
+  artifact-name:
+    description: >-
+      Artifact name for the flake log. Must start with "flake-log" (the
+      org aggregator downloads by that prefix — flake-report.yml) and must
+      be unique within a workflow run: artifact names collide across matrix
+      legs and across multiple wrapped commands in one job, so such callers
+      MUST override this with a distinguishing suffix
+      (e.g. flake-log-test-${{ matrix.leg }}).
+    required: false
+    default: "flake-log-${{ github.job }}"
 
 runs:
   using: composite
@@ -65,3 +75,18 @@ runs:
         if [ $SUCCESS -gt 1 ]; then
           echo "::warning::test passed but flaked — succeeded on attempt $SUCCESS"
         fi
+
+    # Upload the flake event log so the org aggregator
+    # (zeroroot-ai/.github .github/workflows/flake-report.yml) can collect
+    # it. This step was missing originally, which made the weekly flake
+    # report empty by construction: the aggregator downloaded an artifact
+    # nobody ever uploaded (.github#241). `always()` so the log survives a
+    # hard failure (SUCCESS=0) — a test that failed all attempts is still
+    # signal for the report.
+    - if: always()
+      uses: actions/upload-artifact@v7.0.1 # pin: 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.flake-log-path }}
+        if-no-files-found: warn
+        retention-days: 14
