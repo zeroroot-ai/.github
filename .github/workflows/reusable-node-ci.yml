@@ -73,6 +73,22 @@ on:
         type: boolean
         required: false
         default: false
+      private-git-deps:
+        description: >-
+          Configure SSH auth before install for callers whose lockfile
+          resolves a git+ssh:// dependency on a private zeroroot-ai sibling
+          (e.g. zerocool-plugins -> sdk-ts). Requires the git-ssh-key
+          secret: a READ-ONLY deploy key on the dependency repo, stored as
+          a repo secret on the caller. Mirrors reusable-go-ci.yml's
+          private-modules/gh-pat seam, but keyed to git-over-SSH because
+          pnpm fetches git dependencies with the specifier's own protocol.
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      git-ssh-key:
+        description: "Private half of a read-only deploy key on the git-dependency repo (required when private-git-deps: true)"
+        required: false
 
 permissions:
   contents: read
@@ -138,6 +154,25 @@ jobs:
         run: printf '//npm.pkg.github.com/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
+
+      # Private git-dependency auth MUST be configured before install --
+      # pnpm clones git+ssh:// dependencies during `pnpm install`. A deploy
+      # key is the least-privilege credential GitHub offers for this: it
+      # grants read on exactly one repository, to exactly this caller's CI.
+      - name: Configure private git dependency access (deploy key)
+        if: ${{ inputs.private-git-deps }}
+        env:
+          GIT_SSH_KEY: ${{ secrets.git-ssh-key }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GIT_SSH_KEY:-}" ]; then
+            echo "::error::private-git-deps: true but the git-ssh-key secret is empty"; exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$GIT_SSH_KEY" > "$HOME/.ssh/private_dep_key"
+          chmod 600 "$HOME/.ssh/private_dep_key"
+          ssh-keyscan -t ed25519,ecdsa,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          git config --global core.sshCommand "ssh -i $HOME/.ssh/private_dep_key -o IdentitiesOnly=yes"
 
       - name: pnpm install (frozen lockfile)
         env:
