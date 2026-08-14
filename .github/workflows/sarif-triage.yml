@@ -1,68 +1,75 @@
 name: sarif-triage
 
 # Slice 4.6 of the production-readiness epic (gibson#174 → board #16).
-# Daily cron that polls code-scanning alerts across the org. For new
-# alerts at severity ≥ medium, opens (or updates) a tracked issue in
-# the source repo with `ready-for-agent` label.
+# Scheduled cron that polls open code-scanning alerts across the org and
+# files ONE digest issue per repo, updated in place.
+#
+# Behavior contract (implemented in scripts/sarif-triage.sh; regression- and
+# mutation-tested by scripts/test-sarif-triage.sh, which gates every run):
+#
+#   * ONE digest issue per repo — never one issue per rule. Found by the
+#     stable title prefix "ci(codeql): code-scanning digest" and updated in
+#     place (same pattern as the flake-report aggregator). The old per-rule
+#     filer mass-filed ~200 issues org-wide on its first successful run
+#     (.github#252).
+#   * Repos with ZERO open alerts are skipped entirely. An API error or a
+#     non-array response body is never treated as alert data — it is
+#     surfaced in the run log and turns the run red, never filed as an
+#     issue (the old code filed `rule null` issues on repos that have no
+#     code scanning at all).
+#   * Severity floor: error-severity rules are listed in detail; warning/
+#     note alerts roll up into counts. The digest links the repo's
+#     code-scanning UI.
+#   * Size cap: the detail table truncates with a count + link; an
+#     oversized body collapses to counts + link.
+#   * Hard safety: creating more than one NEW issue in the same repo in
+#     one run aborts the entire run loudly.
+#
+# Token: GH_PAT_PLATFORM_RO enumerates PRIVATE repos; the default
+# GITHUB_TOKEN only returns PUBLIC org repos (.github#241 / .github#170
+# blind spot). The script hard-fails if the private canary repo (gitops)
+# is not visible (guard added by .github#243 — kept).
 
 on:
   schedule:
-    - cron: "0 9 * * *"  # daily 09:00 UTC
+    - cron: "0 9 * * *"  # unchanged cadence, 09:00 UTC
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/sarif-triage.yml"
+      - "scripts/sarif-triage.sh"
+      - "scripts/test-sarif-triage.sh"
 
 permissions:
   contents: read
 
 jobs:
+  fixture-self-test:
+    # Mutation/fixture tests for the digest logic: proves an empty/null/
+    # error API response files NOTHING, a real-shaped response files
+    # EXACTLY ONE digest, and the hard-safety abort actually fires. Gates
+    # the triage job on every scheduled run so a regression in the guard
+    # logic fails before anything is filed.
+    name: digest-logic-fixture-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Run fixture + mutation tests
+        run: bash scripts/test-sarif-triage.sh
+
   triage:
     name: triage-sarif-alerts
+    if: github.event_name != 'pull_request'
+    needs: fixture-self-test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Scan code-scanning alerts across org
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Scan code-scanning alerts across org and file per-repo digests
         env:
           # PLATFORM_RO PAT enumerates PRIVATE repos; the default GITHUB_TOKEN
           # only returns PUBLIC org repos, so the triage would silently skip
           # every private repo (.github#241, same blind spot as .github#170).
           GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | \
-                  grep -vE '^(\.github|.*\.github\.io)$')
-
-          # Blind-spot guard: `gitops` is a known private, long-lived repo.
-          # If it is absent the token cannot see private repos and the triage
-          # would be a false all-clear for them — fail loudly instead.
-          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
-            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; triage would silently cover public repos only"
-            exit 1
-          fi
-
-          for REPO in $REPOS; do
-            # Get open code-scanning alerts ≥ medium severity
-            ALERTS=$(gh api "/repos/zeroroot-ai/$REPO/code-scanning/alerts?state=open&severity=critical,high,medium" \
-                       --paginate --jq '.[] | {number,rule_id: .rule.id, severity: .rule.severity, location: .most_recent_instance.location.path}' 2>/dev/null || echo "")
-
-            if [ -z "$ALERTS" ]; then continue; fi
-
-            # Group alerts by rule, create one tracking issue per (repo, rule)
-            echo "$ALERTS" | jq -s 'group_by(.rule_id) | .[] | {rule: .[0].rule_id, severity: .[0].severity, count: length, examples: [.[0:3] | .[] | "\(.location):\(.number)"]}' | \
-            jq -c '.' | while read GROUP; do
-              RULE=$(echo "$GROUP" | jq -r '.rule')
-              SEV=$(echo "$GROUP" | jq -r '.severity')
-              COUNT=$(echo "$GROUP" | jq -r '.count')
-              EXAMPLES=$(echo "$GROUP" | jq -r '.examples | join("\n- ")')
-
-              TITLE="ci(codeql): $SEV alerts — rule $RULE ($COUNT open)"
-              BODY="## Open code-scanning alerts\n\nRule: \`$RULE\`\nSeverity: $SEV\nOpen count: $COUNT\n\n### Examples\n\n- $EXAMPLES\n\nFull list at https://github.com/zeroroot-ai/$REPO/security/code-scanning?query=is:open+rule:$RULE\n\nThis issue is auto-filed weekly by the org SARIF-triage workflow. Resolving alerts either closes them (fix the code) or marks them as suppressed with a tracked-issue link (per slice 4.6 suppression discipline + ADR-0013)."
-
-              EXISTING=$(gh issue list -R "zeroroot-ai/$REPO" \
-                           --state open --search "in:title \"ci(codeql): $SEV alerts — rule $RULE\"" \
-                           --json number --jq '.[0].number // empty')
-              if [ -n "$EXISTING" ]; then
-                printf "%b" "$BODY" | gh issue edit "$EXISTING" -R "zeroroot-ai/$REPO" --title "$TITLE" --body-file -
-              else
-                printf "%b" "$BODY" | gh issue create -R "zeroroot-ai/$REPO" --title "$TITLE" --body-file - --label "ready-for-agent" || true
-              fi
-            done
-          done
+        run: bash scripts/sarif-triage.sh
