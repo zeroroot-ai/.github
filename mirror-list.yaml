@@ -46,6 +46,9 @@ mirrors:
   - source: docker.io/library/golang
     tag: "1.26.4-alpine"   # gibson go.mod pins go 1.26.4 (govulncheck stdlib fix gibson#612); builders must match (gibson#777)
     dest: golang
+  - source: docker.io/library/golang
+    tag: "1.26.6-alpine"   # pinned patch (go1.26.6 stdlib CVE fixes GO-2026-6090/5972; setec#254); alpine sibling of the 1.26.6 entry below
+    dest: golang
 
   # ---------------------------------------------------------------------------
   # Data plane images
@@ -101,6 +104,9 @@ mirrors:
     dest: golang
   - source: docker.io/library/golang
     tag: "1.26.4"         # debian-based; gibson go.mod pins go 1.26.4 (gibson#612); operator builders must match (gibson#777)
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.26.6"         # debian-based; setec go.mod moved to go 1.26.6 (stdlib CVE fixes GO-2026-6090/5972, setec#254); its Dockerfile builders must match
     dest: golang
   - source: docker.io/library/node
     tag: "20-alpine"      # floating: tracks the latest 20.x-alpine patch
