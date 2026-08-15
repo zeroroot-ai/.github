@@ -568,6 +568,59 @@ it. Recovery: full polyrepo reset back to 0.x (PRD
 zeroroot-ai/.github#25). The `bump-minor-pre-major` setting is the only
 structural change that prevents repeat.
 
+### 9b. release-please MUST NOT run as the default `GITHUB_TOKEN`
+
+Every `release-please.yml` must pass an explicit `token:` that is **not**
+`secrets.GITHUB_TOKEN` and **not** `github.token`. Use the repo's
+`RELEASE_PLEASE_TOKEN` PAT, or mint a GitHub App token with
+`actions/create-github-app-token` (the pattern `sdk` uses for
+`zeroday-sdk-fanout`):
+
+```yaml
+- uses: googleapis/release-please-action@<sha> # v5
+  with:
+    token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+    config-file: release-please-config.json
+    manifest-file: .release-please-manifest.json
+```
+
+A release PR whose branch was pushed by the default `GITHUB_TOKEN` is
+authored by `github-actions[bot]`. GitHub then refuses to run its CI. The
+refusal takes one of two shapes, and **neither one is red**:
+
+1. The `pull_request` runs are created and immediately completed with
+   `conclusion: action_required` — "waiting for approval". They never run.
+2. No workflow run is created at all, so the PR has zero check runs.
+
+Either way the required contexts stay `expected` for ever, the PR sits
+`BLOCKED`, and no alert fires. The release simply never happens. Approving
+the pending runs by hand fixes one head sha only; the next push re-gates.
+It is a treadmill, not a fix.
+
+The correlation is total, measured 2026-08-15 across every org repo that
+carries a `release-please.yml`:
+
+| release-please identity | gated / suppressed runs |
+|---|---|
+| `RELEASE_PLEASE_TOKEN` PAT or GitHub App token | 0 of 6695 |
+| default `GITHUB_TOKEN` | 300 of 300 |
+
+The same identity rule already applies for a second reason: **tags pushed
+by `GITHUB_TOKEN` do not fire `on: push: tags:` workflows** (GitHub
+anti-recursion). Repos that worked around that by chaining jobs with
+`workflow_call` can retire the workaround once they run under a real
+identity.
+
+`release-pipeline-health.yml` audits both halves of this rule daily — the
+static identity of every `release-please.yml`, and every open release PR
+that is gated or has no check runs. It files one tracked issue in
+`zeroroot-ai/.github` and closes it again when the org is clean.
+
+Historical context: zeroroot-ai/.github#263. Six repos — `setec`, `adk`,
+`gibson-executor`, `gitops`, `sdk-ts`, `zerocool-plugins` — silently
+stopped releasing. `gitops` had sat unreleased for 45 days before anyone
+noticed.
+
 ---
 
 ## 10. Hard prohibitions (CI-enforced where possible)
@@ -580,6 +633,10 @@ structural change that prevents repeat.
 - **No direct push to main** (rejected by ruleset).
 - **No rerunning a failed CI job without first posting a root-cause comment**
   on the `ci-failure` issue the triage workflow opened (see §6).
+- **No `release-please.yml` that runs under the default `GITHUB_TOKEN`.**
+  It stalls the release PR silently — see §9b. Pass
+  `RELEASE_PLEASE_TOKEN` or a GitHub App token. Audited daily by
+  `release-pipeline-health.yml`.
 - **The public `sdk` must not import the daemon — `make check-no-gibson`.**
   The Apache `sdk` is the component-dev surface only; its `go.mod` must not
   pull `github.com/zeroroot-ai/gibson` (mechanical grep in the SDK Makefile,
