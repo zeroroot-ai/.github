@@ -174,3 +174,27 @@ jobs:
             echo "::error::$failures repo ruleset(s) failed to apply"
             exit 1
           fi
+
+  # ---- did the apply actually take? (.github#264) ----
+  # Every apply step above is wrapped so one repo's plan-gate failure doesn't
+  # block the others, and the "could not list rulesets" branch is only a
+  # ::warning::. That is deliberate, but it means this workflow can finish
+  # green having changed nothing at all on some repo. This job re-reads live
+  # state and compares it back against the files, so "apply-rulesets is green"
+  # means "live matches the files" rather than "the API calls returned".
+  #
+  # Separate job with `needs:` on both appliers so it sees the end state, and
+  # `if: always()` so it still reports when an applier failed -- that is
+  # precisely when you most want to know which repos did and did not take.
+  verify-applied:
+    name: Verify live matches committed
+    needs: [apply-org-rulesets, apply-repo-rulesets]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Compare live rulesets against rulesets/{org,repo}/*.json
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-ruleset-drift.sh
