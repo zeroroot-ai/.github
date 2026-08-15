@@ -15,7 +15,13 @@ name: Reusable image build
 #     bound to the image manifest. NOT uploaded as a release asset
 #     (anchore-sbom's release-asset upload was the historical bug —
 #     attestations are the right shape).
-# Job 2 (vuln-scan): Trivy scan + SARIF upload. Non-PR only.
+# Job 2 (vuln-scan): Trivy scan + SARIF upload. Runs on tag AND on push to
+#   the calling repo's default branch (.github#258) — never on PRs. Tag-only
+#   gating meant image alerts on the default branch could be raised but never
+#   retired (code scanning only retires an alert when a newer analysis for
+#   the same category+ref omits it, and no analysis ever targeted the
+#   default branch). See the `trivy_category` input doc for the related
+#   rename hazard (gibson-executor#346).
 
 on:
   workflow_call:
@@ -50,6 +56,24 @@ on:
         type: string
         default: "HIGH,CRITICAL"
         description: Comma-separated Trivy severities that fail the build.
+      trivy_category:
+        required: false
+        type: string
+        default: ""
+        description: |
+          SARIF category for the Trivy upload. Defaults to `trivy-${component_name}`
+          for back-compat. Code scanning retires an alert only when a newer
+          analysis for the SAME category (and ref) comes back without it — so
+          this value is the alert-history key, not just a label.
+          gibson-executor#346: when `gibson-tool-runner` was renamed
+          `gibson-executor`, the caller's `component_name` changed too, which
+          silently changed the derived category and orphaned 339 alerts under
+          the dead `trivy-gibson-tool-runner` stream forever (nothing emits
+          that category again, so it can never retire them).
+          Set this explicitly and keep it stable across repo/component
+          renames — only change it if you intend to abandon the alert
+          history on purpose (and then consider draining the old category
+          per the note in gibson-executor#346 instead).
       platforms:
         required: false
         type: string
@@ -280,7 +304,16 @@ jobs:
     #      the Security-tab upload is opportunistic on top.
     # Artifacts + Security-tab upload are best-effort; the image push is the gate.
     continue-on-error: true
-    if: startsWith(github.ref, 'refs/tags/')
+    # .github#258: this used to run ONLY on tag refs. Code scanning retires an
+    # alert when a newer analysis for the same category and ref comes back
+    # without it — with no analysis ever targeting refs/heads/<default>,
+    # image findings raised against main were write-once: they could be
+    # raised but never retired, even after the underlying image was fixed
+    # (confirmed org-wide: every trivy-* category's newest analysis across
+    # every image-producing repo was tag-only). Also scan on push to the
+    # calling repo's default branch so the alert stream can self-correct
+    # between releases, not just at tag time.
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     permissions:
       contents: read
       packages: read
@@ -335,4 +368,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4.35.5 # pin: 9e0d7b8d25671d64c341c19c0152d693099fb5ba
         with:
           sarif_file: trivy-${{ inputs.component_name }}.sarif
-          category: trivy-${{ inputs.component_name }}
+          category: trivy-${{ inputs.trivy_category != '' && inputs.trivy_category || inputs.component_name }}
