@@ -31,13 +31,7 @@
         "do_not_enforce_on_create": false,
         "required_status_checks": [
           {
-            "context": "policy-guards / vault-auth-method-deny-list"
-          },
-          {
-            "context": "bats"
-          },
-          {
-            "context": "secret-plumbing-guard"
+            "context": "ci-required"
           }
         ]
       }
