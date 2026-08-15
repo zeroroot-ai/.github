@@ -57,9 +57,6 @@
             "context": "release-please"
           },
           {
-            "context": "Analyze (go)"
-          },
-          {
             "context": "Scorecard analysis"
           },
           {

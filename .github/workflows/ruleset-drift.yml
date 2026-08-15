@@ -1,0 +1,79 @@
+# ruleset-drift — is what we committed actually what GitHub is enforcing?
+#
+# .github#264. `apply-rulesets.yml` reconciles by a full PUT of the committed
+# file, so a live-only ruleset edit is not "already applied" — it is pending
+# deletion by the next push that touches ANY rulesets/**.json, for ANY repo.
+# gibson-executor's `Lint (golangci-lint)` required check lived in exactly that
+# state: applied out of band, gibson-executor#369 closed against it, and one
+# unrelated ruleset edit away from silently reverting.
+#
+# Nothing could see it, because the two facts that have to agree sit on
+# opposite sides of the API boundary: the file is in git, the enforcement is in
+# GitHub. This workflow is the thing that looks at both.
+#
+# Two jobs, deliberately split by whether they need a token:
+#
+#   drift-guard-fixtures  mutation-tests the guard itself, offline, on every PR.
+#                         A drift guard that cannot go red is worse than none,
+#                         because its green is read as evidence. Every assertion
+#                         in scripts/test-ruleset-drift.sh perturbs simulated
+#                         live state and REQUIRES a failure.
+#
+#   live-drift            the real comparison. Needs RULESET_APPLY_TOKEN (org
+#                         admin + repo admin), so it never runs on the PR lane:
+#                         secrets are unavailable to fork PRs, and on a PR that
+#                         legitimately edits a ruleset file live cannot match
+#                         yet — apply-rulesets only runs on merge. Comparing
+#                         live against a PR's proposed files would make every
+#                         legitimate ruleset PR red. So this lane always reads
+#                         main's committed files, and asks one question:
+#                         "does live match what is on main right now?"
+#
+# Cadence: hourly. An out-of-band edit is usually made to unfreeze something in
+# a hurry and then forgotten, so the useful window is hours, not days.
+#
+# This workflow is NOT a required check anywhere and must not become one — it
+# depends on an org API call, and a required context that goes red or absent
+# when GitHub's API has a bad minute freezes merges across the org. It reports;
+# ci-failure-triage files the issue.
+
+name: ruleset-drift
+
+on:
+  pull_request:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ruleset-drift-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---- the guard's own regression suite (no secrets, runs on PRs) ----
+  drift-guard-fixtures:
+    name: drift-guard-fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Mutation-test the drift guard
+        run: bash scripts/test-ruleset-drift.sh
+
+  # ---- live vs committed (needs the org-admin token) ----
+  live-drift:
+    name: live-drift
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          ref: main
+
+      - name: Compare live rulesets against rulesets/{org,repo}/*.json
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-ruleset-drift.sh
