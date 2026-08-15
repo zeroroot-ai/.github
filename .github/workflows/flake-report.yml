@@ -28,6 +28,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      # The renderer distinguishes three states — no artifacts, artifacts
+      # with no flakes, artifacts with flakes — and the middle one used to
+      # print a bare table header (.github#249). Its selftest asserts all
+      # three, and runs before the report so a broken renderer fails the
+      # job instead of filing a malformed issue.
+      - name: Selftest the report renderer
+        run: bash scripts/flake-report-render.sh --selftest
+
       - name: Aggregate from last 7 days of CI runs
         env:
           # PLATFORM_RO PAT enumerates PRIVATE repos; the default GITHUB_TOKEN
@@ -75,32 +84,12 @@ jobs:
             done
           done
 
-          # Render aggregated report. `gh run download --pattern` nests each
-          # artifact in a directory named after it, so find the logs rather
-          # than assuming a fixed depth.
-          LOGS=$(find /tmp/flakes -type f -name '*.json' 2>/dev/null | sort || true)
-          REPORT="## Weekly flake report — $(date -u +%Y-%m-%d)"
-          REPORT="$REPORT\n\n"
-          if [ -z "$LOGS" ]; then
-            REPORT="${REPORT}No flake events found in the last 7 days: no run in the scanned repos "
-            REPORT="${REPORT}retried under actions/flake-quarantine this week."
-          else
-            REPORT="${REPORT}| Repo | Test command | Run | Failed attempts |\n"
-            REPORT="${REPORT}|---|---|---|---|\n"
-            for f in $LOGS; do
-              REPO=$(jq -r '.repo | sub("^zeroroot-ai/"; "")' "$f")
-              RUN=$(basename "$(dirname "$(dirname "$f")")" | sed "s/^$REPO-//")
-              CMD=$(jq -r .cmd "$f")
-              IS_FLAKE=$(jq -r .is_flake "$f")
-              FAILED=$(jq -r '.failed_attempts | length' "$f")
-              if [ "$IS_FLAKE" = "true" ]; then
-                REPORT="${REPORT}| $REPO | \`$CMD\` | $RUN | $FAILED |\n"
-              fi
-            done
-          fi
-          if [ "$DOWNLOAD_FAILURES" -gt 0 ]; then
-            REPORT="${REPORT}\n\n⚠ $DOWNLOAD_FAILURES artifact download(s) failed this run — the table above may be incomplete (see the workflow log)."
-          fi
+          # Render the aggregated report. The renderer distinguishes three
+          # states — no artifacts, artifacts with no flakes, artifacts with
+          # flakes — because "collected, none flaked" used to fall through
+          # to the table branch and emit a bare header (.github#249).
+          bash scripts/flake-report-render.sh /tmp/flakes 7 "$DOWNLOAD_FAILURES" >/tmp/flake-report.md
+          cat /tmp/flake-report.md
 
           # Find existing open issue with the report title prefix
           EXISTING=$(gh issue list -R zeroroot-ai/.github \
@@ -108,7 +97,7 @@ jobs:
                        --json number --jq '.[0].number // empty')
           TITLE="Weekly flake report — $(date -u +%Y-%m-%d)"
           if [ -n "$EXISTING" ]; then
-            printf "%b" "$REPORT" | gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file -
+            gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file /tmp/flake-report.md
           else
-            printf "%b" "$REPORT" | gh issue create -R zeroroot-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+            gh issue create -R zeroroot-ai/.github --title "$TITLE" --body-file /tmp/flake-report.md --label "ready-for-agent"
           fi
