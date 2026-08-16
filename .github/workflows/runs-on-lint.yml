@@ -46,15 +46,17 @@ jobs:
       # out of an inline `run:` block without this step fails with
       # "scripts/test-runs-on-lint.sh: No such file or directory" (exit 127).
       #
-      # Pinned to github.workflow_sha, NOT to main. That is the sha of THIS
-      # reusable workflow as the caller resolved it, so a caller pinning
-      # runs-on-lint.yml@<sha> gets the scanner from the same commit as the
-      # workflow it pinned. Checking out `main` here would silently decouple
-      # the logic from the pin and defeat the point of pinning.
+      # Pinned to github.job_workflow_sha — the sha of THIS reusable workflow
+      # as the caller resolved it. NOT github.workflow_sha, which is the
+      # CALLER's workflow sha: checking this repo out at that ref fails with
+      # `upload-pack: not our ref` because the sha belongs to a different
+      # repository (observed on zeroroot-ai/gitops#544). NOT `main` either —
+      # that would silently decouple the scanner from the caller's pin and
+      # defeat the point of pinning.
       - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: zeroroot-ai/.github
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ github.job_workflow_sha }}
           path: .runs-on-lint
 
       - name: The scanner checkout resolved
@@ -62,8 +64,8 @@ jobs:
         # branch, quietly undoing the pin. Fail loudly instead.
         run: |
           set -euo pipefail
-          [ -n "${{ github.workflow_sha }}" ] || {
-            echo "::error::github.workflow_sha is empty — the scanner checkout would silently fall back to the default branch and defeat the caller's pin."; exit 1; }
+          [ -n "${{ github.job_workflow_sha }}" ] || {
+            echo "::error::github.job_workflow_sha is empty — the scanner checkout would silently fall back to the default branch and defeat the caller's pin."; exit 1; }
           test -x .runs-on-lint/scripts/runs-on-lint-scan.sh
           test -x .runs-on-lint/scripts/test-runs-on-lint.sh
 
