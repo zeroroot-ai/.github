@@ -1,18 +1,37 @@
 #!/usr/bin/env bash
-# Fixture + mutation tests for scripts/runs-on-lint-scan.sh. Gates the real
-# scan on every run, so a regression in the classifier fails BEFORE the guard
-# starts waving violations through.
+# Assertions for the runs-on-lint classifier.
 #
-# Exercises the real classifier via RUNS_ON_LINT_CLASSIFY_ONLY, not a copy —
-# a test that reimplements the logic it is testing proves nothing.
+# The classifier is INLINE in .github/workflows/runs-on-lint.yml — it has to be,
+# because a reusable workflow checks out the CALLER, so scripts/ from this repo
+# are not on disk when it runs (see that file's comment for the two failed
+# attempts to work around it). Inline means the logic travels with the caller's
+# pinned sha, which is the property that matters.
+#
+# So this test EXTRACTS the shipped case block between the BEGIN-CLASSIFIER and
+# END-CLASSIFIER markers and runs the assertions against it. The tested thing
+# and the shipped thing are therefore the same bytes; a reimplementation here
+# would prove nothing.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-scan="$here/runs-on-lint-scan.sh"
+wf="$here/../.github/workflows/runs-on-lint.yml"
 fails=0
+
+block="$(awk '/BEGIN-CLASSIFIER/{f=1;next} /END-CLASSIFIER/{f=0} f' "$wf")"
+[ -n "$block" ] || { echo "FAIL: could not extract the classifier from $wf — markers missing or renamed"; exit 1; }
+# Reach floor: the extracted block must actually be a case statement, not
+# whitespace that silently passes every assertion.
+echo "$block" | grep -q 'case "\$probe" in' || { echo "FAIL: extracted block is not the classifier"; exit 1; }
+echo "$block" | grep -q 'ubuntu-\*' || { echo "FAIL: extracted block lacks the ubuntu arm"; exit 1; }
+
+classify() {
+  local probe
+  probe="$(echo "$1" | sed -E 's/\$\{\{[^}]*\}\}/X/g')"
+  eval "$block"
+}
 
 expect() { # expect <allow|reject> <label>
   local want="$1" label="$2" got
-  if RUNS_ON_LINT_CLASSIFY_ONLY=1 bash "$scan" _ "$label" >/dev/null 2>&1; then got=allow; else got=reject; fi
+  if classify "$label"; then got=allow; else got=reject; fi
   if [ "$got" != "$want" ]; then
     echo "FAIL  want=$want got=$got  label='$label'"; fails=$((fails+1))
   else
@@ -29,48 +48,19 @@ expect allow  '${{ inputs.env }}-ephemeral'
 expect allow  '${{ matrix.env }}-ephemeral'
 
 echo "== forbidden =="
-# The removed persistent runners (ADR-0060) must never come back.
+# The three persistent runners ADR-0060 removed must never come back.
 expect reject 'self-hosted'
 expect reject 'workstation-setec-kvm'
 expect reject 'ec2-kind-standup'
-# A bare expression is unbounded — the guard cannot vouch for it.
+# A bare expression is unbounded — the guard cannot vouch for what it becomes.
 expect reject '${{ inputs.runner }}'
 expect reject '${{ inputs.env }}'
-# Suffix must be the whole trailing token, not a substring.
+# The suffix must be a whole trailing token, not a substring.
 expect reject 'ephemeral'
 expect reject 'not-ephemeral-really'
-# Other hosted platforms are out of scope by policy, not oversight.
+# Other hosted platforms are out of scope by policy, not by oversight.
 expect reject 'macos-14'
 expect reject 'windows-latest'
 
-echo "== end-to-end: a forbidden label in a real workflow tree fails the scan =="
-tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/.github/workflows"
-printf 'jobs:\n  a:\n    runs-on: ubuntu-latest\n' > "$tmp/.github/workflows/ok.yml"
-if bash "$scan" "$tmp" >/dev/null 2>&1; then echo "ok    clean tree passes"; else echo "FAIL  clean tree should pass"; fails=$((fails+1)); fi
-printf 'jobs:\n  b:\n    runs-on: self-hosted\n' > "$tmp/.github/workflows/bad.yml"
-if bash "$scan" "$tmp" >/dev/null 2>&1; then echo "FAIL  dirty tree should fail"; fails=$((fails+1)); else echo "ok    dirty tree fails"; fi
-
-# Reach floor: a scan that finds no workflow files at all must not read as a pass.
-echo "== reach floor =="
-empty="$(mktemp -d)"; trap 'rm -rf "$tmp" "$empty"' EXIT
-out="$(bash "$scan" "$empty" 2>&1 || true)"
-case "$out" in *OK*) echo "ok    empty tree reports OK (documented: nothing to scan)";; *) echo "FAIL  unexpected: $out"; fails=$((fails+1));; esac
-
-echo "== the scanner ignores its own checkout =="
-# The reusable workflow drops this repo at <caller>/.runs-on-lint. If the scan
-# did not prune it, every caller would be linting zeroroot-ai/.github — and
-# would fail on reusable-test.yml's legitimate `runs-on: ${{ inputs.runs-on }}`.
-selfck="$(mktemp -d)"
-mkdir -p "$selfck/.github/workflows" "$selfck/.runs-on-lint/.github/workflows"
-printf 'jobs:\n  a:\n    runs-on: ubuntu-latest\n' > "$selfck/.github/workflows/ok.yml"
-printf 'jobs:\n  b:\n    runs-on: self-hosted\n'   > "$selfck/.runs-on-lint/.github/workflows/bad.yml"
-if bash "$scan" "$selfck" >/dev/null 2>&1; then
-  echo "ok    .runs-on-lint/ is pruned"
-else
-  echo "FAIL  scanner linted its own checkout"; fails=$((fails+1))
-fi
-rm -rf "$selfck"
-
 if [ "$fails" -gt 0 ]; then echo; echo "$fails assertion(s) failed"; exit 1; fi
-echo; echo "all assertions passed"
+echo; echo "all assertions passed against the SHIPPED classifier"

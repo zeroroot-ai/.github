@@ -1,0 +1,38 @@
+# Self-test for the runs-on-lint classifier.
+#
+# WHY A SEPARATE WORKFLOW
+#
+# runs-on-lint.yml is `workflow_call:` only — it has no trigger of its own, so
+# nothing in THIS repo would ever exercise it. Adding a `pull_request` trigger
+# there is not the answer either: the scan step walks the checked-out tree, so
+# on this repo it would lint zeroroot-ai/.github rather than a caller, and trip
+# on reusable-test.yml's `runs-on: ${{ inputs.runs-on }}` — legitimate there
+# precisely because the CALLER supplies the value and the caller is what gets
+# linted.
+#
+# So this runs the assertions only. scripts/test-runs-on-lint.sh extracts the
+# shipped classifier out of runs-on-lint.yml between its BEGIN/END-CLASSIFIER
+# markers and asserts against those exact bytes, so a change to the guard that
+# widens or breaks the allowlist fails here before it reaches any consumer.
+name: runs-on-lint-selftest
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/runs-on-lint.yml'
+      - '.github/workflows/runs-on-lint-selftest.yml'
+      - 'scripts/test-runs-on-lint.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: runs-on-lint-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Assert the shipped classifier still classifies correctly
+        run: bash scripts/test-runs-on-lint.sh
