@@ -54,7 +54,12 @@ while IFS= read -r -d '' f; do
       fi
     done
   done < <(grep -E '^[[:space:]]*runs-on:' "$f" 2>/dev/null || true)
-done < <(find "$root" -path ./.git -prune -o \
+# `.runs-on-lint` is this scanner's OWN checkout, placed inside the caller's
+# workspace by the reusable workflow. Scanning it would lint zeroroot-ai/.github
+# instead of the caller — and would trip on reusable-test.yml's
+# `runs-on: ${{ inputs.runs-on }}`, which is legitimate there because the
+# CALLER supplies the value and the caller is itself linted.
+done < <(find "$root" \( -name .git -o -name .runs-on-lint \) -prune -o \
                \( -path '*/.github/workflows/*.yml' -o -path '*/.github/workflows/*.yaml' \) \
                -print0 2>/dev/null)
 

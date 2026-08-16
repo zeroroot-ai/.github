@@ -36,14 +36,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The CALLER's tree — this is what gets scanned.
       - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      # This repo's own tree, for the scanner + its self-test.
+      #
+      # A reusable workflow's `actions/checkout` checks out the CALLER, so
+      # scripts/ living here are NOT on disk by default — moving the classifier
+      # out of an inline `run:` block without this step fails with
+      # "scripts/test-runs-on-lint.sh: No such file or directory" (exit 127).
+      #
+      # Pinned to github.workflow_sha, NOT to main. That is the sha of THIS
+      # reusable workflow as the caller resolved it, so a caller pinning
+      # runs-on-lint.yml@<sha> gets the scanner from the same commit as the
+      # workflow it pinned. Checking out `main` here would silently decouple
+      # the logic from the pin and defeat the point of pinning.
+      - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: zeroroot-ai/.github
+          ref: ${{ github.workflow_sha }}
+          path: .runs-on-lint
+
+      - name: The scanner checkout resolved
+        # An empty workflow_sha would make the step above check out the default
+        # branch, quietly undoing the pin. Fail loudly instead.
+        run: |
+          set -euo pipefail
+          [ -n "${{ github.workflow_sha }}" ] || {
+            echo "::error::github.workflow_sha is empty — the scanner checkout would silently fall back to the default branch and defeat the caller's pin."; exit 1; }
+          test -x .runs-on-lint/scripts/runs-on-lint-scan.sh
+          test -x .runs-on-lint/scripts/test-runs-on-lint.sh
 
       - name: Self-test the classifier (gates the scan)
         # A guard change without a test is how a guard quietly stops guarding.
-        # This exercises the REAL classifier in runs-on-lint-scan.sh (not a
-        # copy) across the sanctioned set, the removed persistent runners
-        # ADR-0060 banned, bare expressions, and an end-to-end dirty tree.
-        run: bash scripts/test-runs-on-lint.sh
+        # Exercises the REAL classifier, not a copy.
+        run: bash .runs-on-lint/scripts/test-runs-on-lint.sh
 
       - name: Reject non-sanctioned runs-on labels
-        run: bash scripts/runs-on-lint-scan.sh .
+        # Scans the CALLER's tree (.), using THIS repo's scanner.
+        run: bash .runs-on-lint/scripts/runs-on-lint-scan.sh .
