@@ -57,5 +57,20 @@ empty="$(mktemp -d)"; trap 'rm -rf "$tmp" "$empty"' EXIT
 out="$(bash "$scan" "$empty" 2>&1 || true)"
 case "$out" in *OK*) echo "ok    empty tree reports OK (documented: nothing to scan)";; *) echo "FAIL  unexpected: $out"; fails=$((fails+1));; esac
 
+echo "== the scanner ignores its own checkout =="
+# The reusable workflow drops this repo at <caller>/.runs-on-lint. If the scan
+# did not prune it, every caller would be linting zeroroot-ai/.github — and
+# would fail on reusable-test.yml's legitimate `runs-on: ${{ inputs.runs-on }}`.
+selfck="$(mktemp -d)"
+mkdir -p "$selfck/.github/workflows" "$selfck/.runs-on-lint/.github/workflows"
+printf 'jobs:\n  a:\n    runs-on: ubuntu-latest\n' > "$selfck/.github/workflows/ok.yml"
+printf 'jobs:\n  b:\n    runs-on: self-hosted\n'   > "$selfck/.runs-on-lint/.github/workflows/bad.yml"
+if bash "$scan" "$selfck" >/dev/null 2>&1; then
+  echo "ok    .runs-on-lint/ is pruned"
+else
+  echo "FAIL  scanner linted its own checkout"; fails=$((fails+1))
+fi
+rm -rf "$selfck"
+
 if [ "$fails" -gt 0 ]; then echo; echo "$fails assertion(s) failed"; exit 1; fi
 echo; echo "all assertions passed"
