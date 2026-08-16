@@ -112,13 +112,31 @@ mirrors:
     tag: "20-alpine"      # floating: tracks the latest 20.x-alpine patch
     dest: node
     refresh: true
-  # Python base for the gibson belief-field pgmpy sidecar (gibson#750, deploy#936).
+  # Python base for the gibson belief-field sidecar (gibson#750, deploy#936).
   # The sidecar is a published first-party image, so its base must come from the
   # mirror like every other production image (test fixtures may use docker.io
   # directly; published images may not).
+  #
+  # BUILD stage only. The sidecar's runtime stage is distroless (see below) —
+  # a Debian userland was 24 of gibson's 25 open HIGH/CRITICAL code-scanning
+  # alerts, in packages nothing in the image invokes (perl-base, util-linux,
+  # ncurses, gzip). Most of those carry no fixed version, so the only remedy is
+  # not shipping the userland. gibson#1436.
+  #
+  # `refresh: true` is load-bearing and was missing before: without it the
+  # default skip-if-exists behaviour froze this tag at whatever patch it was
+  # first copied at, so upstream Debian security updates never reached the
+  # sidecar even when they existed.
   - source: docker.io/library/python
-    tag: "3.12-slim"
+    tag: "3.13-slim-trixie"
     dest: python
+    refresh: true
+  # gcr.io/distroless/* — the Google-published distroless runtime bases.
+  # We mirror to ghcr.io so workspace-wide policy holds.
+  - source: gcr.io/distroless/python3-debian13
+    tag: nonroot          # floating: distroless rebuilds nonroot continuously
+    dest: distroless-python3-debian13
+    refresh: true
   # gcr.io/distroless/* — the Google-published distroless runtime bases.
   # We mirror to ghcr.io so workspace-wide policy holds.
   - source: gcr.io/distroless/static-debian12
