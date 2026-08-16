@@ -38,38 +38,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
+      - name: Self-test the classifier (gates the scan)
+        # A guard change without a test is how a guard quietly stops guarding.
+        # This exercises the REAL classifier in runs-on-lint-scan.sh (not a
+        # copy) across the sanctioned set, the removed persistent runners
+        # ADR-0060 banned, bare expressions, and an end-to-end dirty tree.
+        run: bash scripts/test-runs-on-lint.sh
+
       - name: Reject non-sanctioned runs-on labels
-        run: |
-          set -euo pipefail
-          violations=0
-
-          while IFS= read -r -d '' f; do
-            while IFS= read -r line; do
-              # Strip the `runs-on:` key, then strip array brackets/quotes so
-              # both `runs-on: ubuntu-latest` and
-              # `runs-on: [self-hosted, some-label]` parse the same way.
-              val="$(echo "$line" | sed -E 's/^[[:space:]]*runs-on:[[:space:]]*//')"
-              val="$(echo "$val" | tr -d '[]"'"'"'')"
-              IFS=',' read -ra labels <<< "$val"
-              for raw in "${labels[@]}"; do
-                label="$(echo "$raw" | xargs)"
-                [ -z "$label" ] && continue
-                case "$label" in
-                  ubuntu-*) ;;
-                  staging-ephemeral) ;;
-                  *)
-                    echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or staging-ephemeral (the org's ephemeral ARC scale-set) are allowed. See ADR-0060 (zeroroot-ai/docs)."
-                    violations=$((violations+1))
-                    ;;
-                esac
-              done
-            done < <(grep -E '^[[:space:]]*runs-on:' "$f" 2>/dev/null || true)
-          done < <(find . -path ./.git -prune -o \
-                         \( -path '*/.github/workflows/*.yml' -o -path '*/.github/workflows/*.yaml' \) \
-                         -print0 2>/dev/null)
-
-          if [ "$violations" -gt 0 ]; then
-            echo "::error::$violations forbidden runs-on label(s) found — no persistent self-hosted runners are permitted anywhere in the org (ADR-0060)."
-            exit 1
-          fi
-          echo "OK: every runs-on label is ubuntu-* or staging-ephemeral."
+        run: bash scripts/runs-on-lint-scan.sh .
