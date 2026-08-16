@@ -62,5 +62,20 @@ expect reject 'not-ephemeral-really'
 expect reject 'macos-14'
 expect reject 'windows-latest'
 
+echo "== no GitHub expression survives inside the run: block =="
+# Actions interpolates the two-brace expression syntax even inside a SHELL
+# COMMENT in a `run:` block. Leaving one there does not fail the step — it
+# invalidates the whole workflow file, and every caller gets
+# "This run likely failed because of a workflow file issue" with no log to
+# read. Cost us a full round-trip on zeroroot-ai/gitops#544.
+runblock="$(awk '/- name: Reject non-sanctioned/,0' "$wf")"
+if printf '%s' "$runblock" | grep -q '\${{'; then
+  echo "FAIL  a literal GitHub expression appears inside the run: block:"
+  printf '%s' "$runblock" | grep -n '\${{' | sed 's/^/      /'
+  fails=$((fails+1))
+else
+  echo "ok    run: block contains no interpolatable expression"
+fi
+
 if [ "$fails" -gt 0 ]; then echo; echo "$fails assertion(s) failed"; exit 1; fi
 echo; echo "all assertions passed against the SHIPPED classifier"

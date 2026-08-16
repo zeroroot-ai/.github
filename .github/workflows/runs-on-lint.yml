@@ -57,7 +57,10 @@ jobs:
           violations=0
 
           classify() {
-            # Normalise any ${{ ... }} to X, then match on shape.
+            # Normalise any GitHub expression to X, then match on shape.
+            # (The literal two-brace sequence is avoided everywhere inside
+            # this run: block — Actions interpolates it even in a shell
+            # comment, which makes the whole workflow file invalid.)
             local probe
             probe="$(echo "$1" | sed -E 's/\$\{\{[^}]*\}\}/X/g')"
             # BEGIN-CLASSIFIER (extracted by scripts/test-runs-on-lint.sh)
@@ -80,7 +83,7 @@ jobs:
                 label="$(echo "$raw" | xargs)"
                 [ -z "$label" ] && continue
                 if ! classify "$label"; then
-                  echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or an *-ephemeral ARC scale-set are allowed. A bare \${{ }} expression with no -ephemeral suffix is an unbounded label and is rejected. See ADR-0060 (zeroroot-ai/docs)."
+                  echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or an *-ephemeral ARC scale-set are allowed. A bare GitHub expression with no -ephemeral suffix is an unbounded label and is rejected. See ADR-0060 (zeroroot-ai/docs)."
                   violations=$((violations+1))
                 fi
               done
