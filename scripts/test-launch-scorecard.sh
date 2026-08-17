@@ -95,6 +95,22 @@ hist_today=$(sed -n '/<!--history-->/,/<!--\/history-->/p' "$tmp/dupes.md" | gre
 if [ "$hist_today" -eq 1 ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: today appears $hist_today times in history, expected 1"; fi
 assert_has "$tmp/dupes.md" "- 2026-08-16 green=0"
 
+echo "== alert-farm threshold is a boundary, and the per-repo trackers are not counted =="
+# collect() subtracts the one sanctioned "code-scanning digest" tracker per repo
+# before this number is written, so 11 legitimate trackers must arrive here as 0.
+mkfixture PASS 4 1 40 0 0 '{"deploy":1}' > "$tmp/a0.json"
+"$SCRIPT" render < "$tmp/a0.json" > "$tmp/a0.md"
+assert_lacks "$tmp/a0.md" "alert queue"
+
+jq '.process.alert_issues_open=5' "$tmp/a0.json" > "$tmp/a5.json"
+"$SCRIPT" render < "$tmp/a5.json" > "$tmp/a5.md"
+assert_lacks "$tmp/a5.md" "alert queue"
+
+jq '.process.alert_issues_open=6' "$tmp/a0.json" > "$tmp/a6.json"
+"$SCRIPT" render < "$tmp/a6.json" > "$tmp/a6.md"
+assert_has "$tmp/a6.md" "alert queue"
+assert_has "$tmp/a6.md" "beyond the one standing tracker per repo"
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

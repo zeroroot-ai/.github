@@ -62,7 +62,7 @@ tool that wants to parse rather than read.
 | Issues filed | 35 per 7 days | The issue farm. 455 filed in 4 days, 264 of them scanner alerts |
 | Hygiene share of merged PRs | 20% | CI-about-CI. 25% of `deploy` PRs touched only `.github/` and `scripts/` |
 | Rework share of merged PRs | 10% | Guards that need re-pinning, fixes of fixes |
-| Open `ci(codeql)` issues | 5 | The tracker used as an alert queue |
+| Alert-farm issues, excluding the one standing tracker per repo | 5 | The tracker used as an alert queue |
 | Open PRs per repo | 3 | Fan-out with no landing |
 
 Tune a limit by editing the `MAX_*` defaults at the top of
