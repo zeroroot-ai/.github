@@ -41,7 +41,7 @@ on:
         description: "Status codes to fail on (lychee default: any 4xx/5xx)"
         type: string
         required: false
-        default: "404,410,500,502,503,504"
+        default: "200,206,404,410,500,502,503,504"
       markdownlint-config-path:
         description: "Path to .markdownlint.json relative to repo root"
         type: string
