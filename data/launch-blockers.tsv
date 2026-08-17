@@ -1,0 +1,22 @@
+# The six things that must work before launch.
+#
+# One row per launch blocker. The scorecard reads the latest run of <workflow>
+# in <repo> and reports PASS / FAIL / NOT_BUILT. A blocker with no workflow is
+# NOT_BUILT: an exit test that nothing can run is not an exit test.
+#
+# Every exit test must run WITHOUT staging or prod, so that a torn-down estate
+# cannot hide a regression. Use kind, `terraform plan`, a rendered chart, or a
+# fake mail sink.
+#
+# Say what it means in ENGLISH in the `plain` column. Anyone reading the board —
+# owner or agent — must understand the row without decoding a metaphor.
+#
+# Columns, tab-separated:
+#   n  name  repo  workflow  root_issue  plain  exit_test
+#
+1	Terraform	deploy	exit-test-terraform.yml	deploy#1588	The script that builds your AWS environment will not run. Force it and it wants to delete and recreate your audit-log and backup buckets.	terraform plan on eks/gibson exits 0 with no S3 bucket in the replace set
+2	Signup	gitops	exit-test-signup.yml	gitops#382	A new customer never receives the verification email, so nobody can sign up.	an address receives the verification mail and the account reaches a Ready workspace with no manual DB touch
+3	Backups	deploy	exit-test-backup-restore.yml	deploy#1546	Backup scripts exist but no restore has ever been run. If the disk holding tenant encryption keys dies, that data is gone.	an OpenBao snapshot lands in S3 and a restore into a clean cluster reads a tenant key back
+4	Rate limits	deploy	exit-test-rate-limit.yml	deploy#1241	You cannot rate-limit one customer. The load balancer hides who is calling, so one client can hammer the API for everyone.	one client hits the rate limit while a second client keeps working
+5	Chart signing	deploy	exit-test-chart-signing.yml	deploy#1194	What you deploy to production is not provably what you tested. The chart sits on a tag anyone can move, and it is unsigned.	prod runs the chart digest staging tested and promote-verify blocks a mismatch
+6	Sessions	setec	exit-test-session-affinity.yml	gibson#1450	Two steps of one agent session land in different sandboxes, so the agent loses its own work between steps.	two tool calls in one session reach the same microVM and see the same worktree

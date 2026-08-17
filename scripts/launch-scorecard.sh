@@ -20,7 +20,7 @@
 # series, and measures item state — which is the metric that failed us.
 #
 # WHY THIS EXISTS — 2026-08-13..17: the fleet merged ~570 commits, filed 455
-# issues and closed 425. Zero chains passed an exit test. Closed issues measured
+# issues and closed 425. Zero blockers passed an exit test. Closed issues measured
 # activity. Nothing measured outcome. This file measures outcome.
 
 set -euo pipefail
@@ -28,7 +28,7 @@ set -euo pipefail
 ORG="${ORG:-zeroroot-ai}"
 SCORECARD_REPO="${SCORECARD_REPO:-${ORG}/.github}"
 TITLE="${TITLE:-LAUNCH SCORECARD}"
-CHAINS_FILE="${CHAINS_FILE:-data/launch-chains.tsv}"
+BLOCKERS_FILE="${BLOCKERS_FILE:-data/launch-blockers.tsv}"
 WINDOW_DAYS="${WINDOW_DAYS:-7}"
 HISTORY_KEEP="${HISTORY_KEEP:-14}"
 
@@ -38,7 +38,7 @@ MAX_HYGIENE_SHARE="${MAX_HYGIENE_SHARE:-20}"    # percent of merged PRs
 MAX_REWORK_SHARE="${MAX_REWORK_SHARE:-10}"      # percent of merged PRs
 MAX_OPEN_PRS="${MAX_OPEN_PRS:-3}"               # per repo
 MAX_ALERT_ISSUES="${MAX_ALERT_ISSUES:-5}"       # open issues titled ci(codeql)
-STALL_DAYS="${STALL_DAYS:-2}"                   # days with no chain flip = halt
+STALL_DAYS="${STALL_DAYS:-2}"                   # days with no blocker flip = halt
 
 die() { echo "::error::$*" >&2; exit 1; }
 
@@ -62,9 +62,9 @@ collect() {
     die "cannot see private repos (gitops absent) — set GH_PAT_PLATFORM_RO; a partial scorecard is not allowed"
   fi
 
-  # --- Outcomes: the conclusion of each chain's exit-test workflow ------------
-  local chains_json="[]" green=0
-  while IFS=$'\t' read -r n name repo wf root exit_test; do
+  # --- Outcomes: the conclusion of each blocker's exit-test workflow ------------
+  local blockers_json="[]" green=0
+  while IFS=$'\t' read -r n name repo wf root plain exit_test; do
     [ -z "${n:-}" ] && continue
     case "$n" in \#*) continue ;; esac
 
@@ -83,13 +83,13 @@ collect() {
       esac
     fi
 
-    chains_json=$(jq --argjson c "$chains_json" \
+    blockers_json=$(jq --argjson c "$blockers_json" \
       --arg n "$n" --arg name "$name" --arg repo "$repo" --arg wf "$wf" \
-      --arg root "$root" --arg et "$exit_test" --arg st "$status" \
+      --arg root "$root" --arg plain "$plain" --arg et "$exit_test" --arg st "$status" \
       --arg last "$last" --arg url "$url" \
       -n '$c + [{n:($n|tonumber),name:$name,repo:$repo,workflow:$wf,root:$root,
-                 exit_test:$et,status:$st,last_run:$last,url:$url}]')
-  done < "$CHAINS_FILE"
+                 plain:$plain,exit_test:$et,status:$st,last_run:$last,url:$url}]')
+  done < "$BLOCKERS_FILE"
 
   # --- Behaviour: what the fleet actually did in the window ------------------
   local filed closed merged rework alerts hygiene=0 q
@@ -125,22 +125,22 @@ collect() {
     sleep 2   # search API is 30 req/min
   done
 
-  # --- Open PR load per chain-owning repo ------------------------------------
+  # --- Open PR load per blocker-owning repo ------------------------------------
   local openprs="{}" r
-  for r in $(cut -f3 "$CHAINS_FILE" | grep -v '^#' | grep -v '^$' | sort -u); do
+  for r in $(cut -f3 "$BLOCKERS_FILE" | grep -v '^#' | grep -v '^$' | sort -u); do
     local c
     c=$(gh pr list -R "${ORG}/${r}" --state open --limit 100 --json number --jq 'length' 2>/dev/null || echo 0)
     openprs=$(jq --argjson o "$openprs" --arg k "$r" --argjson v "${c:-0}" -n '$o + {($k):$v}')
   done
 
   jq -n --arg gen "$since_iso" --arg since "$since" --argjson wd "$WINDOW_DAYS" \
-        --argjson chains "$chains_json" --argjson green "$green" \
+        --argjson blockers "$blockers_json" --argjson green "$green" \
         --argjson filed "${filed:-0}" --argjson closed "${closed:-0}" \
         --argjson merged "${merged:-0}" --argjson hygiene "${hygiene:-0}" \
         --argjson rework "${rework:-0}" --argjson alerts "${alerts:-0}" \
         --argjson openprs "$openprs" \
     '{generated_at:$gen, window_since:$since, window_days:$wd,
-      chains:$chains, chains_green:$green, chains_total:($chains|length),
+      blockers:$blockers, green:$green, total:($blockers|length),
       process:{issues_filed:$filed, issues_closed:$closed, prs_merged:$merged,
                hygiene_prs:$hygiene, rework_prs:$rework,
                alert_issues_open:$alerts, open_prs:$openprs}}'
@@ -154,8 +154,8 @@ render() {
   local gen since green total filed closed merged hygiene rework alerts
   gen=$(jq -r '.generated_at' <<<"$j")
   since=$(jq -r '.window_since' <<<"$j")
-  green=$(jq -r '.chains_green' <<<"$j")
-  total=$(jq -r '.chains_total' <<<"$j")
+  green=$(jq -r '.green' <<<"$j")
+  total=$(jq -r '.total' <<<"$j")
   filed=$(jq -r '.process.issues_filed' <<<"$j")
   closed=$(jq -r '.process.issues_closed' <<<"$j")
   merged=$(jq -r '.process.prs_merged' <<<"$j")
@@ -198,19 +198,19 @@ render() {
   if [ "$green" -lt "$total" ]; then verdict="RED"; fi
 
   local first_red
-  first_red=$(jq -r '[.chains[] | select(.status != "PASS")] | sort_by(.n) | .[0].n // empty' <<<"$j")
+  first_red=$(jq -r '[.blockers[] | select(.status != "PASS")] | sort_by(.n) | .[0].n // empty' <<<"$j")
   local first_red_name
-  first_red_name=$(jq -r --arg n "$first_red" '.chains[] | select((.n|tostring)==$n) | .name' <<<"$j" 2>/dev/null || true)
+  first_red_name=$(jq -r --arg n "$first_red" '.blockers[] | select((.n|tostring)==$n) | .name' <<<"$j" 2>/dev/null || true)
 
   if [ -n "$first_red" ]; then
-    directives+=("**Work chain ${first_red} (${first_red_name}) only.** It is the lowest-numbered chain that is not PASS. Do not start another chain, and do not open work outside it.")
+    directives+=("**Work blocker ${first_red} (${first_red_name}) only.** It is the lowest-numbered blocker that is not PASS. Do not start another blocker, and do not open work outside it.")
   fi
-  if jq -e '[.chains[] | select(.status=="NOT_BUILT")] | length > 0' <<<"$j" >/dev/null; then
-    local nb; nb=$(jq -r '[.chains[]|select(.status=="NOT_BUILT")|.n]|join(", ")' <<<"$j")
-    directives+=("**Chains ${nb} have no exit-test workflow.** An exit test nothing can run is not an exit test. Building the workflow IS the first task of that chain. It must run without staging or prod.")
+  if jq -e '[.blockers[] | select(.status=="NOT_BUILT")] | length > 0' <<<"$j" >/dev/null; then
+    local nb; nb=$(jq -r '[.blockers[]|select(.status=="NOT_BUILT")|.n]|join(", ")' <<<"$j")
+    directives+=("**Blockers ${nb} have no exit-test workflow.** An exit test nothing can run is not an exit test. Building the workflow IS the first task of that blocker. It must run without staging or prod.")
   fi
   if [ "$stall_days" -ge "$STALL_DAYS" ]; then
-    directives+=("**STALL: ${stall_days} days with no chain flip. HALT.** Do not start new work. Post the halt banner. State in one sentence what is actually blocking chain ${first_red}, and what decision or access you need. Volume is not progress.")
+    directives+=("**STALL: ${stall_days} days with no blocker flip. HALT.** Do not start new work. Post the halt banner. State in one sentence what is actually blocking blocker ${first_red}, and what decision or access you need. Volume is not progress.")
     verdict="STALLED"
   fi
   if [ "$filed" -gt "$MAX_ISSUES_FILED" ]; then
@@ -223,7 +223,7 @@ render() {
     directives+=("**Hygiene work is ${hyg_share}% of merged PRs (limit ${MAX_HYGIENE_SHARE}%).** Your next PR must touch product paths — \`helm/\`, \`terraform/\`, \`internal/\`, \`operators/\`, \`app/\`, \`src/\` — not \`.github/\` or \`scripts/\`.")
   fi
   if [ "$rew_share" -gt "$MAX_REWORK_SHARE" ]; then
-    directives+=("**Rework is ${rew_share}% of merged PRs (limit ${MAX_REWORK_SHARE}%).** Stop. Write the root cause into the chain issue before you write more code. A guard that needs re-pinning is a defect in the guard.")
+    directives+=("**Rework is ${rew_share}% of merged PRs (limit ${MAX_REWORK_SHARE}%).** Stop. Write the root cause into the blocker issue before you write more code. A guard that needs re-pinning is a defect in the guard.")
   fi
   local r c
   for r in $(jq -r '.process.open_prs | keys[]' <<<"$j"); do
@@ -232,7 +232,7 @@ render() {
       directives+=("**\`${r}\` has ${c} open PRs (limit ${MAX_OPEN_PRS}).** Land one before you open another.")
     fi
   done
-  [ ${#directives[@]} -eq 0 ] && directives+=("No rule is breached. Work your chain.")
+  [ ${#directives[@]} -eq 0 ] && directives+=("No rule is breached. Work your blocker.")
 
   # --- Body ------------------------------------------------------------------
   local badge="🔴 RED"
@@ -242,7 +242,7 @@ render() {
   cat <<EOF
 <!-- Generated by scripts/launch-scorecard.sh. Do not hand-edit: the next run overwrites it. -->
 
-# ${badge} — ${green} of ${total} chains passing
+# ${badge} — ${green} of ${total} blockers passing
 
 Generated ${gen}. Window: last ${WINDOW_DAYS} days (since ${since}).
 
@@ -254,9 +254,9 @@ $(printf '%s\n' "${directives[@]}" | sed 's/^/1. /')
 
 ## Outcomes — the only measure of progress
 
-| # | Chain | Status | Exit test | Last run |
-|---|---|---|---|---|
-$(jq -r '.chains[] | "| \(.n) | \(.name) (\(.root)) | **\(.status)** | \(.exit_test) | \(if .url != "" then "[\(.last_run[0:10])](\(.url))" else "never" end) |"' <<<"$j")
+| # | Blocker | Status | What it means | Proof it works (exit test) | Last run |
+|---|---|---|---|---|---|
+$(jq -r '.blockers[] | "| \(.n) | \(.name) (\(.root)) | **\(.status)** | \(.plain // "") | \(.exit_test) | \(if .url != "" then "[\(.last_run[0:10])](\(.url))" else "never" end) |"' <<<"$j")
 
 \`PASS\` means the named workflow's latest run on \`main\` succeeded. Nothing else
 is done: not merged, not closed, not "waiting on bringup".
@@ -273,7 +273,7 @@ is done: not merged, not closed, not "waiting on bringup".
 | Alert-farm issues (excl. 1 tracker/repo) | ${alerts} | ${MAX_ALERT_ISSUES} | $([ "$alerts" -gt "$MAX_ALERT_ISSUES" ] && echo "❌" || echo "✅") |
 | Open PRs per repo | $(jq -r '.process.open_prs | to_entries | map("\(.key)=\(.value)") | join(", ")' <<<"$j") | ${MAX_OPEN_PRS} | |
 
-A high closed-issue count with zero chain flips is the failure signature of
+A high closed-issue count with zero blocker flips is the failure signature of
 2026-08-13..17. Treat it as a red flag, never as progress.
 
 ## Trend

@@ -6,12 +6,12 @@ name: launch-scorecard
 # and obeys the AGENT DIRECTIVES block before starting work.
 #
 # It measures two things:
-#   1. Outcomes — the latest conclusion of each chain's exit-test workflow.
-#      A chain is done when its workflow is green. Merged is not done. Closed is
+#   1. Outcomes — the latest conclusion of each blocker's exit-test workflow.
+#      A blocker is done when its workflow is green. Merged is not done. Closed is
 #      not done.
 #   2. Behaviour — issues filed, PRs merged, hygiene share, rework share, open
 #      PR load. These detect the failure mode of 2026-08-13..17, when ~570
-#      commits and 425 closed issues moved zero chains.
+#      commits and 425 closed issues fixed zero launch blockers.
 #
 # Why an issue, not a Project board: an agent must read the whole thing in ONE
 # command (`gh issue view --json body`). Projects v2 needs GraphQL, holds no time
@@ -26,7 +26,7 @@ on:
       - ".github/workflows/launch-scorecard.yml"
       - "scripts/launch-scorecard.sh"
       - "scripts/test-launch-scorecard.sh"
-      - "data/launch-chains.tsv"
+      - "data/launch-blockers.tsv"
 
 permissions:
   contents: read
@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           scripts/launch-scorecard.sh collect > /tmp/scorecard.json
-          jq -r '"chains green: \(.chains_green)/\(.chains_total)"' /tmp/scorecard.json
+          jq -r '"blockers green: \(.green)/\(.total)"' /tmp/scorecard.json
 
       - name: Render the body, carrying the trend forward
         env:
