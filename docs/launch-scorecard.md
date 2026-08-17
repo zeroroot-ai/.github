@@ -3,7 +3,7 @@
 ## Why it exists
 
 Between 2026-08-13 and 2026-08-17 the fleet merged about 570 commits, filed 455
-issues and closed 425. Zero of the six launch chains passed its exit test.
+issues and closed 425. Zero of the six launch blockers passed its exit test.
 
 Nothing in the system measured that. Every signal available to an agent —
 "the PR merged", "the issue closed", "CI is green" — reported success while the
@@ -17,7 +17,7 @@ The scorecard is the missing signal. It measures **outcomes**, and it measures
 
 | Need | Feature | Why this one |
 |---|---|---|
-| Outcome per chain | **Workflow runs** with a fixed file name per chain | A green run is objective. Self-reported status is not. `gh run list --workflow` returns the conclusion in one call |
+| Outcome per blocker | **Workflow runs** with a fixed file name per blocker | A green run is objective. Self-reported status is not. `gh run list --workflow` returns the conclusion in one call |
 | The board itself | **A pinned Issue** in `zeroroot-ai/.github` | An agent reads the whole board in ONE cheap command. The human sees it at the top of the tracker. Edit history preserves every past version |
 | The writer | **A scheduled Action** (`launch-scorecard.yml`) | Runs daily at 06:00 UTC and on demand. Nobody has to remember |
 | Behaviour metrics | **Search API `total_count`** | One call per metric, org-wide, counts private repos when the token can see them |
@@ -45,9 +45,9 @@ gh issue list -R zeroroot-ai/.github --state open \
 The body opens with an `AGENT DIRECTIVES` block. Those are orders. They override
 the priorities in the workspace `CLAUDE.md`. Examples:
 
-- *Work chain 1 only* — when a lower-numbered chain is not passing.
-- *Chains 2, 3 have no exit-test workflow* — building it IS the first task.
-- *STALL: 3 days with no chain flip. HALT.* — post the halt banner and stop.
+- *Work blocker 1 only* — when a lower-numbered blocker is not passing.
+- *Blockers 2, 3 have no exit-test workflow* — building it IS the first task.
+- *STALL: 3 days with no blocker flip. HALT.* — post the halt banner and stop.
 - *File nothing this session* — when issue filing is over budget.
 - *Your next PR must touch product paths* — when hygiene work is over budget.
 
@@ -58,7 +58,7 @@ tool that wants to parse rather than read.
 
 | Metric | Limit | The failure it catches |
 |---|---|---|
-| Chain flips | 1 per 2 days | The stall. Four days of high output and no movement |
+| Blocker flips | 1 per 2 days | The stall. Four days of high output and no movement |
 | Issues filed | 35 per 7 days | The issue farm. 455 filed in 4 days, 264 of them scanner alerts |
 | Hygiene share of merged PRs | 20% | CI-about-CI. 25% of `deploy` PRs touched only `.github/` and `scripts/` |
 | Rework share of merged PRs | 10% | Guards that need re-pinning, fixes of fixes |
@@ -68,9 +68,9 @@ tool that wants to parse rather than read.
 Tune a limit by editing the `MAX_*` defaults at the top of
 `scripts/launch-scorecard.sh`. Do not raise a limit to silence a directive.
 
-## Adding or changing a chain
+## Adding or changing a blocker
 
-Edit `data/launch-chains.tsv`. One tab-separated row per chain:
+Edit `data/launch-blockers.tsv`. One tab-separated row per blocker:
 
 ```
 n	name	repo	workflow	root_issue	exit_test
