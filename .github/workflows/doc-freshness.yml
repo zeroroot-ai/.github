@@ -121,6 +121,7 @@ jobs:
             --exclude 'img\.shields\.io'
             --exclude 'discord\.gg'
             --exclude 'github\.com/zeroroot-ai/docs'
+            --exclude 'docs\.zeroroot\.ai'
             './**/*.md'
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}
