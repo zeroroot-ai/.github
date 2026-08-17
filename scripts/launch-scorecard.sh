@@ -97,7 +97,24 @@ collect() {
   closed=$(search_count "org:${ORG} is:issue closed:>=${since}")
   merged=$(search_count "org:${ORG} is:pr is:merged merged:>=${since}")
   rework=$(search_count "org:${ORG} is:pr is:merged merged:>=${since} in:title \"fix(rework)\"")
-  alerts=$(search_count "org:${ORG} is:issue is:open in:title \"ci(codeql)\"")
+  # Alert-farm detector. ONE standing tracker per repo is the sanctioned shape —
+  # that is what sarif-triage.sh writes, titled "ci(codeql): code-scanning
+  # digest". Counting those made the metric unsatisfiable: 10 repos each holding
+  # their one legitimate tracker read as 10 > limit 5, and the directive fired
+  # forever with nothing an agent could do about it. A rule that cannot be
+  # satisfied gets ignored, and then the real signal is ignored with it.
+  # What we are actually hunting is the farm: one issue per rule, per CVE, per
+  # alert — 264 of those in 4 days, 193 in a single frozen repo.
+  #
+  # Subtract rather than negate. `-in:title "code-scanning digest"` looked right
+  # and was measured wrong: it dropped 1 of 12 live issues, because GitHub does
+  # not honour a negated multi-word title phrase the way the positive form is
+  # honoured. Two positive counts always agree with what you can see in the UI.
+  local alerts_all digests
+  alerts_all=$(search_count "org:${ORG} is:issue is:open in:title \"ci(codeql)\"")
+  digests=$(search_count "org:${ORG} is:issue is:open in:title \"code-scanning digest\"")
+  alerts=$(( alerts_all - digests ))
+  [ "$alerts" -lt 0 ] && alerts=0
 
   # Hygiene PRs, by Conventional-Commit scope. These are the PRs that consumed
   # the window without moving an exit test.
@@ -200,7 +217,7 @@ render() {
     directives+=("**Issue filing is over budget (${filed} in ${WINDOW_DAYS} days, limit ${MAX_ISSUES_FILED}). File nothing this session.** Findings go in the PR body.")
   fi
   if [ "$alerts" -gt "$MAX_ALERT_ISSUES" ]; then
-    directives+=("**The tracker is being used as an alert queue (${alerts} open \`ci(codeql)\` issues, limit ${MAX_ALERT_ISSUES}).** Close them as superseded. Scanner output belongs in the Security tab and in ONE standing issue per repo. Never one issue per rule or per CVE.")
+    directives+=("**The tracker is being used as an alert queue (${alerts} alert issues beyond the one standing tracker per repo, limit ${MAX_ALERT_ISSUES}).** Close the extras as superseded. Scanner output belongs in the Security tab and in ONE standing issue per repo — that one is not counted here. Never one issue per rule or per CVE.")
   fi
   if [ "$hyg_share" -gt "$MAX_HYGIENE_SHARE" ]; then
     directives+=("**Hygiene work is ${hyg_share}% of merged PRs (limit ${MAX_HYGIENE_SHARE}%).** Your next PR must touch product paths — \`helm/\`, \`terraform/\`, \`internal/\`, \`operators/\`, \`app/\`, \`src/\` — not \`.github/\` or \`scripts/\`.")
@@ -253,7 +270,7 @@ is done: not merged, not closed, not "waiting on bringup".
 | PRs merged | ${merged} | — | |
 | Hygiene share | ${hyg_share}% | ${MAX_HYGIENE_SHARE}% | $([ "$hyg_share" -gt "$MAX_HYGIENE_SHARE" ] && echo "❌" || echo "✅") |
 | Rework share | ${rew_share}% | ${MAX_REWORK_SHARE}% | $([ "$rew_share" -gt "$MAX_REWORK_SHARE" ] && echo "❌" || echo "✅") |
-| Open \`ci(codeql)\` issues | ${alerts} | ${MAX_ALERT_ISSUES} | $([ "$alerts" -gt "$MAX_ALERT_ISSUES" ] && echo "❌" || echo "✅") |
+| Alert-farm issues (excl. 1 tracker/repo) | ${alerts} | ${MAX_ALERT_ISSUES} | $([ "$alerts" -gt "$MAX_ALERT_ISSUES" ] && echo "❌" || echo "✅") |
 | Open PRs per repo | $(jq -r '.process.open_prs | to_entries | map("\(.key)=\(.value)") | join(", ")' <<<"$j") | ${MAX_OPEN_PRS} | |
 
 A high closed-issue count with zero chain flips is the failure signature of
