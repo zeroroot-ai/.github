@@ -77,6 +77,24 @@ PREV_BODY="$tmp/prev.md" "$SCRIPT" render < "$tmp/flip.json" > "$tmp/flip.md"
 assert_lacks "$tmp/flip.md" "HALT"
 assert_has   "$tmp/flip.md" "Work chain 2 (Two) only."
 
+echo "== re-runs on one day are one history line, and do not count as a stall =="
+# The workflow runs on a schedule, on dispatch, and on re-run. Counting those as
+# elapsed days would order a false HALT on day one.
+cat > "$tmp/prev-dupes.md" <<'EOF'
+<!--history-->
+- 2026-08-17 green=0 filed=581 merged=594 hygiene=40%
+- 2026-08-17 green=0 filed=580 merged=593 hygiene=40%
+- 2026-08-16 green=0 filed=500 merged=500 hygiene=40%
+<!--/history-->
+EOF
+PREV_BODY="$tmp/prev-dupes.md" "$SCRIPT" render < "$tmp/bad.json" > "$tmp/dupes.md"
+# One prior DAY at green=0 (2026-08-16) is a stall of 1, under the limit of 2.
+assert_lacks "$tmp/dupes.md" "HALT"
+# Today appears exactly once, carrying the newest numbers.
+hist_today=$(sed -n '/<!--history-->/,/<!--\/history-->/p' "$tmp/dupes.md" | grep -c '^- 2026-08-17 ')
+if [ "$hist_today" -eq 1 ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: today appears $hist_today times in history, expected 1"; fi
+assert_has "$tmp/dupes.md" "- 2026-08-16 green=0"
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]

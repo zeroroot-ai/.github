@@ -150,13 +150,20 @@ render() {
   [ "$merged" -gt 0 ] && hyg_share=$(( hygiene * 100 / merged ))
   [ "$merged" -gt 0 ] && rew_share=$(( rework * 100 / merged ))
 
-  # History: previous lines are "YYYY-MM-DD green=N filed=N merged=N".
-  local prev_hist="" prev_green="" stall_days=0
+  # History: previous lines are "- YYYY-MM-DD green=N filed=N merged=N".
+  local today; today=$(date -u -d "$gen" +%Y-%m-%d 2>/dev/null || date -u +%Y-%m-%d)
+
+  local prev_hist="" stall_days=0
   if [ -n "${PREV_BODY:-}" ] && [ -f "${PREV_BODY}" ]; then
+    # One line per DAY. The workflow can run many times a day (schedule, a
+    # dispatch, a re-run); without this the stall counter would count re-runs as
+    # elapsed days and order a false HALT. Today's own earlier lines are dropped
+    # here and re-added below, so the newest value for today always wins.
     prev_hist=$(sed -n '/<!--history-->/,/<!--\/history-->/p' "$PREV_BODY" \
-                | grep -E '^- [0-9]{4}-' || true)
-    # Count leading days at the same green count = the stall length.
-    prev_green=$(head -1 <<<"$prev_hist" | grep -oE 'green=[0-9]+' | cut -d= -f2 || true)
+                | grep -E '^- [0-9]{4}-[0-9]{2}-[0-9]{2} ' \
+                | grep -v "^- ${today} " \
+                | awk '!seen[$2]++' || true)
+    # Leading days at the same green count = the stall length, in DAYS.
     while read -r line; do
       [ -z "$line" ] && continue
       local g; g=$(grep -oE 'green=[0-9]+' <<<"$line" | cut -d= -f2)
@@ -165,10 +172,9 @@ render() {
     done <<<"$prev_hist"
   fi
 
-  local today; today=$(date -u -d "$gen" +%Y-%m-%d 2>/dev/null || date -u +%Y-%m-%d)
   local hist_new="- ${today} green=${green} filed=${filed} merged=${merged} hygiene=${hyg_share}%"
   local history; history=$(printf '%s\n%s\n' "$hist_new" "$prev_hist" \
-                            | grep -E '^- [0-9]{4}-' | head -"$HISTORY_KEEP")
+                            | grep -E '^- [0-9]{4}-' | awk '!seen[$2]++' | head -"$HISTORY_KEEP")
 
   # --- Directives. These are orders, not observations. -----------------------
   local directives=() verdict="GREEN"
