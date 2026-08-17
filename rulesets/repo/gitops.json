@@ -18,19 +18,19 @@
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
           {
-            "context": "terraform"
+            "context": "pr-title-lint"
           },
           {
-            "context": "check-tenant-id-label"
+            "context": "no-monorepo-shortcuts / no-monorepo-shortcuts"
           },
           {
-            "context": "architectural-doc-coverage"
+            "context": "runs-on-lint / runs-on-lint"
           },
           {
-            "context": "vault-auth-method-deny-list"
+            "context": "architectural-doc-coverage / architectural-doc-coverage"
           },
           {
-            "context": "promotion-isolation-guard"
+            "context": "vault-auth-method-deny-list / vault-auth-method-deny-list"
           }
         ]
       }
