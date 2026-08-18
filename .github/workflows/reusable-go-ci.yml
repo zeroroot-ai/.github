@@ -57,6 +57,18 @@ on:
         type: string
         required: false
         default: "MEDIUM"
+      vuln-allowlist:
+        description: >
+          Path, relative to go-mod-path, of a govulncheck allowlist file. When
+          empty (the default) govulncheck runs exactly as before and ANY finding
+          fails the build. When set, listed advisories are tolerated until their
+          stated expiry — see the caller's file for the format. An entry that has
+          expired, or that no longer matches a real finding, FAILS the build:
+          an exemption that outlives its reason is worse than none, because it
+          reads as reviewed.
+        type: string
+        required: false
+        default: ""
     secrets:
       gh-pat:
         description: "Read-only PAT for private module fetch (required when private-modules: true)"
@@ -140,9 +152,100 @@ jobs:
           go test -race ./...
 
       - name: govulncheck
-        if: ${{ inputs.tier == 'heavy' }}
+        if: ${{ inputs.tier == 'heavy' && inputs.vuln-allowlist == '' }}
         run: |
           set -euo pipefail
           cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
+
+      # Same scan, but findings are checked against the caller's allowlist. Kept
+      # as a separate step rather than a branch inside the one above so the
+      # default path is byte-identical to what every other caller runs today.
+      - name: govulncheck (allowlisted)
+        if: ${{ inputs.tier == 'heavy' && inputs.vuln-allowlist != '' }}
+        env:
+          VULN_ALLOWLIST: ${{ inputs.vuln-allowlist }}
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          govulncheck -format json ./... > /tmp/govulncheck.json || true
+          python3 - "$VULN_ALLOWLIST" /tmp/govulncheck.json <<'PYCHECK'
+          import datetime
+          import json
+          import pathlib
+          import sys
+
+          allowlist_path, report_path = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+
+          if not allowlist_path.is_file():
+              sys.exit(f"FAIL: vuln-allowlist {allowlist_path} does not exist")
+
+          # Deliberately not PyYAML: the runner may not have it, and a parser
+          # this file's shape does not need is a dependency that can break the
+          # gate for a reason unrelated to security.
+          entries = {}
+          current = None
+          for raw in allowlist_path.read_text().splitlines():
+              line = raw.strip()
+              if not line or line.startswith("#"):
+                  continue
+              if line.startswith("- id:"):
+                  current = line.split(":", 1)[1].strip().strip('"')
+                  entries[current] = {}
+              elif current and ":" in line:
+                  k, v = line.split(":", 1)
+                  entries[current][k.strip()] = v.strip().strip('"')
+
+          if not entries:
+              sys.exit(f"FAIL: parsed zero entries from {allowlist_path} — the file shape changed. "
+                       "Refusing to run, because an empty parse would silently tolerate every finding.")
+
+          findings = set()
+          for raw in report_path.read_text().splitlines():
+              raw = raw.strip()
+              if not raw.startswith("{"):
+                  continue
+              try:
+                  msg = json.loads(raw)
+              except json.JSONDecodeError:
+                  continue
+              f = msg.get("finding")
+              # Symbol-level only: a trace entry with a function is code that is
+              # actually reachable, which is what "your code is affected" means.
+              if f and any(fr.get("function") for fr in (f.get("trace") or [])):
+                  findings.add(f["osv"])
+
+          today = datetime.date.today()
+          problems = []
+
+          for osv in sorted(findings - set(entries)):
+              problems.append(f"  {osv}: reachable and NOT allowlisted")
+
+          for osv, meta in sorted(entries.items()):
+              expires = meta.get("expires", "")
+              if not expires:
+                  problems.append(f"  {osv}: allowlist entry has no expires date")
+                  continue
+              try:
+                  when = datetime.date.fromisoformat(expires)
+              except ValueError:
+                  problems.append(f"  {osv}: expires {expires!r} is not YYYY-MM-DD")
+                  continue
+              if when < today:
+                  problems.append(f"  {osv}: EXPIRED on {expires} — re-review it or fix the vulnerability")
+              elif osv not in findings:
+                  # The verify-chart-signature.sh rule: a stale exemption is a
+                  # failure, so the debt cannot outlive itself.
+                  problems.append(f"  {osv}: no longer reachable — delete this allowlist entry")
+
+          if problems:
+              print("FAIL: govulncheck allowlist check", file=sys.stderr)
+              print("\n".join(problems), file=sys.stderr)
+              sys.exit(1)
+
+          print(f"OK — {len(findings)} reachable advisory(ies), all allowlisted and unexpired:")
+          for osv in sorted(findings):
+              print(f"  {osv}  expires {entries[osv]['expires']}  {entries[osv].get('reason', '')}")
+          PYCHECK
