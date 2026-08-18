@@ -36,7 +36,6 @@ HISTORY_KEEP="${HISTORY_KEEP:-14}"
 MAX_ISSUES_FILED="${MAX_ISSUES_FILED:-35}"      # per 7 days, whole org
 MAX_HYGIENE_SHARE="${MAX_HYGIENE_SHARE:-20}"    # percent of merged PRs
 MAX_REWORK_SHARE="${MAX_REWORK_SHARE:-10}"      # percent of merged PRs
-MAX_OPEN_PRS="${MAX_OPEN_PRS:-3}"               # per repo
 MAX_ALERT_ISSUES="${MAX_ALERT_ISSUES:-5}"       # open issues titled ci(codeql)
 STALL_DAYS="${STALL_DAYS:-2}"                   # days with no blocker flip = halt
 
@@ -225,13 +224,10 @@ render() {
   if [ "$rew_share" -gt "$MAX_REWORK_SHARE" ]; then
     directives+=("**Rework is ${rew_share}% of merged PRs (limit ${MAX_REWORK_SHARE}%).** Stop. Write the root cause into the blocker issue before you write more code. A guard that needs re-pinning is a defect in the guard.")
   fi
-  local r c
-  for r in $(jq -r '.process.open_prs | keys[]' <<<"$j"); do
-    c=$(jq -r --arg r "$r" '.process.open_prs[$r]' <<<"$j")
-    if [ "$c" -ge "$MAX_OPEN_PRS" ]; then
-      directives+=("**\`${r}\` has ${c} open PRs (limit ${MAX_OPEN_PRS}).** Land one before you open another.")
-    fi
-  done
+  # Open-PR count is REPORTED, never a directive. Owner call 2026-08-18: a cap
+  # here stopped work on a blocker because an unrelated dependabot PR was open,
+  # which is the opposite of what the board is for. The count stays in the
+  # behaviour table as a signal to read, not a gate to obey.
   [ ${#directives[@]} -eq 0 ] && directives+=("No rule is breached. Work your blocker.")
 
   # --- Body ------------------------------------------------------------------
@@ -271,7 +267,7 @@ is done: not merged, not closed, not "waiting on bringup".
 | Hygiene share | ${hyg_share}% | ${MAX_HYGIENE_SHARE}% | $([ "$hyg_share" -gt "$MAX_HYGIENE_SHARE" ] && echo "❌" || echo "✅") |
 | Rework share | ${rew_share}% | ${MAX_REWORK_SHARE}% | $([ "$rew_share" -gt "$MAX_REWORK_SHARE" ] && echo "❌" || echo "✅") |
 | Alert-farm issues (excl. 1 tracker/repo) | ${alerts} | ${MAX_ALERT_ISSUES} | $([ "$alerts" -gt "$MAX_ALERT_ISSUES" ] && echo "❌" || echo "✅") |
-| Open PRs per repo | $(jq -r '.process.open_prs | to_entries | map("\(.key)=\(.value)") | join(", ")' <<<"$j") | ${MAX_OPEN_PRS} | |
+| Open PRs per repo | $(jq -r '.process.open_prs | to_entries | map("\(.key)=\(.value)") | join(", ")' <<<"$j") | — | |
 
 A high closed-issue count with zero blocker flips is the failure signature of
 2026-08-13..17. Treat it as a red flag, never as progress.
