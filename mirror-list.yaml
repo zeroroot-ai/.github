@@ -62,6 +62,18 @@ mirrors:
   - source: docker.io/library/neo4j
     tag: "5.26.0-community"
     dest: neo4j
+  # MinIO — the S3-compatible object store the launch blocker 3 exit test
+  # (deploy#1546) writes its OpenBao snapshot to. The drill runs on kind with
+  # no AWS, so it needs an object store in-cluster. It is also what a
+  # self-hosted install backs up to, which is why openbao.backup.s3EndpointUrl
+  # exists at all.
+  #
+  # The `mc` client is deliberately NOT mirrored alongside it: the already
+  # mirrored aws-cli creates the bucket just as well against an S3-compatible
+  # endpoint, and one fewer mirrored image is one fewer thing to refresh.
+  - source: docker.io/minio/minio
+    tag: "RELEASE.2024-09-13T20-26-02Z"
+    dest: minio
 
   # ---------------------------------------------------------------------------
   # Bitnami refugees (legacy registry; pull-then-mirror until replacements land)
