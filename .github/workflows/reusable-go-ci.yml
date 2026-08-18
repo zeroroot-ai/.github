@@ -159,9 +159,16 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
-      # Same scan, but findings are checked against the caller's allowlist. Kept
-      # as a separate step rather than a branch inside the one above so the
+      # Same scan, but findings are checked against the caller's allowlist.
+      # Kept as a separate step rather than a branch inside the one above so the
       # default path is byte-identical to what every other caller runs today.
+      #
+      # The checker is the CALLER'S script, not a copy carried here. A reusable
+      # workflow checks out the caller, so the caller's script is what runs. The
+      # first version of this inlined the logic, and gibson promptly had to write
+      # the same rules a second time for its binary-mode scan in security.yaml —
+      # then one copy got a parser fix the other did not, which cost two merge
+      # queue evictions (gibson#1483). One policy, one implementation.
       - name: govulncheck (allowlisted)
         if: ${{ inputs.tier == 'heavy' && inputs.vuln-allowlist != '' }}
         env:
@@ -169,83 +176,20 @@ jobs:
         run: |
           set -euo pipefail
           cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          checker=scripts/check-govulncheck-allowlist.py
+          if [ ! -f "$checker" ]; then
+            echo "::error::vuln-allowlist is set but $checker does not exist in this repo." >&2
+            echo "The allowlist policy is implemented by the caller so there is exactly one" >&2
+            echo "copy of it. Add the script, or unset vuln-allowlist to fail on any finding." >&2
+            exit 1
+          fi
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          # govulncheck exits non-zero merely for HAVING findings; the checker
+          # owns the verdict and exits non-zero itself when they are not
+          # tolerated, so this step still fails when it should.
           govulncheck -format json ./... > /tmp/govulncheck.json || true
-          python3 - "$VULN_ALLOWLIST" /tmp/govulncheck.json <<'PYCHECK'
-          import datetime
-          import json
-          import pathlib
-          import sys
-
-          allowlist_path, report_path = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-
-          if not allowlist_path.is_file():
-              sys.exit(f"FAIL: vuln-allowlist {allowlist_path} does not exist")
-
-          # Deliberately not PyYAML: the runner may not have it, and a parser
-          # this file's shape does not need is a dependency that can break the
-          # gate for a reason unrelated to security.
-          entries = {}
-          current = None
-          for raw in allowlist_path.read_text().splitlines():
-              line = raw.strip()
-              if not line or line.startswith("#"):
-                  continue
-              if line.startswith("- id:"):
-                  current = line.split(":", 1)[1].strip().strip('"')
-                  entries[current] = {}
-              elif current and ":" in line:
-                  k, v = line.split(":", 1)
-                  entries[current][k.strip()] = v.strip().strip('"')
-
-          if not entries:
-              sys.exit(f"FAIL: parsed zero entries from {allowlist_path} — the file shape changed. "
-                       "Refusing to run, because an empty parse would silently tolerate every finding.")
-
-          findings = set()
-          for raw in report_path.read_text().splitlines():
-              raw = raw.strip()
-              if not raw.startswith("{"):
-                  continue
-              try:
-                  msg = json.loads(raw)
-              except json.JSONDecodeError:
-                  continue
-              f = msg.get("finding")
-              # Symbol-level only: a trace entry with a function is code that is
-              # actually reachable, which is what "your code is affected" means.
-              if f and any(fr.get("function") for fr in (f.get("trace") or [])):
-                  findings.add(f["osv"])
-
-          today = datetime.date.today()
-          problems = []
-
-          for osv in sorted(findings - set(entries)):
-              problems.append(f"  {osv}: reachable and NOT allowlisted")
-
-          for osv, meta in sorted(entries.items()):
-              expires = meta.get("expires", "")
-              if not expires:
-                  problems.append(f"  {osv}: allowlist entry has no expires date")
-                  continue
-              try:
-                  when = datetime.date.fromisoformat(expires)
-              except ValueError:
-                  problems.append(f"  {osv}: expires {expires!r} is not YYYY-MM-DD")
-                  continue
-              if when < today:
-                  problems.append(f"  {osv}: EXPIRED on {expires} — re-review it or fix the vulnerability")
-              elif osv not in findings:
-                  # The verify-chart-signature.sh rule: a stale exemption is a
-                  # failure, so the debt cannot outlive itself.
-                  problems.append(f"  {osv}: no longer reachable — delete this allowlist entry")
-
-          if problems:
-              print("FAIL: govulncheck allowlist check", file=sys.stderr)
-              print("\n".join(problems), file=sys.stderr)
-              sys.exit(1)
-
-          print(f"OK — {len(findings)} reachable advisory(ies), all allowlisted and unexpired:")
-          for osv in sorted(findings):
-              print(f"  {osv}  expires {entries[osv]['expires']}  {entries[osv].get('reason', '')}")
-          PYCHECK
+          test -s /tmp/govulncheck.json || {
+            echo "::error::govulncheck produced no output — a failed scan, not a clean one" >&2
+            exit 1
+          }
+          python3 "$checker" "$VULN_ALLOWLIST" /tmp/govulncheck.json
