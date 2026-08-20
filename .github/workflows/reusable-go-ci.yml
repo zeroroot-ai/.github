@@ -86,6 +86,31 @@ jobs:
       # Build tags flow to both build and test so the fast compile-check and the
       # heavy race run exercise the same variant the images ship.
       GOFLAGS: ${{ inputs.build-tags != '' && format('-tags={0}', inputs.build-tags) || '' }}
+      # PIPE, not comma. Go's default is `https://proxy.golang.org,direct`, and
+      # with a COMMA the fallback engages only on 404/410 — a transport error is
+      # fatal. So an HTTP/2 stream reset from the proxy fails the whole job with
+      #
+      #   read "https://proxy.golang.org/<mod>/@v/<ver>.zip": stream error:
+      #   stream ID 191; INTERNAL_ERROR; received from peer
+      #
+      # which Go reports once per importing file, so it reads like a broken
+      # build rather than a failed download.
+      #
+      # On 2026-08-20 this evicted gibson#1493 and its release PR from the merge
+      # queue repeatedly. It is NOT a broad outage: the setup-go cache hit, 274
+      # modules downloaded fine in the same job, and exactly ONE module failed
+      # per run — a different one each time, all small and all fetchable from a
+      # workstation in ~0.15s.
+      #
+      # The cause of the resets is not established, and this does not claim to
+      # fix it. It removes the part that is ours: one module's transport failure
+      # should not be fatal when that module is fetchable from its origin. A
+      # PIPE falls through on ANY error, so Go fetches it directly and the job
+      # proceeds. No second proxy is added on purpose — `direct` introduces no
+      # new trusted party, and GOSUMDB verifies every module against
+      # sum.golang.org either way.
+      GOPROXY: https://proxy.golang.org|direct
+
     steps:
       - uses: actions/checkout@v6.0.2 # pin: de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
