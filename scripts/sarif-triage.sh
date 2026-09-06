@@ -50,7 +50,11 @@ fetch_alerts() {
     --paginate >"$raw" 2>"$err" || rc=$?
 
   if [ "$rc" -ne 0 ]; then
-    if grep -qiE 'HTTP 404|no analysis found|code scanning is not enabled|not set ?up|advanced security' "$err"; then
+    # "Code Security must be enabled" is what a private repo with no Code
+    # Security answers (HTTP 403). It is the same "nothing to triage" as a
+    # 404, not a token problem: a token without org read is caught by the
+    # canary in triage_all before any repo is fetched.
+    if grep -qiE 'HTTP 404|no analysis found|code scanning is not enabled|not set ?up|advanced security|code security must be enabled' "$err"; then
       rm -f "$raw" "$err"
       return "$RC_SKIP"
     fi
