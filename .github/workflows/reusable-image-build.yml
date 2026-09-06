@@ -1,0 +1,374 @@
+name: Reusable image build
+
+# Reusable workflow for building + signing + SBOM-attest + scanning platform images.
+# Slice 1.1 of the production-readiness epic (gibson#171 → board #16).
+# Org-level so every image-producing repo can:
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-image-build.yml@main
+#
+# Job 1 (build-and-push):
+#   build → push → cosign sign → syft SBOM → cosign attest SBOM → trivy.
+#   Controls workflow conclusion.
+#   - cosign sign: keyless OIDC signature on the image manifest.
+#   - SLSA provenance: emitted by docker/build-push-action's provenance:true
+#     + id-token:write — SLSA-L3 on GitHub-hosted runners.
+#   - SBOM: syft → SPDX-JSON → cosign attest (predicate type spdxjson)
+#     bound to the image manifest. NOT uploaded as a release asset
+#     (anchore-sbom's release-asset upload was the historical bug —
+#     attestations are the right shape).
+# Job 2 (vuln-scan): Trivy scan + SARIF upload. Runs on tag AND on push to
+#   the calling repo's default branch (.github#258) — never on PRs. Tag-only
+#   gating meant image alerts on the default branch could be raised but never
+#   retired (code scanning only retires an alert when a newer analysis for
+#   the same category+ref omits it, and no analysis ever targeted the
+#   default branch). See the `trivy_category` input doc for the related
+#   rename hazard (gibson-executor#346).
+
+on:
+  workflow_call:
+    inputs:
+      component_name:
+        required: true
+        type: string
+        description: Short name used for metadata tag patterns and image URL (e.g. gibson, dashboard).
+      component_path:
+        required: true
+        type: string
+        description: Path to the build context (e.g. core/gibson).
+      dockerfile_path:
+        required: true
+        type: string
+        description: Path to the Dockerfile relative to repo root.
+      image_name:
+        required: true
+        type: string
+        description: Fully qualified image name (e.g. ghcr.io/zeroroot-ai/gibson).
+      tag_pattern:
+        required: true
+        type: string
+        description: Regex pattern for semver tag extraction (e.g. `gibson/v(.*)`).
+      build_args:
+        required: false
+        type: string
+        default: ""
+        description: Newline-separated BUILD_ARGS passed to docker/build-push-action.
+      trivy_severity:
+        required: false
+        type: string
+        default: "HIGH,CRITICAL"
+        description: Comma-separated Trivy severities that fail the build.
+      trivy_category:
+        required: false
+        type: string
+        default: ""
+        description: |
+          SARIF category for the Trivy upload. Defaults to `trivy-${component_name}`
+          for back-compat. Code scanning retires an alert only when a newer
+          analysis for the SAME category (and ref) comes back without it — so
+          this value is the alert-history key, not just a label.
+          gibson-executor#346: when `gibson-tool-runner` was renamed
+          `gibson-executor`, the caller's `component_name` changed too, which
+          silently changed the derived category and orphaned 339 alerts under
+          the dead `trivy-gibson-tool-runner` stream forever (nothing emits
+          that category again, so it can never retire them).
+          Set this explicitly and keep it stable across repo/component
+          renames — only change it if you intend to abandon the alert
+          history on purpose (and then consider draining the old category
+          per the note in gibson-executor#346 instead).
+      platforms:
+        required: false
+        type: string
+        default: "linux/amd64"
+        description: |
+          Comma-separated target platforms passed to docker/build-push-action
+          (e.g. `linux/amd64,linux/arm64`). Default is the historical
+          amd64-only behaviour. Multi-platform builds need a Dockerfile whose
+          build stage cross-compiles (`FROM --platform=$BUILDPLATFORM` +
+          GOOS/GOARCH from TARGETOS/TARGETARCH) or QEMU emulation — QEMU is
+          set up automatically when this input requests more than amd64.
+      version_tag:
+        required: false
+        type: string
+        default: ""
+        description: |
+          Optional explicit version tag (e.g. `v1.2.3`) added to the built
+          image on non-PR runs. Lets release workflows publish version-tagged
+          images by chaining a workflow_call in the same run as
+          release-please — tags pushed with the default GITHUB_TOKEN never
+          fire `on: push: tags:` triggers (GitHub anti-recursion, gibson#96),
+          so ref-derived `tag_pattern` matching alone misses releases in
+          repos without a release PAT. Empty (default) adds nothing.
+    outputs:
+      digest:
+        description: Manifest digest of the pushed image (sha256:…)
+        value: ${{ jobs.build-and-push.outputs.digest }}
+    # Note: a second buildx secret, `npm_token`, is passed to every build in
+    # build-and-push below and is NOT declared as a workflow_call secret here.
+    # It always carries this run's own `secrets.GITHUB_TOKEN` — the same token
+    # the ghcr `docker/login-action` step below already uses — so no caller
+    # wiring is required. Org-internal-visibility GitHub Packages (the npm
+    # registry) grant automatic GITHUB_TOKEN read access to every repo in the
+    # same org regardless of which repo owns the package, unlike ghcr.io
+    # images which are public by default. Dockerfiles that `npm ci` /
+    # `pnpm install` a `npm.pkg.github.com`-hosted dependency read it via
+    # `--mount=type=secret,id=npm_token` (dashboard#915).
+    secrets:
+      ghtoken:
+        required: false
+        description: |
+          Optional PAT/GitHub-App token passed as a buildx secret named
+          `ghtoken`. Dockerfiles that need cross-repo private-module
+          access read it via `--mount=type=secret,id=ghtoken`. Callers
+          that don't need it can omit the `secrets:` block entirely.
+
+jobs:
+  build-and-push:
+    name: Build and push
+    runs-on: ubuntu-latest
+    permissions:
+      # contents:read, not write. This job checks out, builds, pushes to GHCR,
+      # signs with cosign and attests an SBOM. It creates no release, pushes no
+      # commit and moves no tag, so it never writes repository contents.
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Reclaim runner disk before the build + SBOM steps. GitHub-hosted
+      # runners ship ~14 GB free; a large multi-layer image (e.g.
+      # python:3.12-slim + pgmpy/scipy/pandas, gibson-belief-sidecar) plus the
+      # buildx layer cache and syft's SPDX-JSON scratch can exhaust it, failing
+      # the SBOM attest with `no space left on device` (.github#187). This step
+      # is purely additive — it removes preinstalled toolchains we never use
+      # (Android SDK, .NET, GHC, CodeQL bundles) and frees ~20-30 GB without
+      # touching build/push/sign/SBOM semantics. Behaviour-preserving for every
+      # consuming repo; small images simply gain headroom they don't need.
+      # swap-storage is intentionally kept (removing it risks OOM on heavy
+      # buildx graphs); tool-cache is kept to avoid a slow wipe of caches the
+      # build itself may reuse.
+      - name: Free up runner disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+      # QEMU is only needed when a requested platform differs from the amd64
+      # runner AND the Dockerfile runs foreign-arch stages. Cross-compiling
+      # Dockerfiles don't strictly need it, but installing it whenever a
+      # non-amd64 platform is requested keeps the workflow correct for both
+      # Dockerfile styles at the cost of a few seconds. amd64-only callers
+      # (the default) are untouched.
+      - if: inputs.platforms != 'linux/amd64'
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ${{ inputs.image_name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=match,pattern=${{ inputs.tag_pattern }},group=1
+            type=sha,prefix=sha-
+            # Tag `latest` on push to main AND on workflow_dispatch from main.
+            # workflow_dispatch is the operator escape hatch for force-rebuilds
+            # (e.g. after rotating an upstream base image, or to bust a stale
+            # buildx layer cache). Without `latest` on dispatch, the rebuild
+            # produces a fresh image but consumers pinning `:latest` keep
+            # pulling the stale one — defeating the rebuild's purpose.
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+            # Explicit version tag from the caller (see the version_tag input
+            # docs): release workflows that chain this build in the same run
+            # as release-please pass the fresh release tag here because the
+            # GITHUB_TOKEN tag push never re-triggers tag-pattern builds.
+            type=raw,value=${{ inputs.version_tag }},enable=${{ inputs.version_tag != '' && github.event_name != 'pull_request' }}
+      - id: build
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: ${{ inputs.component_path }}
+          file: ${{ inputs.dockerfile_path }}
+          platforms: ${{ inputs.platforms }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ github.event_name != 'pull_request' }}
+          provenance: true
+          sbom: true
+          build-args: ${{ inputs.build_args }}
+          secrets: |
+            ghtoken=${{ secrets.ghtoken }}
+            npm_token=${{ secrets.GITHUB_TOKEN }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        # Installer default cosign (v3.1.x). History: .github#223 pinned
+        # cosign-release: v2.4.1 here because the attest step needed
+        # `--tlog-upload=false` (large-SBOM images — mcp-bridge-runner's
+        # 26 MB SBOM — exceeded rekor's entry-size limit) and v3 rejects
+        # that flag. Unpinned by .github#229: the attest step now skips the
+        # tlog the v3-idiomatic way (rekor-stripped --signing-config +
+        # --new-bundle-format, below). Follow-up tracked in #229: cosign
+        # v3.1.1+ logs DSSE attestations to Rekor v2 as hashed entries,
+        # which likely removes the size limit entirely — once a >26 MB
+        # attestation is confirmed to upload, delete the tlog-skipping
+        # altogether.
+      - if: github.event_name != 'pull_request'
+        name: Cosign sign image
+        run: |
+          # Rekor rejects concurrent same-identity signing bursts: when a
+          # caller builds several images in one run (setec: 5, gibson-executor:
+          # 2), the slower job's POST to /api/v1/log/entries can fail after
+          # cosign's two quick internal retries (.github#223 — bridge image
+          # unsigned 3/3 while its sibling signed fine in the same runs).
+          # Retry with real backoff; re-signing a fresh digest is idempotent.
+          for i in 1 2 3 4; do
+            cosign sign --yes ${{ inputs.image_name }}@${{ steps.build.outputs.digest }} && exit 0
+            echo "cosign sign attempt $i failed; retrying in $((i * 30))s..."
+            sleep $((i * 30))
+          done
+          echo "cosign sign failed after 4 attempts" >&2
+          exit 1
+      - if: github.event_name != 'pull_request'
+        name: Install syft (SBOM generator)
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+      - if: github.event_name != 'pull_request'
+        name: Generate SBOM via syft + attest with cosign
+        run: |
+          set -euo pipefail
+          # syft generates an SPDX-JSON SBOM from the just-pushed image
+          # digest. cosign attest binds it to the image manifest as a
+          # signed attestation (predicate type spdxjson). No release-asset
+          # upload — attestation is the canonical shape per slice 1.1.
+          syft "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" \
+               -o spdx-json=sbom.spdx.json
+          # Tlog-skipping, v3 shape: the public rekor instance rejected log
+          # entries above its max body size, and large images produce large
+          # SBOM predicates — gibson-executor's mcp-bridge-runner SBOM is 26 MB
+          # / 2115 pkgs and its attest POST was rejected 4/4 deterministically
+          # (.github#223), which fails this gating job and blocks the release.
+          # cosign v2 skipped the tlog with `--tlog-upload=false`; v3 rejects
+          # that flag and instead wants a signing config with no transparency
+          # log service (this exact curl|jq recipe is what cosign v3's own
+          # error message prescribes). `--signing-config` requires
+          # `--new-bundle-format`. The attestation is still generated,
+          # keyless-signed via Fulcio, RFC 3161-timestamped by the public TSA
+          # (kept in the signing config), and stored as an OCI referrer on the
+          # image manifest — only its public transparency-log inclusion is
+          # dropped. The image SIGNATURE above keeps full tlog inclusion, so
+          # verification's inclusion proof is unchanged; verify the SBOM
+          # attestation with
+          # `cosign verify-attestation --insecure-ignore-tlog --use-signed-timestamps`.
+          # Follow-up (#229): cosign v3.1.1+ logs DSSE attestations to Rekor
+          # v2 as hashed entries, which likely lifts the size limit — once a
+          # >26 MB attestation is confirmed to upload, delete this signing-
+          # config detour and attest with full tlog inclusion.
+          # Retry preserved for the transient/concurrency class (.github#223).
+          curl -fsSL --retry 3 https://raw.githubusercontent.com/sigstore/root-signing/refs/heads/main/targets/signing_config.v0.2.json \
+            | jq 'del(.rekorTlogUrls)' > /tmp/signing-config-no-tlog.json
+          for i in 1 2 3 4; do
+            cosign attest --yes \
+                  --new-bundle-format \
+                  --signing-config /tmp/signing-config-no-tlog.json \
+                  --predicate sbom.spdx.json \
+                  --type spdxjson \
+                  "${{ inputs.image_name }}@${{ steps.build.outputs.digest }}" && exit 0
+            echo "cosign attest attempt $i failed; retrying in $((i * 30))s..."
+            sleep $((i * 30))
+          done
+          echo "cosign attest failed after 4 attempts" >&2
+          exit 1
+
+  vuln-scan:
+    name: Vulnerability scan
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    # continue-on-error: scan results inform but never block the image push.
+    # Three known failure modes in cross-repo reusable workflow context:
+    #   1. codeql-action/upload-sarif returns "Bad credentials" because the
+    #      GITHUB_TOKEN JWT's workflow-repo claim (zeroroot-ai/.github) doesn't
+    #      match the target repo's code-scanning API expectation (.github#135).
+    #   2. trivy exits 1 on CVEs that are tracked but not yet fixed (e.g.
+    #      swiper@11.x GHSA-hmx5-qpq5-p643, tracked in dashboard#258).
+    #   3. Private repos without Code Security enabled reject the SARIF upload
+    #      outright (zitadel-login#2), so the Security tab never sees trivy
+    #      findings there. The job therefore ALWAYS writes the findings table
+    #      to the run's step summary — that is the guaranteed-readable surface;
+    #      the Security-tab upload is opportunistic on top.
+    # Artifacts + Security-tab upload are best-effort; the image push is the gate.
+    continue-on-error: true
+    # .github#258: this used to run ONLY on tag refs. Code scanning retires an
+    # alert when a newer analysis for the same category and ref comes back
+    # without it — with no analysis ever targeting refs/heads/<default>,
+    # image findings raised against main were write-once: they could be
+    # raised but never retired, even after the underlying image was fixed
+    # (confirmed org-wide: every trivy-* category's newest analysis across
+    # every image-producing repo was tag-only). Also scan on push to the
+    # calling repo's default branch so the alert stream can self-correct
+    # between releases, not just at tag time.
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+      actions: read
+    steps:
+      # GHCR repo is private; trivy's `remote` resolver needs creds to pull
+      # the just-pushed image by digest. Without this login, every scan run
+      # fails `UNAUTHORIZED: authentication required` (gibson#104). Must run
+      # BEFORE the trivy-action step.
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image_name }}@${{ needs.build-and-push.outputs.digest }}
+          format: sarif
+          output: trivy-${{ inputs.component_name }}.sarif
+          severity: ${{ inputs.trivy_severity }}
+          exit-code: 1
+      # Guaranteed-readable findings surface (failure mode 3 above): render the
+      # findings table into the run's step summary so agents/humans can read
+      # them on ANY repo, Code Security or not. Reuses the local vuln DB the
+      # SARIF step just populated; never fails the step chain (exit-code 0).
+      - name: Findings to step summary
+        if: always()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image_name }}@${{ needs.build-and-push.outputs.digest }}
+          format: table
+          output: trivy-${{ inputs.component_name }}.txt
+          severity: ${{ inputs.trivy_severity }}
+          exit-code: 0
+          skip-setup-trivy: true
+      - name: Append findings to summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Trivy findings — ${{ inputs.component_name }} (${{ inputs.trivy_severity }})"
+            echo '```'
+            cat "trivy-${{ inputs.component_name }}.txt" 2>/dev/null || echo "(no table output produced)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Opportunistic Security-tab upload: continue-on-error because private
+      # repos without Code Security reject it (failure mode 3) and the JWT
+      # mismatch (failure mode 1) also 403s — the summary above is canonical.
+      - if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
+        with:
+          sarif_file: trivy-${{ inputs.component_name }}.sarif
+          category: trivy-${{ inputs.trivy_category != '' && inputs.trivy_category || inputs.component_name }}

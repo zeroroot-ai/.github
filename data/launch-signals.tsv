@@ -1,0 +1,11 @@
+# Other launch signals: outcomes that gate a launch surface but are not one of
+# the six blockers in launch-blockers.tsv. Same columns, same rules: a row is
+# the latest run of <workflow> in <repo> on main, PASS / FAIL / NOT_BUILT, and
+# every workflow must run WITHOUT staging or prod.
+#
+# Columns, tab-separated:
+#   n  name  repo  workflow  root_issue  plain  exit_test
+#
+S1	Vanilla self-hosted install	charts	exit-test-vanilla-install.yml	—	A customer can stand up the product from a clean cluster with no cloud. This gates the self-hosted launch, not the SaaS one.	the umbrella installs on a clean kind cluster with the vanilla profile and reaches Ready
+S2	Edge WAF	hosted	exit-test-waf.yml	—	A scanner-shaped request to the browser edge is blocked, and a real signup gets through. The WAF is Coraza inside Envoy (ADR-0011), the same on every substrate.	a Core Rule Set payload gets 403 on app., a legitimate signup form and a page load get 200
+S3	Bank of always-on agents	gibson	exit-test-bank.yml	—	A bank of two always-on Claude Code members comes up on a real key, both report idle, one job reaches a member and closes with a verdict, a stranger tenant cannot read it, and the bank scales to zero. Informational: it gates the demo surface, never a launch blocker. The job is gated on the repository secret EXIT_TEST_ANTHROPIC_API_KEY in gibson, which only a human can set, so the row reads SKIPPED until someone sets it.	two members take one job on a real gvisor kind cluster, close it with a verdict, and leave no sandbox behind

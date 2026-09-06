@@ -1,0 +1,65 @@
+# Org-wide guard: every third-party GitHub Action in every repository is pinned
+# to a commit SHA (attic#24). A moved tag cannot change what CI runs.
+#
+# Runs nightly and on demand. Clones each repository shallowly with the org
+# read token, then runs scripts/pin-actions.py --check on its .github tree.
+# First-party zeroroot-ai/.github references are re-pinned by the consumers'
+# own workflows and are not this guard's concern.
+#
+# The selftest job proves the guard can fail: tests/fixtures/unpinned-actions
+# holds one unpinned reference and must be rejected, and .github's own tree
+# must pass.
+name: unpinned-actions-guard
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/unpinned-actions-guard.yml"
+      - "scripts/pin-actions.py"
+      - "tests/fixtures/unpinned-actions/**"
+permissions:
+  contents: read
+jobs:
+  selftest:
+    name: unpinned-actions-guard selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: the fixture with an unpinned action must fail
+        run: |
+          set -uo pipefail
+          if python3 scripts/pin-actions.py tests/fixtures/unpinned-actions --check; then
+            echo "::error::guard accepted an unpinned action"; exit 1
+          fi
+          echo "PASS: unpinned fixture rejected"
+      - name: this repository must pass
+        run: python3 scripts/pin-actions.py . --check
+  org:
+    name: every repository is pinned
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: check each repository
+        run: |
+          set -uo pipefail
+          [ -n "${GH_TOKEN:-}" ] || { echo "::error::GH_PAT_PLATFORM_RO is empty"; exit 1; }
+          failures=0
+          for repo in $(gh repo list zeroroot-ai --limit 200 --no-archived --json name --jq '.[].name'); do
+            [ "$repo" = ".github" ] && continue
+            rm -rf /tmp/r
+            if ! gh repo clone "zeroroot-ai/$repo" /tmp/r -- --depth 1 --quiet 2>/dev/null; then
+              echo "::warning::could not clone $repo"; continue
+            fi
+            [ -d /tmp/r/.github ] || continue
+            echo "::group::$repo"
+            if ! python3 scripts/pin-actions.py /tmp/r --check; then failures=$((failures+1)); fi
+            echo "::endgroup::"
+          done
+          [ "$failures" -eq 0 ] || { echo "::error::$failures repositor(y/ies) carry unpinned third-party actions"; exit 1; }

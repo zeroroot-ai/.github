@@ -1,0 +1,133 @@
+# ruleset-drift — is what we committed actually what GitHub is enforcing?
+#
+# .github#264. `apply-rulesets.yml` reconciles by a full PUT of the committed
+# file, so a live-only ruleset edit is not "already applied" — it is pending
+# deletion by the next push that touches ANY rulesets/**.json, for ANY repo.
+# gibson-executor's `Lint (golangci-lint)` required check lived in exactly that
+# state: applied out of band, gibson-executor#369 closed against it, and one
+# unrelated ruleset edit away from silently reverting.
+#
+# Nothing could see it, because the two facts that have to agree sit on
+# opposite sides of the API boundary: the file is in git, the enforcement is in
+# GitHub. This workflow is the thing that looks at both.
+#
+# .github#277 added a second question of the same shape — not "does live match
+# the file", but "does the file name contexts that anything actually produces".
+# A required context nobody produces is not a gate, it is a permanent block,
+# and it is invisible until someone flips enforcement to active. Both questions
+# need real GitHub state to answer, so both live here.
+#
+# Three jobs, deliberately split by whether they need a token:
+#
+#   drift-guard-fixtures  mutation-tests the guard itself, offline, on every PR.
+#                         A drift guard that cannot go red is worse than none,
+#                         because its green is read as evidence. Every assertion
+#                         in scripts/test-ruleset-drift.sh perturbs simulated
+#                         live state and REQUIRES a failure.
+#
+#   live-drift            the real comparison. Needs RULESET_APPLY_TOKEN (org
+#                         admin + repo admin), so it never runs on the PR lane:
+#                         secrets are unavailable to fork PRs, and on a PR that
+#                         legitimately edits a ruleset file live cannot match
+#                         yet — apply-rulesets only runs on merge. Comparing
+#                         live against a PR's proposed files would make every
+#                         legitimate ruleset PR red. So this lane always reads
+#                         main's committed files, and asks one question:
+#                         "does live match what is on main right now?"
+#
+#   required-contexts     the .github#277 question. Also needs the token, since
+#                         it reads PR check-run names in every targeted repo
+#                         and most of them are private.
+#
+# Cadence: live-drift hourly. An out-of-band edit is usually made to unfreeze
+# something in a hurry and then forgotten, so the useful window is hours, not
+# days. required-contexts daily — it costs ~100 API calls, and a workflow's
+# trigger does not change between one hour and the next.
+#
+# This workflow is NOT a required check anywhere and must not become one — it
+# depends on an org API call, and a required context that goes red or absent
+# when GitHub's API has a bad minute freezes merges across the org. It reports;
+# ci-failure-triage files the issue.
+
+name: ruleset-drift
+
+on:
+  pull_request:
+  schedule:
+    # live-drift: an out-of-band edit is made in a hurry, then forgotten
+    - cron: "23 * * * *"
+    # required-contexts: ~100 API calls, and triggers do not move hourly
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ruleset-drift-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---- the guard's own regression suite (no secrets, runs on PRs) ----
+  drift-guard-fixtures:
+    name: drift-guard-fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Mutation-test the drift guard
+        run: bash scripts/test-ruleset-drift.sh
+
+      - name: Mutation-test the required-context guard
+        run: bash scripts/test-required-contexts.sh
+
+      - name: Mutation-test the ADR-0088 security-features guard
+        run: bash scripts/test-security-features-drift.sh
+
+  # ---- live vs committed (needs the org-admin token) ----
+  live-drift:
+    name: live-drift
+    if: >-
+      github.event_name != 'pull_request'
+      && github.event.schedule != '41 7 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Compare live rulesets against rulesets/{org,repo}/*.json
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-ruleset-drift.sh
+
+      # ADR-0088. A security feature is a repo SETTING, not a file, so nothing
+      # in git shows when one is switched off. This is the only thing that does.
+      # `if: always()` so a ruleset drift above does not hide a security drift
+      # here — they are independent facts and both should be reported.
+      - name: Compare live security features against ADR-0088
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-security-features-drift.sh
+
+  # ---- is every required context actually produced on a PR? (.github#277) ----
+  # Same class as live-drift — a fact about the committed file that only real
+  # GitHub state can settle — so it lives here rather than in its own workflow.
+  # Daily rather than hourly: it samples six merged PRs per targeted repo, which
+  # is ~100 API calls, and a workflow's trigger does not change between hours.
+  required-contexts:
+    name: required-contexts
+    if: >-
+      github.event.schedule == '41 7 * * *'
+      || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+
+      - name: Every required context must be reachable on a real PR
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-required-contexts.sh

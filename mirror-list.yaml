@@ -1,0 +1,318 @@
+# Mirror list for ghcr.io/zeroroot-ai/mirror/*.
+#
+# The mirror-images.yml workflow reads this file and, for each entry,
+# copies the upstream image+tag to `ghcr.io/zeroroot-ai/mirror/<dest>:<tag>`.
+# Pinned tags are immutable once pushed to the mirror — to update an image,
+# add a new entry with a new tag rather than mutating an existing one.
+#
+# Floating tags (e.g. `golang:1.25-alpine`, `node:20-alpine`, bare `registry:2`,
+# distroless `nonroot`) move upstream while keeping the same tag name. The
+# default skip-if-exists behaviour would freeze them at the patch they were
+# first mirrored as, so such entries MUST set `refresh: true` to be re-copied
+# on every run. See .github#175 / #173 (the go1.25.11 GOTOOLCHAIN cascade).
+#
+# Spec: .spec-workflow/specs/deploy-simplification (Phase 1, R2.3).
+#
+# Schema:
+#   - source:  <registry/repo>    fully-qualified upstream image (no tag)
+#     tag:     <tag>              upstream tag to mirror
+#     dest:    <name>             local name under ghcr.io/zeroroot-ai/mirror/
+#                                 (omit to default to the last path segment of source)
+#     refresh: true|false         re-copy on every run instead of skip-if-exists.
+#                                 Set true for FLOATING tags (no patch component);
+#                                 omit/false for fully-pinned, immutable tags.
+#                                 skopeo copy is a no-op when digests match, so
+#                                 refreshing is cheap.
+mirrors:
+  # ---------------------------------------------------------------------------
+  # Build & shell base images
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/alpine
+    tag: "3.21"
+    dest: alpine
+  - source: docker.io/library/bash
+    tag: "5.2"
+    dest: bash
+  - source: docker.io/library/busybox
+    tag: "1.36"
+    dest: busybox
+  - source: docker.io/library/golang
+    tag: "1.25-alpine"     # floating: tracks the latest 1.25.x-alpine patch
+    dest: golang
+    refresh: true
+  - source: docker.io/library/golang
+    tag: "1.25.11-alpine"  # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); kept as an explicit floor alongside the refreshing 1.25-alpine
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.26.4-alpine"   # gibson go.mod pins go 1.26.4 (govulncheck stdlib fix gibson#612); builders must match (gibson#777)
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.26.6-alpine"   # pinned patch (go1.26.6 stdlib CVE fixes GO-2026-6090/5972; setec#254); alpine sibling of the 1.26.6 entry below
+    dest: golang
+
+  # ---------------------------------------------------------------------------
+  # Data plane images
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/postgres
+    tag: "16.4-alpine"
+    dest: postgres
+  - source: docker.io/library/redis
+    tag: "7.4-alpine"
+    dest: redis
+  - source: docker.io/library/neo4j
+    tag: "5.26.0-community"
+    dest: neo4j
+  # MinIO — the S3-compatible object store the launch blocker 3 exit test
+  # (deploy#1546) writes its OpenBao snapshot to. The drill runs on kind with
+  # no AWS, so it needs an object store in-cluster. It is also what a
+  # self-hosted install backs up to, which is why openbao.backup.s3EndpointUrl
+  # exists at all.
+  #
+  # The `mc` client is deliberately NOT mirrored alongside it: the already
+  # mirrored aws-cli creates the bucket just as well against an S3-compatible
+  # endpoint, and one fewer mirrored image is one fewer thing to refresh.
+  - source: docker.io/minio/minio
+    tag: "RELEASE.2024-09-13T20-26-02Z"
+    dest: minio
+  # Velero — the umbrella's backup controller (deploy#1734, ADR-0015). The
+  # server image also serves as the restore-helper init container: since
+  # Velero 1.16 the pod-volume restore action reuses the server image, so no
+  # separate velero-restore-helper entry is needed. The AWS object-store
+  # plugin follows the upstream compatibility matrix (v1.14.x <-> v1.18.x).
+  - source: docker.io/velero/velero
+    tag: "v1.18.1"
+    dest: velero
+  - source: docker.io/velero/velero-plugin-for-aws
+    tag: "v1.14.2"
+    dest: velero-plugin-for-aws
+
+  # ---------------------------------------------------------------------------
+  # Bitnami refugees (legacy registry; pull-then-mirror until replacements land)
+  # ---------------------------------------------------------------------------
+  - source: docker.io/bitnamilegacy/kubectl
+    tag: "1.31.4"
+    dest: kubectl
+  # NOTE: bitnamilegacy/kubectl 1.29.x and 1.30.x were removed upstream
+  # in 2026-05. The chart now uses :1.31.4 everywhere — see
+  # `enterprise/deploy/helm/gibson/templates/{tests,operations}` and
+  # spec `deploy-simplification` Phase 1.7. If a future patch requires
+  # another kubectl minor, mirror it here AND update the chart together.
+
+  # ---------------------------------------------------------------------------
+  # CLI tools used in chart hooks / init containers
+  # ---------------------------------------------------------------------------
+  - source: docker.io/curlimages/curl
+    tag: "8.10.1"
+    dest: curl
+  - source: ghcr.io/oras-project/oras
+    tag: "v1.2.0"
+    dest: oras
+  - source: docker.io/library/registry
+    tag: "2"               # floating: bare major tag tracks latest 2.x
+    dest: registry
+    refresh: true
+
+  # ---------------------------------------------------------------------------
+  # Dockerfile bases for first-party images
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/alpine
+    tag: "3.20"
+    dest: alpine
+  - source: docker.io/library/golang
+    tag: "1.25"           # floating debian-based; tenant-operator builder needs CGO_ENABLED toggles
+    dest: golang
+    refresh: true
+  - source: docker.io/library/golang
+    tag: "1.25.11"        # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); explicit floor alongside the refreshing 1.25
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.26.4"         # debian-based; gibson go.mod pins go 1.26.4 (gibson#612); operator builders must match (gibson#777)
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.26.6"         # debian-based; setec go.mod moved to go 1.26.6 (stdlib CVE fixes GO-2026-6090/5972, setec#254); its Dockerfile builders must match
+    dest: golang
+  - source: docker.io/library/node
+    tag: "20-alpine"      # floating: tracks the latest 20.x-alpine patch
+    dest: node
+    refresh: true
+  # Python base for the gibson belief-field sidecar (gibson#750, deploy#936).
+  # The sidecar is a published first-party image, so its base must come from the
+  # mirror like every other production image (test fixtures may use docker.io
+  # directly; published images may not).
+  #
+  # BUILD stage only. The sidecar's runtime stage is distroless (see below) —
+  # a Debian userland was 24 of gibson's 25 open HIGH/CRITICAL code-scanning
+  # alerts, in packages nothing in the image invokes (perl-base, util-linux,
+  # ncurses, gzip). Most of those carry no fixed version, so the only remedy is
+  # not shipping the userland. gibson#1436.
+  #
+  # `refresh: true` is load-bearing and was missing before: without it the
+  # default skip-if-exists behaviour froze this tag at whatever patch it was
+  # first copied at, so upstream Debian security updates never reached the
+  # sidecar even when they existed.
+  - source: docker.io/library/python
+    tag: "3.13-slim-trixie"
+    dest: python
+    refresh: true
+  # gcr.io/distroless/* — the Google-published distroless runtime bases.
+  # We mirror to ghcr.io so workspace-wide policy holds.
+  - source: gcr.io/distroless/python3-debian13
+    tag: nonroot          # floating: distroless rebuilds nonroot continuously
+    dest: distroless-python3-debian13
+    refresh: true
+  # gcr.io/distroless/* — the Google-published distroless runtime bases.
+  # We mirror to ghcr.io so workspace-wide policy holds.
+  - source: gcr.io/distroless/static-debian12
+    tag: nonroot          # floating: distroless rebuilds nonroot continuously
+    dest: distroless-static-debian12
+    refresh: true
+  - source: gcr.io/distroless/static
+    tag: nonroot          # floating: distroless rebuilds nonroot continuously
+    dest: distroless-static
+    refresh: true
+
+  # ---------------------------------------------------------------------------
+  # Chart-side tags the existing helm chart references (Phase 1.7 sweep targets).
+  # These can drop after Phase 4 deletes the in-chart subcharts that need them.
+  # ---------------------------------------------------------------------------
+  - source: docker.io/library/postgres
+    tag: "17-alpine"
+    dest: postgres
+  - source: docker.io/bitnamilegacy/postgresql
+    tag: "16.4.0-debian-12-r0"
+    dest: bitnami-postgresql
+  - source: docker.io/bitnamilegacy/minio
+    tag: "2025.7.23-debian-12-r3"
+    dest: bitnami-minio
+  # NOTE: bitnamilegacy/minio-client was here and is gone. Bitnami deleted the
+  # tag upstream ("manifest unknown"), the mirror never held a copy of it, and
+  # nothing in the workspace referenced it — so it failed every run of this
+  # workflow while breaking nothing downstream. Re-add only alongside a real
+  # consumer and a tag that still exists.
+  - source: docker.io/bitnamilegacy/minio-object-browser
+    tag: "2.0.2-debian-12-r3"
+    dest: bitnami-minio-object-browser
+  # AWS node-termination-handler (used by setec spot-eviction-fallback).
+  # Public ECR is a Docker Hub equivalent; pin to a known good tag.
+  - source: public.ecr.aws/aws-ec2/aws-node-termination-handler
+    tag: "v1.22.0"
+    dest: aws-node-termination-handler
+
+  # ---------------------------------------------------------------------------
+  # Gibson umbrella-chart third-party images (deploy#1170).
+  #
+  # Every one of these was pulled straight from Docker Hub, unauthenticated,
+  # by the rendered chart. On EKS all node pulls share the NAT gateway IP, so
+  # the anonymous 100-pulls/6h limit is a single shared budget: replacing a
+  # node group pulls the whole set at once and can 429 a bringup. Envoy is the
+  # entire ingress edge, and alpine/k8s is the init/Job image on a dozen
+  # workloads, so a throttled pull is an outage rather than a slow start.
+  #
+  # Tags track enterprise/deploy helm/gibson*/values.yaml + the third-party
+  # subchart overrides in helm/gibson/values.yaml. All are fully pinned, so
+  # none needs `refresh: true`. When a chart bump moves a tag, add the new
+  # entry here FIRST, let this workflow run, and only then repoint the chart —
+  # the chart must never reference a mirror tag that does not exist yet.
+  # ---------------------------------------------------------------------------
+
+  # Ingress edge — highest blast radius of the set.
+  - source: docker.io/envoyproxy/envoy
+    tag: "v1.34.0"
+    dest: envoy
+  # envoyproxy/ratelimit publishes commit-sha tags only (no release tags on
+  # Docker Hub). 8fe6ea42 = master 2026-08-24, "Populate request headers in
+  # shouldRateLimit rpc response (#1168)". The shared per-client edge quota
+  # service (deploy#1657, ADR-0011). Immutable sha tag: add a new entry to move.
+  - source: docker.io/envoyproxy/ratelimit
+    tag: "8fe6ea42"
+    dest: ratelimit
+  # Coraza WAF (OWASP Core Rule Set) as an Envoy WASM filter — the Edge WAF
+  # on every substrate (deploy#1658, ADR-0011). The -busybox variant carries a
+  # shell so an init container can cp /plugin.wasm into the Envoy pod.
+  - source: ghcr.io/corazawaf/coraza-proxy-wasm
+    tag: "0.6.0-busybox"
+    dest: coraza-proxy-wasm
+
+  # alpine/k8s — curl + jq + bash + kubectl in one image; the chart's default
+  # init-container/Job image. 1.31.0 is the chart's own pin, 1.30.0 the Zitadel
+  # bootstrap Job's, 1.33.0 the upstream zitadel chart's cleanup Job.
+  - source: docker.io/alpine/k8s
+    tag: "1.30.0"
+    dest: alpine-k8s
+  - source: docker.io/alpine/k8s
+    tag: "1.31.0"
+    dest: alpine-k8s
+  - source: docker.io/alpine/k8s
+    tag: "1.33.0"
+    dest: alpine-k8s
+
+  # Data plane
+  - source: docker.io/redis/redis-stack-server
+    tag: "7.4.0-v1"
+    dest: redis-stack-server
+  - source: docker.io/oliver006/redis_exporter
+    tag: "v1.63.0"
+    dest: redis-exporter
+  - source: docker.io/library/redis
+    tag: "7.4.1-alpine"
+    dest: redis
+
+  # Identity / authz / secrets
+  - source: docker.io/openfga/openfga
+    tag: "v1.15.1"
+    dest: openfga
+  - source: docker.io/openbao/openbao
+    tag: "2.5.3"
+    dest: openbao
+  # wait4x — init container on the upstream zitadel chart's login Deployment.
+  - source: docker.io/wait4x/wait4x
+    tag: "3.6"
+    dest: wait4x
+
+  # Observability (chart-gated, but the images must exist when it is on)
+  - source: docker.io/jaegertracing/all-in-one
+    tag: "1.64.0"
+    dest: jaeger-all-in-one
+  - source: docker.io/prom/prometheus
+    tag: "v2.55.1"
+    dest: prometheus
+  - source: docker.io/grafana/grafana
+    tag: "11.4.0"
+    dest: grafana
+  - source: docker.io/grafana/loki
+    tag: "3.3.2"
+    dest: loki
+  - source: docker.io/grafana/promtail
+    tag: "3.3.2"
+    dest: promtail
+
+  # Job / test tooling
+  - source: docker.io/amazon/aws-cli
+    tag: "2.17.50"
+    dest: aws-cli
+  # Dev/test surfaces (kind + CI profiles). Mirrored so a dev cluster does not
+  # spend the shared Docker Hub budget either.
+  - source: docker.io/stripe/stripe-mock
+    tag: "v0.200.0"
+    dest: stripe-mock
+  - source: docker.io/axllent/mailpit
+    tag: "v1.28.3"
+    dest: mailpit
+  # CoreDNS serves the kind DNS sub-zone (kind.zeroroot.test) of stage 0, the
+  # substrate bootstrap (deploy ADR-0015, deploy#1736). It runs as a Docker
+  # container on the workstation's kind network, outside the cluster, so it
+  # outlives every kind cluster. preflight proves the zone's NS records resolve.
+  - source: docker.io/coredns/coredns
+    tag: "1.14.7"
+    dest: coredns
+  # Stage 1 on kind (ADR-0015, deploy#1737). Both are rows the substrate
+  # contract requires of every cluster: a LoadBalancer implementation so the
+  # Envoy Service gets an address, and metrics-server because HPAs need it.
+  # cloud-provider-kind runs on the HOST, beside the kind node containers, and
+  # watches Docker for Services of type LoadBalancer.
+  - source: registry.k8s.io/cloud-provider-kind/cloud-controller-manager
+    tag: "v0.7.0"
+    dest: cloud-provider-kind
+  - source: registry.k8s.io/metrics-server/metrics-server
+    tag: "v0.8.0"
+    dest: metrics-server

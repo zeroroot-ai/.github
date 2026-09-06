@@ -1,0 +1,30 @@
+# Self-test for the gitleaks gate that reusable-go-ci.yml and
+# reusable-node-ci.yml run on every caller's tree (attic#18).
+#
+# WHY A SEPARATE WORKFLOW: the reusable workflows are `workflow_call:` only,
+# so nothing in this repo exercises the gate. scripts/test-gitleaks-gate.sh
+# reads the pinned version and sha256 out of BOTH reusable files, asserts they
+# agree, installs exactly that binary, and proves the gate can fail: a temp
+# tree with a generated fake credential must exit 1, a clean tree must exit 0.
+# The fixture is generated at run time, so no credential-shaped string is
+# committed here.
+name: gitleaks-gate-selftest
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/reusable-go-ci.yml'
+      - '.github/workflows/reusable-node-ci.yml'
+      - '.github/workflows/gitleaks-gate-selftest.yml'
+      - 'scripts/test-gitleaks-gate.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  selftest:
+    name: gitleaks-gate-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Assert the shipped gate can fail, and passes a clean tree
+        run: bash scripts/test-gitleaks-gate.sh

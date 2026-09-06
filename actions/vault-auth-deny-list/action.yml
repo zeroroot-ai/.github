@@ -1,0 +1,62 @@
+name: vault-auth-deny-list
+description: Scan a repository for ADR-0009 vault-auth deny-list violations
+
+# WHY THIS IS AN ACTION AND NOT A CHECKOUT
+#
+# The scanner and the deny-list live here, in the private zeroroot-ai/.github.
+# The workflow used to reach them with actions/checkout of this repository,
+# which needs a token that can read it: GITHUB_TOKEN is scoped to the CALLING
+# repository only, so the checkout failed with "Repository not found" and the
+# guard has been red on every PR in every repo since this org went private.
+#
+# The runner fetches a composite action's repository itself, using the same
+# mechanism that already fetches this reusable workflow. No token, no secret,
+# no visibility change. actions/flake-quarantine in this repo is consumed
+# cross-repo the same way and has worked throughout.
+#
+# Everything the scan needs is a sibling of this file, addressed through
+# github.action_path.
+
+inputs:
+  repo-root:
+    description: "Path to the calling repository's checkout, the tree to scan"
+    required: true
+  allowlist:
+    description: >-
+      Path to the calling repository's allowlist JSON. A missing file is not an
+      error: it means the repo has declared no exceptions.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # The selftest synthesises one file per deny-list token and asserts the
+    # scanner catches each one, so a regex regression in the scanner cannot
+    # present as a clean repo. It runs BEFORE the scan for that reason: a
+    # scanner that cannot catch a known-bad file must never report a pass.
+    - name: Selftest the scanner against every deny-list token
+      shell: bash
+      run: |
+        chmod +x "${{ github.action_path }}/vault-auth-deny-list-scan.sh"
+        ADR_PATH="${{ github.action_path }}/adr-0009-deny-list.md" \
+          "${{ github.action_path }}/vault-auth-deny-list-scan.sh" --selftest
+
+    - name: Scan for ADR-0009 deny-list violations
+      shell: bash
+      env:
+        ADR_PATH: ${{ github.action_path }}/adr-0009-deny-list.md
+        REPO_ROOT: ${{ inputs.repo-root }}
+        ALLOWLIST_IN: ${{ inputs.allowlist }}
+      run: |
+        # ALLOWLIST is exported only when the caller gave one, so an empty
+        # input falls through to the script's own default rather than
+        # overriding it with "". It is a real export and not a conditional
+        # assignment prefix: bash expands ${VAR:+NAME=value} into a WORD and
+        # then runs it as a COMMAND, which fails 127 "No such file or
+        # directory" naming the path. That is what this step did on its first
+        # outing.
+        if [ -n "$ALLOWLIST_IN" ]; then
+          export ALLOWLIST="$ALLOWLIST_IN"
+        fi
+        "${{ github.action_path }}/vault-auth-deny-list-scan.sh" scan

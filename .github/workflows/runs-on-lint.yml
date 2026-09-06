@@ -1,0 +1,99 @@
+# Reusable workflow that rejects any `runs-on:` label that is not a
+# sanctioned GitHub-hosted runner or the org's ephemeral ARC scale-set.
+#
+# Epic: cicd-efficiency (board #44) / zeroroot-ai/deploy#1067 / ADR-0060
+# ("GitHub-hosted runners are the default for every CI job that does not
+# require bare metal; the only jobs allowed off GitHub-hosted are those
+# needing /dev/kvm, and those run on ephemeral runner pods in staging that
+# are torn down after each job. No persistent self-hosted runners exist.").
+#
+# Allowed:
+#   - ubuntu-* (any GitHub-hosted Ubuntu label: ubuntu-latest, ubuntu-24.04,
+#     ubuntu-22.04, the *-cores variants, etc.)
+#   - staging-ephemeral (the org's ARC gha-runner-scale-set label —
+#     the hosted estate, zeroroot-ai/hosted gitops/envs/staging)
+#
+# Rejected: everything else, including any `self-hosted` array form
+# (`runs-on: [self-hosted, <label>]`) and any other custom label. There is
+# no allowance for windows-*/macos-* or other GitHub-hosted families — add
+# them here explicitly if a real need arises; do not silently widen the
+# allowlist in a calling repo.
+#
+# Called by via:
+#   uses: zeroroot-ai/.github/.github/workflows/runs-on-lint.yml@main
+#
+# Required check name: runs-on-lint (declared in the calling workflow's job
+# id — see rulesets/org/tier-core.json / tier-opensource.json).
+
+name: runs-on-lint
+
+on:
+  workflow_call:
+
+jobs:
+  runs-on-lint:
+    name: runs-on-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The CALLER's tree — this is what gets scanned.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Reject non-sanctioned runs-on labels
+        # DELIBERATELY INLINE. A reusable workflow's checkout fetches the
+        # CALLER, so this repo's scripts/ are not on disk here. Two attempts to
+        # side-step that both failed against real runners: github.workflow_sha
+        # is the caller's sha (`upload-pack: not our ref`, #279) and
+        # github.job_workflow_sha comes back EMPTY (#280). Checking out `main`
+        # would work but silently decouples the logic from the caller's pin,
+        # which defeats pinning.
+        #
+        # Inline, the logic travels with the pinned sha by construction. The
+        # assertions that used to guard it live in scripts/test-runs-on-lint.sh,
+        # which EXTRACTS this very case block out of this file and runs against
+        # it — so the tested thing and the shipped thing cannot drift.
+        run: |
+          set -euo pipefail
+          violations=0
+
+          classify() {
+            # Normalise any GitHub expression to X, then match on shape.
+            # (The literal two-brace sequence is avoided everywhere inside
+            # this run: block — Actions interpolates it even in a shell
+            # comment, which makes the whole workflow file invalid.)
+            local probe
+            probe="$(echo "$1" | sed -E 's/\$\{\{[^}]*\}\}/X/g')"
+            # BEGIN-CLASSIFIER (extracted by scripts/test-runs-on-lint.sh)
+            case "$probe" in
+              ubuntu-*)    return 0 ;;
+              *-ephemeral) return 0 ;;
+              *)           return 1 ;;
+            esac
+            # END-CLASSIFIER
+          }
+
+          while IFS= read -r -d '' f; do
+            while IFS= read -r line; do
+              # Strip the `runs-on:` key, then array brackets/quotes, so both
+              # `runs-on: ubuntu-latest` and `runs-on: [self-hosted, x]` parse alike.
+              val="$(echo "$line" | sed -E 's/^[[:space:]]*runs-on:[[:space:]]*//')"
+              val="$(echo "$val" | tr -d '[]"'"'"'')"
+              IFS=',' read -ra labels <<< "$val"
+              for raw in "${labels[@]}"; do
+                label="$(echo "$raw" | xargs)"
+                [ -z "$label" ] && continue
+                if ! classify "$label"; then
+                  echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or an *-ephemeral ARC scale-set are allowed. A bare GitHub expression with no -ephemeral suffix is an unbounded label and is rejected. See ADR-0060 (zeroroot-ai/docs)."
+                  violations=$((violations+1))
+                fi
+              done
+            done < <(grep -E '^[[:space:]]*runs-on:' "$f" 2>/dev/null || true)
+          done < <(find . -name .git -prune -o \
+                         \( -path '*/.github/workflows/*.yml' -o -path '*/.github/workflows/*.yaml' \) \
+                         -print0 2>/dev/null)
+
+          if [ "$violations" -gt 0 ]; then
+            echo "::error::$violations forbidden runs-on label(s) found — no persistent self-hosted runners are permitted anywhere in the org (ADR-0060)."
+            exit 1
+          fi
+          echo "OK: every runs-on label is ubuntu-* or an *-ephemeral ARC scale-set."

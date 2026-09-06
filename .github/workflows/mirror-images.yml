@@ -1,0 +1,146 @@
+name: mirror-images
+# Mirrors upstream container images to ghcr.io/zeroroot-ai/mirror/*.
+#
+# Driven by mirror-list.yaml at the repo root. Tags are immutable: an entry
+# whose target tag already exists in the mirror is skipped.
+#
+# Spec: .spec-workflow/specs/deploy-simplification (Phase 1, R2.3).
+
+on:
+  schedule:
+    # Weekly, Monday 04:00 UTC. Pick up new upstream patch releases if any.
+    # Most entries are tag-pinned and won't change; the cron just catches
+    # any drift from the small set of floating major-version tags, and
+    # skopeo copy is a cheap no-op when source/dest digests already match.
+    # No live dependency needs daily freshness — cadence pruned daily→weekly
+    # by .github#201 (cicd-efficiency epic, board #44).
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Optional substring filter; only mirror entries whose source matches"
+        required: false
+        type: string
+
+permissions:
+  # write:packages — required to push to ghcr.io/zeroroot-ai/mirror/*
+  packages: write
+  # read on the repo content (mirror-list.yaml)
+  contents: read
+
+concurrency:
+  group: mirror-images
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror upstream images
+    runs-on: ubuntu-latest
+    # 30 min was tight on a cold run: 22 multi-arch images via skopeo
+    # `copy --all` against rate-limited upstreams (esp. bitnamilegacy
+    # and distroless) repeatedly ran out of clock. 60 min comfortably
+    # covers the worst observed cold start, while every subsequent run
+    # short-circuits via the "tag already mirrored" check in seconds.
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install yq + skopeo
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+          skopeo --version
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | skopeo login --username "${{ github.actor }}" --password-stdin ghcr.io
+
+      - name: Mirror images
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          # NOTE: -u is OK; pipefail is OK; -e is NOT — we want to keep
+          # iterating even when an individual mirror entry fails (upstream
+          # tag removed, transient network blip, etc.). A failed entry is
+          # logged + summarised at the end; only an empty per-entry success
+          # set blocks the run.
+          set -uo pipefail
+
+          dest_registry="ghcr.io/zeroroot-ai/mirror"
+
+          mapfile -t entries < <(yq -o=json -I=0 '.mirrors[]' mirror-list.yaml)
+          total=${#entries[@]}
+          ok=0
+          skipped=0
+          failed=0
+          failed_refs=()
+
+          for entry in "${entries[@]}"; do
+            source=$(jq -r '.source' <<<"$entry")
+            tag=$(jq -r '.tag' <<<"$entry")
+            dest=$(jq -r '.dest // (.source | split("/") | last)' <<<"$entry")
+            target="${dest_registry}/${dest}:${tag}"
+            from="docker://${source}:${tag}"
+            to="docker://${target}"
+
+            # Optional filter
+            if [[ -n "${ONLY}" && "${source}" != *"${ONLY}"* ]]; then
+              echo "skip (filter): ${source}:${tag}"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            # refresh: floating tags (e.g. golang:1.25-alpine) move upstream
+            # but keep the same tag name, so the immutable skip-if-exists check
+            # below would freeze them at whatever patch they were first
+            # mirrored as. Entries marked `refresh: true` are re-copied on every
+            # run. skopeo copy is a no-op when the source and destination
+            # digests already match, so re-copying is cheap. Pinned entries omit
+            # the flag and keep the immutable skip. See .github#175 / #173.
+            refresh=$(jq -r '.refresh // false' <<<"$entry")
+
+            # Skip if target tag already exists (immutable, non-refresh entries).
+            if [[ "${refresh}" != "true" ]] && skopeo inspect "${to}" >/dev/null 2>&1; then
+              echo "skip (already mirrored): ${target}"
+              skipped=$((skipped + 1))
+              continue
+            fi
+            if [[ "${refresh}" == "true" ]]; then
+              echo "refresh (floating tag, re-copy): ${target}"
+            fi
+
+            echo "::group::mirror ${source}:${tag} → ${target}"
+            if skopeo copy --all "${from}" "${to}"; then
+              echo "ok: ${target}"
+              ok=$((ok + 1))
+            else
+              echo "FAIL: ${from} → ${to} (continuing)"
+              failed=$((failed + 1))
+              failed_refs+=("${source}:${tag}")
+            fi
+            echo "::endgroup::"
+          done
+
+          echo ""
+          echo "=== mirror summary ==="
+          echo "total:   ${total}"
+          echo "mirrored: ${ok}"
+          echo "skipped: ${skipped}"
+          echo "failed:  ${failed}"
+          if [[ ${failed} -gt 0 ]]; then
+            echo ""
+            echo "failed refs:"
+            printf '  %s\n' "${failed_refs[@]}"
+            # Surface the failure to the workflow status. A non-zero exit
+            # here lights the run red so an operator notices, but every
+            # successfully-mirrorable entry was processed.
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: echo "Mirror run complete. Inspect ghcr.io/zeroroot-ai/mirror/* for the populated tags."

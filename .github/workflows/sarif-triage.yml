@@ -1,0 +1,75 @@
+name: sarif-triage
+
+# Slice 4.6 of the production-readiness epic (gibson#174 → board #16).
+# Scheduled cron that polls open code-scanning alerts across the org and
+# files ONE digest issue per repo, updated in place.
+#
+# Behavior contract (implemented in scripts/sarif-triage.sh; regression- and
+# mutation-tested by scripts/test-sarif-triage.sh, which gates every run):
+#
+#   * ONE digest issue per repo — never one issue per rule. Found by the
+#     stable title prefix "ci(codeql): code-scanning digest" and updated in
+#     place (same pattern as the flake-report aggregator). The old per-rule
+#     filer mass-filed ~200 issues org-wide on its first successful run
+#     (.github#252).
+#   * Repos with ZERO open alerts are skipped entirely. An API error or a
+#     non-array response body is never treated as alert data — it is
+#     surfaced in the run log and turns the run red, never filed as an
+#     issue (the old code filed `rule null` issues on repos that have no
+#     code scanning at all).
+#   * Severity floor: error-severity rules are listed in detail; warning/
+#     note alerts roll up into counts. The digest links the repo's
+#     code-scanning UI.
+#   * Size cap: the detail table truncates with a count + link; an
+#     oversized body collapses to counts + link.
+#   * Hard safety: creating more than one NEW issue in the same repo in
+#     one run aborts the entire run loudly.
+#
+# Token: GH_PAT_PLATFORM_RO enumerates PRIVATE repos; the default
+# GITHUB_TOKEN only returns PUBLIC org repos (.github#241 / .github#170
+# blind spot). The script hard-fails if the private canary repo (gitops)
+# is not visible (guard added by .github#243 — kept).
+
+on:
+  schedule:
+    - cron: "0 9 * * *"  # unchanged cadence, 09:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/sarif-triage.yml"
+      - "scripts/sarif-triage.sh"
+      - "scripts/test-sarif-triage.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-self-test:
+    # Mutation/fixture tests for the digest logic: proves an empty/null/
+    # error API response files NOTHING, a real-shaped response files
+    # EXACTLY ONE digest, and the hard-safety abort actually fires. Gates
+    # the triage job on every scheduled run so a regression in the guard
+    # logic fails before anything is filed.
+    name: digest-logic-fixture-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Run fixture + mutation tests
+        run: bash scripts/test-sarif-triage.sh
+
+  triage:
+    name: triage-sarif-alerts
+    if: github.event_name != 'pull_request'
+    needs: fixture-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Scan code-scanning alerts across org and file per-repo digests
+        env:
+          # PLATFORM_RO PAT enumerates PRIVATE repos; the default GITHUB_TOKEN
+          # only returns PUBLIC org repos, so the triage would silently skip
+          # every private repo (.github#241, same blind spot as .github#170).
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
+        run: bash scripts/sarif-triage.sh

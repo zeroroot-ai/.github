@@ -1,0 +1,84 @@
+name: per-repo-claude-md-drift
+
+# Monthly check: every repo in the org has either CLAUDE.md or AGENTS.md
+# at the root. Posts a tracked issue listing missing repos.
+#
+# Slice 6.3 of the production-readiness epic (gibson#176 → board #16).
+#
+# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
+# board #44) — low-signal maintenance cron, workflow_dispatch still
+# available for on-demand runs.
+
+on:
+  schedule:
+    - cron: "0 11 1 * *" # monthly: 1st of month, 11:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: claude-md-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Scan org for missing per-repo CLAUDE.md
+        env:
+          # PLATFORM_RO PAT enumerates PRIVATE repos; the default GITHUB_TOKEN
+          # only returns PUBLIC org repos, so the scan would silently skip every
+          # private repo and report a false all-clear (same blind spot that made
+          # the makefile-contract audit under-report — .github#170).
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
+
+          # Blind-spot guard: if the token can't see private repos, they
+          # silently vanish and the scan is incomplete. Canary is `gitops`
+          # — private and long-lived. (Previously `gibson`, which went
+          # public with the oss flip; a public canary can never fire, so
+          # the guard had quietly stopped guarding — .github#231/#232
+          # verification.) Fail loudly instead of under-reporting.
+          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
+            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; scan would be incomplete"
+            exit 1
+          fi
+
+          MISSING=""
+          for REPO in $REPOS; do
+            HAS_CLAUDE=$(gh api "/repos/zeroroot-ai/$REPO/contents/CLAUDE.md" --silent 2>/dev/null && echo "yes" || echo "no")
+            HAS_AGENTS=$(gh api "/repos/zeroroot-ai/$REPO/contents/AGENTS.md" --silent 2>/dev/null && echo "yes" || echo "no")
+            if [ "$HAS_CLAUDE" = "no" ] && [ "$HAS_AGENTS" = "no" ]; then
+              MISSING="$MISSING\n- $REPO"
+            fi
+          done
+
+          TITLE="Per-repo CLAUDE.md drift — $(date -u +%Y-%m-%d)"
+          if [ -z "$MISSING" ]; then
+            echo "::notice::all repos have CLAUDE.md or AGENTS.md"
+            # Self-heal: close any stale open drift issue so the tracker
+            # reflects the now-clean state instead of lingering open with a
+            # stale repo list until the next cron rewrite (mirrors
+            # makefile-contract.yml; this branch was missing — .github#231).
+            CLEAN_EXISTING=$(gh issue list -R zeroroot-ai/.github \
+                               --state open --search 'in:title "Per-repo CLAUDE.md drift"' \
+                               --json number --jq '.[0].number // empty')
+            if [ -n "$CLEAN_EXISTING" ]; then
+              gh issue close "$CLEAN_EXISTING" -R zeroroot-ai/.github \
+                --comment "Every repo now has CLAUDE.md or AGENTS.md at the root. Auto-closed by the per-repo-claude-md-drift scan."
+            fi
+            exit 0
+          fi
+
+          BODY="## Per-repo CLAUDE.md drift report\n\nThe following repos lack BOTH CLAUDE.md and AGENTS.md at the root:\n${MISSING}\n\nPer slice 6.3, every repo must have one. Template at https://github.com/zeroroot-ai/.github/blob/main/templates/repo-CLAUDE.md"
+
+          EXISTING=$(gh issue list -R zeroroot-ai/.github \
+                       --state open --search 'in:title "Per-repo CLAUDE.md drift"' \
+                       --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file -
+          else
+            printf "%b" "$BODY" | gh issue create -R zeroroot-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+          fi

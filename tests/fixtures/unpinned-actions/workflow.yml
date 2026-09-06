@@ -1,0 +1,7 @@
+# Fixture for the unpinned-actions guard self-test. Lives outside .github/ so
+# GitHub never parses it as a workflow. One pinned, one unpinned reference.
+jobs:
+  x:
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@v6

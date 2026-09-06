@@ -1,0 +1,270 @@
+# Reusable workflow that requires every fix-PR to either:
+#
+#  (a) reference an open or merged companion PR on zeroroot-ai/docs via the
+#      trailer `Docs-PR: <url>` in the PR body — used when the fix surfaces
+#      an architectural invariant, repo-wiring detail, or edge case worth
+#      capturing for the next agent; OR
+#
+#  (b) declare the fix as documentation-irrelevant via the trailer
+#      `Docs-PR: not-applicable: <one-sentence why>` — used sparingly for
+#      cosmetic / mechanical fixes (typo, dep bump, formatting). Reviewers
+#      should push back on routine use of this escape hatch.
+#
+# The check fires on EVERY PR — there is no label-based filter. Every fix
+# is gated; the trailer is the discriminator. This is by design: filtering
+# by label would push the discipline onto the author of the PR, and authors
+# routinely miss the label. Forcing one of two trailers makes the
+# documentation question impossible to skip.
+#
+# Called by per-repo workflows via:
+#   uses: zeroroot-ai/.github/.github/workflows/architectural-doc-coverage.yml@main
+#   secrets:
+#     DOCS_REPO_READ_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN }}
+#
+# Works from either a `pull_request` or a `merge_group` caller trigger. The
+# `merge_group` event payload carries no `pull_request` object (no number, no
+# author, no title) — only merge_group.base_sha/head_sha/base_ref/head_ref.
+# The "Resolve merge_group PR context" step below recovers the PR number by
+# parsing it out of head_ref (`refs/heads/gh-readonly-queue/<base>/pr-<N>-<sha>`)
+# and looks up author/title/head-ref-name via `gh pr view` so every later step
+# can read a uniform set of fields regardless of which event triggered the run.
+# The pull_request path is untouched — same fields, same source (github.event.pull_request.*).
+#
+# DOCS_REPO_READ_TOKEN should be a fine-grained PAT or GitHub-App token with
+# `Pull requests: read` on zeroroot-ai/docs. Stored as an organization-level
+# secret so every repo's workflow can read it. If absent, the workflow falls
+# back to URL-syntax-only validation and emits a loud warning — the gate is
+# weaker but the workflow still runs.
+#
+# Required check name: architectural-doc-coverage (declared in the calling
+# workflow's job id).
+#
+# Rationale + design notes:
+#   docs/README.md + docs/CONTEXT-MAP.md in zeroroot-ai/docs.
+
+name: architectural-doc-coverage
+
+on:
+  workflow_call:
+    secrets:
+      DOCS_REPO_READ_TOKEN:
+        description: "PAT/App token with pull_requests:read on zeroroot-ai/docs"
+        required: false
+
+permissions:
+  pull-requests: read
+  contents: read
+
+jobs:
+  architectural-doc-coverage:
+    name: architectural-doc-coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve merge_group PR context
+        # merge_group runs have no `pull_request` object in the event payload
+        # — there is no PR number field at all. It is embedded in head_ref as
+        # `refs/heads/gh-readonly-queue/<base>/pr-<N>-<sha>`; parse it out and
+        # resolve author/title/head-ref-name via `gh pr view` so the steps
+        # below have the same fields available under both trigger types.
+        # No-op (skipped) on pull_request — those steps read
+        # github.event.pull_request.* directly, unchanged.
+        if: github.event_name == 'merge_group'
+        id: mg
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          NUM=$(printf '%s' "$HEAD_REF" | grep -oE 'pr-[0-9]+-' | grep -oE '[0-9]+' | head -1)
+          if [ -z "$NUM" ]; then
+            echo "::error::could not parse a PR number out of merge_group head_ref '$HEAD_REF'"
+            exit 1
+          fi
+
+          AUTHOR=$(gh pr view "$NUM" --repo "$REPO" --json author --jq .author.login)
+          TITLE=$(gh pr view "$NUM" --repo "$REPO" --json title --jq .title)
+          HEAD_REF_NAME=$(gh pr view "$NUM" --repo "$REPO" --json headRefName --jq .headRefName)
+          {
+            echo "number=$NUM"
+            echo "author=$AUTHOR"
+            echo "title=$TITLE"
+            echo "head_ref_name=$HEAD_REF_NAME"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Bypass for automated PRs (Dependabot, release-please)
+        # Two classes of automated PRs are exempt from the Docs-PR trailer
+        # requirement:
+        #
+        # 1. Dependabot — pure dependency-bump PRs that never touch
+        #    architectural invariants. Dependabot generates the PR body and
+        #    cannot include a Docs-PR: trailer.
+        #
+        # 2. release-please — release PRs bundle already-merged commits, each
+        #    of which passed this gate at original-merge time. The branch
+        #    follows the `release-please--branches--*` pattern and the PR body
+        #    contains release-notes Markdown, never a Docs-PR: trailer.
+        #
+        # Per-repo structural checks (pr-title-lint, build, test, etc.) still
+        # run for both classes — only the doc-coverage gate is skipped here.
+        id: bypass
+        env:
+          ACTOR: ${{ github.actor }}
+          PR_USER: ${{ github.event_name == 'merge_group' && steps.mg.outputs.author || github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.event_name == 'merge_group' && steps.mg.outputs.head_ref_name || github.event.pull_request.head.ref }}
+          PR_TITLE: ${{ github.event_name == 'merge_group' && steps.mg.outputs.title || github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          # 1. Dependabot check (actor or PR author).
+          if [ "$ACTOR" = "dependabot[bot]" ] || [ "$PR_USER" = "dependabot[bot]" ]; then
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dependabot PR detected (actor='$ACTOR', user='$PR_USER') — bypassing architectural-doc-coverage gate."
+            exit 0
+          fi
+          # 2. release-please branch-name check. Both modern
+          # (release-please--branches--<base>--components--<pkg>) and the
+          # legacy single-package shape (release-please--branches--<base>).
+          if printf '%s' "$HEAD_REF" | grep -qE '^release-please--'; then
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release-please PR detected via head ref '$HEAD_REF' — bypassing architectural-doc-coverage gate."
+            exit 0
+          fi
+          # 3. Fallback: title-pattern match. release-please's default title
+          # is `chore(main): release <pkg> <ver>` or `chore: release main`.
+          if printf '%s' "$PR_TITLE" | grep -qE '^chore(\([^)]+\))?: release'; then
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release-please PR detected via title '$PR_TITLE' — bypassing architectural-doc-coverage gate."
+            exit 0
+          fi
+          echo "matched=false" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve PR body
+        if: steps.bypass.outputs.matched != 'true'
+        id: body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event_name == 'merge_group' && steps.mg.outputs.number || github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Persist for later steps via the env-file mechanism (handles
+          # arbitrary body content — including backticks, $(...), etc. — by
+          # NEVER interpolating it into a shell template).
+          {
+            echo 'body<<__EOF__'
+            gh pr view "$PR_NUMBER" --repo "$PR_REPO" --json body --jq .body
+            echo '__EOF__'
+          } >> "$GITHUB_ENV"
+
+      - name: "Check for Docs-PR not-applicable escape hatch"
+        if: steps.bypass.outputs.matched != 'true'
+        id: na
+        run: |
+          set -euo pipefail
+          # SECURITY: read the body via the shell env var, never via the
+          # workflow template engine. Template references to PR-body-derived
+          # variables get substituted (even inside bash comments!) before the
+          # shell sees them, which expands the multi-line body inline and
+          # breaks the script.
+          if printf '%s\n' "$body" | grep -qE '^Docs-PR: not-applicable: .+'; then
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            echo "PR uses the not-applicable escape hatch — pass."
+            echo "Reviewer note: confirm this is genuinely a cosmetic/mechanical fix."
+          else
+            echo "matched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract Docs-PR URL
+        id: extract
+        if: steps.bypass.outputs.matched != 'true' && steps.na.outputs.matched != 'true'
+        run: |
+          set -euo pipefail
+          # Match: Docs-PR: https://github.com/zeroroot-ai/<docs|docs-site>/pull/<N>
+          # docs-site is the canonical home for contributor procedures
+          # (docs ADR-0067, 2026-08-24); docs holds architecture + ADRs.
+          # $body comes from $GITHUB_ENV — never template-substituted.
+          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zeroroot-ai/(docs|docs-site)/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
+          if [ -z "$URL" ]; then
+            cat <<EOF >&2
+
+          ❌ architectural-doc-coverage failed
+
+          This PR's body has no \`Docs-PR:\` trailer.
+
+          Every fix in this workspace must either:
+              (a) Reference a companion PR on zeroroot-ai/docs-site
+                  (contributor-facing documentation). Add this trailer:
+
+                      Docs-PR: https://github.com/zeroroot-ai/docs-site/pull/<N>
+
+                  NOTE: zeroroot-ai/docs was DELETED on 2026-09-05 and is now
+                  local-only. Architecture notes, ADRs, edge cases and repo
+                  docs live there and have no PR to link, so for those use (b)
+                  and name the local file you updated.
+
+            (b) Explicitly opt out for cosmetic/mechanical fixes:
+
+                    Docs-PR: not-applicable: <one-sentence why>
+
+          The intent is convergence: every cycle leaves a durable artifact
+          future agents can read before falling into the same trap.
+
+          See workspace CLAUDE.md → "Close the loop with documentation".
+          EOF
+            exit 1
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          NUM=$(echo "$URL" | sed -E 's|.*/pull/([0-9]+)$|\1|')
+          echo "num=$NUM" >> "$GITHUB_OUTPUT"
+          DOCS_REPO=$(echo "$URL" | sed -E 's|https://github\.com/zeroroot-ai/([^/]+)/pull/.*|\1|')
+          echo "repo=$DOCS_REPO" >> "$GITHUB_OUTPUT"
+
+      - name: Verify docs PR exists and is open or merged
+        if: steps.bypass.outputs.matched != 'true' && steps.na.outputs.matched != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN || github.token }}
+          TOKEN_CONFIGURED: ${{ secrets.DOCS_REPO_READ_TOKEN != '' }}
+          NUM: ${{ steps.extract.outputs.num }}
+          URL: ${{ steps.extract.outputs.url }}
+          DOCS_REPO: ${{ steps.extract.outputs.repo }}
+        run: |
+          set -euo pipefail
+          # All inputs come from env vars. Never template-substitute into the
+          # script source — see the equivalent comment in the body-resolution
+          # step for the failure mode this avoids.
+
+          if [ "$TOKEN_CONFIGURED" != "true" ]; then
+            echo "::warning::DOCS_REPO_READ_TOKEN is not configured. Falling back to URL-syntax validation only — the docs PR's existence is not verified."
+            echo "::warning::To strengthen this gate, set the DOCS_REPO_READ_TOKEN org-level secret with pull_requests:read on zeroroot-ai/docs."
+            echo "Docs-PR URL is syntactically valid: $URL"
+            exit 0
+          fi
+
+          STATE=$(gh pr view "$NUM" --repo "zeroroot-ai/$DOCS_REPO" --json state --jq .state 2>/dev/null || echo "MISSING")
+          IS_DRAFT=$(gh pr view "$NUM" --repo "zeroroot-ai/$DOCS_REPO" --json isDraft --jq .isDraft 2>/dev/null || echo "true")
+
+          case "$STATE" in
+            OPEN|MERGED)
+              if [ "$IS_DRAFT" = "true" ]; then
+                echo "❌ Docs-PR ${URL} is in DRAFT state."
+                echo "Mark it ready-for-review before merging this PR (CLAUDE.md forbids draft PRs)."
+                exit 1
+              fi
+              echo "✅ Docs-PR ${URL} is ${STATE}; doc-coverage gate satisfied."
+              ;;
+            MISSING)
+              echo "❌ Docs-PR ${URL} could not be resolved on zeroroot-ai/docs."
+              echo "Either the URL is wrong, the PR was deleted, or DOCS_REPO_READ_TOKEN lacks pull_requests:read."
+              exit 1
+              ;;
+            CLOSED)
+              echo "❌ Docs-PR ${URL} is CLOSED without merge."
+              echo "Reopen it or open a new docs PR and update this trailer."
+              exit 1
+              ;;
+            *)
+              echo "❌ Unexpected Docs-PR state: ${STATE}"
+              exit 1
+              ;;
+          esac

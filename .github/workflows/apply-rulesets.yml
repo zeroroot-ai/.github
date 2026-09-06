@@ -1,0 +1,200 @@
+# Applies org-level and repo-level rulesets from rulesets/*.json.
+#
+# Triggers:
+#   - push to main on rulesets/**.json or this workflow
+#   - workflow_dispatch (manual reapply)
+#
+# Auth: requires a PAT in secret RULESET_APPLY_TOKEN with org-admin and
+# repo-admin perms across all 12 zeroroot-ai/* repos. The default
+# GITHUB_TOKEN cannot manage org-level rulesets or cross-repo rulesets.
+#
+# Plan requirement: GitHub Team for org rulesets, GitHub Pro for branch
+# rulesets on private repos. Public repos work on Free plan.
+#
+# Idempotency: each ruleset JSON file has a `name` field; the script looks
+# up an existing ruleset by name before deciding POST vs PUT. Re-running
+# the workflow on unchanged files is a no-op.
+#
+# Reconcile (.github#259): repo-level rulesets are create-or-update ONLY by
+# name — a repo rename (gibson-tool-runner -> gibson-executor) that also
+# renames the ruleset (gibson-tool-runner-required-checks ->
+# gibson-executor-required-checks, per the `-required-checks` convention
+# every rulesets/repo/*.json file uses) orphans the old name forever: it's
+# no longer referenced by any file, so this loop never touches it again,
+# and `gh ruleset list` on that repo shows two rulesets where one is
+# expected. The `apply-repo-rulesets` job now also deletes any OTHER
+# ruleset on the same live repo whose name matches the `*-required-checks`
+# convention but isn't the name the current file expects. Scoped to that
+# naming convention specifically so a manually created, differently-named
+# ruleset is never touched by this reconcile step.
+#
+# Error handling: each apply step is wrapped in `set +e` so one repo's
+# failure (e.g. API plan-gate) doesn't block the others. Failures are
+# tallied and the job exits non-zero only if any apply failed.
+#
+# Gotcha -- emergency live edits diverge from this directory until the next
+# push-triggered run: an emergency `gh api --method PUT
+# repos/<org>/<repo>/rulesets/<id>` edit straight against a live ruleset
+# (e.g. stripping `required_status_checks` to unblock a frozen merge queue,
+# per epic cicd-efficiency board #44) bypasses this workflow entirely, so the
+# live ruleset silently drifts from the committed `rulesets/*.json` it was
+# generated from. The committed file is NOT touched by that kind of
+# emergency edit and may already be correct/unchanged. To force a resync
+# once the underlying issue is fixed, land any commit that touches the
+# affected `rulesets/*.json` path (even a no-op formatting change, or a
+# touch to this workflow file itself, since it's also in the paths filter
+# above) on `main` -- the push trigger reapplies every file's current
+# committed content via PUT, restoring live state to match source of truth.
+# `gh workflow run apply-rulesets.yml -R zeroroot-ai/.github` (manual
+# workflow_dispatch) does the same without waiting for a push.
+
+name: apply-rulesets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rulesets/**.json'
+      - '.github/workflows/apply-rulesets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply-org-rulesets:
+    name: Apply org-level rulesets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Apply each org ruleset
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          failures=0
+          for f in rulesets/org/*.json; do
+            name=$(jq -r '.name' "$f")
+            echo "::group::Org ruleset: $name (from $f)"
+            # List existing rulesets; if the call fails (plan gate, perm), skip lookup.
+            list_out=$(gh api /orgs/zeroroot-ai/rulesets 2>&1) || true
+            existing_id=""
+            if echo "$list_out" | jq -e 'type == "array"' >/dev/null 2>&1; then
+              existing_id=$(echo "$list_out" | jq -r ".[] | select(.name == \"$name\") | .id" | head -1)
+            else
+              echo "::warning::Could not list rulesets (response: $(echo "$list_out" | head -3 | tr '\n' ' '))"
+            fi
+            if [[ "$existing_id" =~ ^[0-9]+$ ]]; then
+              echo "Updating existing ruleset id=$existing_id"
+              if ! gh api --method PUT "/orgs/zeroroot-ai/rulesets/$existing_id" --input "$f"; then
+                echo "::error::Failed to update org ruleset $name"
+                failures=$((failures+1))
+              fi
+            else
+              echo "Creating new ruleset"
+              if ! gh api --method POST "/orgs/zeroroot-ai/rulesets" --input "$f"; then
+                echo "::error::Failed to create org ruleset $name (likely needs GitHub Team plan)"
+                failures=$((failures+1))
+              fi
+            fi
+            echo "::endgroup::"
+          done
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::$failures org ruleset(s) failed to apply"
+            exit 1
+          fi
+
+  apply-repo-rulesets:
+    name: Apply repo-level rulesets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Apply each repo ruleset
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          failures=0
+          for f in rulesets/repo/*.json; do
+            repo=$(basename "$f" .json)
+            name=$(jq -r '.name' "$f")
+            echo "::group::Repo ruleset: $repo / $name (from $f)"
+            list_out=$(gh api "/repos/zeroroot-ai/$repo/rulesets" 2>&1) || true
+            existing_id=""
+            if echo "$list_out" | jq -e 'type == "array"' >/dev/null 2>&1; then
+              existing_id=$(echo "$list_out" | jq -r ".[] | select(.name == \"$name\") | .id" | head -1)
+            else
+              echo "::warning::Could not list rulesets for $repo (likely needs GitHub Pro for private repos): $(echo "$list_out" | head -3 | tr '\n' ' ')"
+            fi
+            if [[ "$existing_id" =~ ^[0-9]+$ ]]; then
+              echo "Updating existing ruleset id=$existing_id"
+              if ! gh api --method PUT "/repos/zeroroot-ai/$repo/rulesets/$existing_id" --input "$f"; then
+                echo "::error::Failed to update repo ruleset $repo/$name"
+                failures=$((failures+1))
+              fi
+            else
+              echo "Creating new ruleset"
+              if ! gh api --method POST "/repos/zeroroot-ai/$repo/rulesets" --input "$f"; then
+                echo "::error::Failed to create repo ruleset $repo/$name (likely needs GitHub Pro for private repos)"
+                failures=$((failures+1))
+              fi
+            fi
+            echo "::endgroup::"
+
+            # Reconcile (.github#259): a repo rename (gibson-tool-runner ->
+            # gibson-executor) left a same-repo, differently-named ruleset
+            # live forever, because this loop only ever creates-or-updates
+            # the name in $f -- it never notices an orphan. Delete any OTHER
+            # ruleset on this repo that matches our managed naming
+            # convention (`*-required-checks`) but isn't the name this file
+            # currently expects. Scoped to the convention so a manually
+            # created, differently-named ruleset is never touched.
+            echo "::group::Reconcile stale managed rulesets: $repo"
+            if echo "$list_out" | jq -e 'type == "array"' >/dev/null 2>&1; then
+              # Process substitution, not a trailing pipe: a `| while` here
+              # would run the loop in a subshell, silently discarding
+              # `failures` increments on delete failure.
+              while IFS=$'\t' read -r stale_id stale_name; do
+                [ -z "$stale_id" ] && continue
+                echo "Deleting stale managed ruleset: $repo/$stale_name (id=$stale_id, superseded by $name)"
+                if ! gh api --method DELETE "/repos/zeroroot-ai/$repo/rulesets/$stale_id"; then
+                  echo "::error::Failed to delete stale ruleset $repo/$stale_name"
+                  failures=$((failures+1))
+                fi
+              done < <(echo "$list_out" | jq -r --arg expect "$name" \
+                '.[] | select(.name != $expect) | select(.name | endswith("-required-checks")) | "\(.id)\t\(.name)"')
+            fi
+            echo "::endgroup::"
+          done
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::$failures repo ruleset(s) failed to apply"
+            exit 1
+          fi
+
+  # ---- did the apply actually take? (.github#264) ----
+  # Every apply step above is wrapped so one repo's plan-gate failure doesn't
+  # block the others, and the "could not list rulesets" branch is only a
+  # ::warning::. That is deliberate, but it means this workflow can finish
+  # green having changed nothing at all on some repo. This job re-reads live
+  # state and compares it back against the files, so "apply-rulesets is green"
+  # means "live matches the files" rather than "the API calls returned".
+  #
+  # Separate job with `needs:` on both appliers so it sees the end state, and
+  # `if: always()` so it still reports when an applier failed -- that is
+  # precisely when you most want to know which repos did and did not take.
+  verify-applied:
+    name: Verify live matches committed
+    needs: [apply-org-rulesets, apply-repo-rulesets]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Compare live rulesets against rulesets/{org,repo}/*.json
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-ruleset-drift.sh

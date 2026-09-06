@@ -1,0 +1,292 @@
+name: Reusable Node CI (tiered)
+
+# Canonical three-tier Node/pnpm CI for every Node repo in the workspace.
+# Epic: cicd-efficiency (board #44), slice S11a (dashboard#940). See
+# docs/architecture/CICD-CONTEXT.md decisions 4/8/11 and docs/adr/0060-*.
+# Mirrors reusable-go-ci.yml's tier split 1:1 -- same rationale applies
+# (per-push double-firing of the full suite on both `pull_request` and
+# `push:main` was the dominant per-repo minute cost).
+#
+# ONE reusable, called with a `tier` that maps to the caller's trigger:
+#
+#   pull_request  -> tier: fast   (quick contributor signal: typecheck,
+#                                 lint, vitest unit tests. No build.)
+#   merge_group   -> tier: heavy  (authoritative gate: `pnpm build`, which
+#                                 runs the full `prebuild` policy-guard
+#                                 chain -- security-lint, CSP, no-store-
+#                                 clients, no-direct-daemon-grpc, the AST
+#                                 checks (`test:ast-checks`), knip, and
+#                                 every other check wired into the
+#                                 `prebuild` npm script -- plus `next build`
+#                                 itself and the `postbuild` secret-leak
+#                                 guards. `test:ast-checks` is NOT run again
+#                                 as a separate step: it is already the
+#                                 second-to-last command in `prebuild`, so a
+#                                 standalone re-run would just repeat work
+#                                 the build already did.)
+#
+# Callers pin a RELEASE TAG, never @main (ADR-0060 blast-radius):
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-node-ci.yml@v2
+#
+# CALLER PERMISSIONS CONTRACT: the node-ci job requests `packages: read`
+# (GitHub Packages, #240). A private-repo caller whose workflow grants only
+# `contents: read` fails validation as a JOBLESS startup_failure — no error
+# text anywhere in the UI or API (observed on zerocool-plugins#30 and
+# sdk-ts#10, 2026-08-13). Callers must grant at least:
+#   permissions:
+#     contents: read
+#     packages: read
+#
+# Sibling-repo-dependent generators (plans.ts, stripe_gen.ts, the authz
+# registry, the RBAC helm-template check) cannot run in a single-repo
+# checkout -- there is no polyrepo sibling on disk. Callers whose `prebuild`
+# chain includes those generators must set `skip-sibling-generators: true`
+# so this reusable exports the same SKIP_* env vars the org's Dockerfiles
+# already use to trust the committed generated files and defer freshness
+# drift-checking to the workstation / a full polyrepo CI run. Scripts that
+# already self-degrade to a "structural" check when their sibling is absent
+# (mission-schema, cli-reference, templates) need no such flag and keep
+# running for real, just in reduced mode.
+
+on:
+  workflow_call:
+    inputs:
+      tier:
+        description: "fast (pull_request) | heavy (merge_group)"
+        type: string
+        required: true
+      node-version-file:
+        description: "File setup-node reads the Node version from (.nvmrc, .node-version, .tool-versions, package.json)"
+        type: string
+        required: false
+        default: ".tool-versions"
+      pnpm-version:
+        description: "pnpm major/minor to install via pnpm/action-setup"
+        type: string
+        required: false
+        default: "10"
+      working-directory:
+        description: "Path to the Node project root (default: repo root)"
+        type: string
+        required: false
+        default: "."
+      skip-sibling-generators:
+        description: >-
+          Export the SKIP_GEN_PLANS / SKIP_PLANS_FRESH_CHECK /
+          SKIP_GEN_STRIPE_TIERS / SKIP_STRIPE_TIERS_FRESH_CHECK /
+          SKIP_GEN_AUTHZ_REGISTRY / SKIP_AUTHZ_REGISTRY_CHECK /
+          SKIP_DASHBOARD_RBAC_CHECK env vars (heavy tier only) so `pnpm
+          build` trusts the committed generated files instead of trying to
+          read a polyrepo sibling that a single-repo checkout doesn't have.
+          Matches the pattern the org's Dockerfiles already use.
+        type: boolean
+        required: false
+        default: false
+      private-git-deps:
+        description: >-
+          Configure SSH auth before install for callers whose lockfile
+          resolves a git+ssh:// dependency on a private zeroroot-ai sibling
+          (e.g. zerocool-plugins -> sdk-ts). Requires the git-ssh-key
+          secret: a READ-ONLY deploy key on the dependency repo, stored as
+          a repo secret on the caller. Mirrors reusable-go-ci.yml's
+          private-modules/gh-pat seam, but keyed to git-over-SSH because
+          pnpm fetches git dependencies with the specifier's own protocol.
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      git-ssh-key:
+        description: "Private half of a read-only deploy key on the git-dependency repo (required when private-git-deps: true)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  node-ci:
+    name: node-ci (${{ inputs.tier }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.tier == 'heavy' && 20 || 10 }}
+    # Job-level permissions, not the workflow-root block above: a root-level
+    # `permissions:` combined with a cross-repository workflow_call caused a
+    # startup_failure with zero jobs created (observed on
+    # zeroroot-ai/dashboard#1030 immediately after #238 added `packages:
+    # read` at the root — reverted here). reusable-image-build.yml already
+    # grants its buildx job packages access this same way
+    # (jobs.build-and-push.permissions), which is the pattern GitHub
+    # documents as supported for workflow_call. `packages: read` is needed
+    # so the pnpm/npm install steps' GITHUB_TOKEN can read org-internal-
+    # visibility GitHub Packages (npm.pkg.github.com) — NODE_AUTH_TOKEN alone
+    # (#237) authenticates the request but the token still needs the scope.
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    # Build-time placeholders for modules that validate env vars at import
+    # time (mirrors the Dockerfile's build stage). Real values come from
+    # K8s secrets at runtime; `pnpm build` never ships these into the image.
+    env:
+      AUTH_SECRET: build-placeholder
+      NEXTAUTH_SECRET: build-placeholder
+      DATABASE_URL: postgresql://build:build@localhost:5432/build
+      SKIP_GEN_PLANS: ${{ inputs.skip-sibling-generators && '1' || '' }}
+      SKIP_PLANS_FRESH_CHECK: ${{ inputs.skip-sibling-generators && '1' || '' }}
+      SKIP_GEN_STRIPE_TIERS: ${{ inputs.skip-sibling-generators && '1' || '' }}
+      SKIP_STRIPE_TIERS_FRESH_CHECK: ${{ inputs.skip-sibling-generators && '1' || '' }}
+      SKIP_GEN_AUTHZ_REGISTRY: ${{ inputs.skip-sibling-generators && '1' || '' }}
+      SKIP_AUTHZ_REGISTRY_CHECK: ${{ inputs.skip-sibling-generators && '1' || '' }}
+      SKIP_DASHBOARD_RBAC_CHECK: ${{ inputs.skip-sibling-generators && '1' || '' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # ---- secret scan of the tree (attic#18) ----
+      # Runs on the checkout before anything is installed, so node_modules and
+      # build outputs are never in scope. Pinned by version AND sha256, no
+      # marketplace action. A repo-local .gitleaks.toml (which should
+      # `[extend] useDefault = true`) is honoured when present; fixtures that
+      # must look like a credential carry a same-line `gitleaks:allow` comment,
+      # so the allowlist is keyed by content, never by line number.
+      # BEGIN-GITLEAKS-PIN
+      - name: gitleaks (secret scan of the tree)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          curl -sSfL -o /tmp/gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c - >/dev/null
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          cfg=(); [ -f .gitleaks.toml ] && cfg=(-c .gitleaks.toml)
+          /tmp/gitleaks dir . --no-banner --redact --exit-code 1 "${cfg[@]}"
+      # END-GITLEAKS-PIN
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: ${{ inputs.pnpm-version }}
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: ${{ inputs.working-directory }}/${{ inputs.node-version-file }}
+          cache: pnpm
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+      - name: Authenticate pnpm to GitHub Packages (user-level ~/.npmrc)
+        # pnpm v10 refuses to expand ${NODE_AUTH_TOKEN} referenced from a
+        # COMMITTED project .npmrc (it could leak the token to an attacker-
+        # controlled registry), so the install step's NODE_AUTH_TOKEN env is
+        # silently ignored and npm.pkg.github.com 401s (dashboard#1030,
+        # @zeroroot-ai/brand). Writing the credential to the user-level
+        # ~/.npmrc — which pnpm trusts for env expansion — is pnpm's own
+        # documented fix. Harmless for callers with no GitHub-Packages
+        # dependency: the line is simply never used.
+        run: printf '//npm.pkg.github.com/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+
+      # Private git-dependency auth MUST be configured before install --
+      # pnpm clones git+ssh:// dependencies during `pnpm install`. A deploy
+      # key is the least-privilege credential GitHub offers for this: it
+      # grants read on exactly one repository, to exactly this caller's CI.
+      - name: Configure private git dependency access (deploy key)
+        if: ${{ inputs.private-git-deps }}
+        env:
+          GIT_SSH_KEY: ${{ secrets.git-ssh-key }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GIT_SSH_KEY:-}" ]; then
+            echo "::error::private-git-deps: true but the git-ssh-key secret is empty"; exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$GIT_SSH_KEY" > "$HOME/.ssh/private_dep_key"
+          chmod 600 "$HOME/.ssh/private_dep_key"
+          ssh-keyscan -t ed25519,ecdsa,rsa github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          git config --global core.sshCommand "ssh -i $HOME/.ssh/private_dep_key -o IdentitiesOnly=yes"
+
+      - name: pnpm install (frozen lockfile)
+        env:
+          # Same reasoning as the npm ci step below: a repo-level .npmrc may
+          # reference ${NODE_AUTH_TOKEN} for the GitHub Packages registry.
+          # pnpm does not hard-fail when it's unset (unlike npm), it just
+          # warns "Failed to replace env in config" -- but a real fetch from
+          # npm.pkg.github.com then 401s, because the unresolved
+          # _authToken=${NODE_AUTH_TOKEN} line sends no credential at all.
+          # This was invisible until a caller repo had a real GitHub-Packages
+          # pnpm dependency (dashboard#1030, @zeroroot-ai/brand) -- every
+          # prior caller's pnpm-lock.yaml had nothing to fetch from that
+          # registry, so the missing token silently never mattered.
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: pnpm install --frozen-lockfile
+
+      # ---- FAST tier (pull_request): quick contributor signal ----
+      - name: typecheck
+        if: ${{ inputs.tier == 'fast' }}
+        run: pnpm typecheck
+
+      - name: lint
+        if: ${{ inputs.tier == 'fast' }}
+        run: pnpm lint
+
+      - name: unit tests (vitest)
+        if: ${{ inputs.tier == 'fast' }}
+        run: pnpm test -- --run
+
+      # ---- HEAVY tier (merge_group): authoritative gate before landing ----
+      # The build runs `next build`, gated by the `prebuild` npm hook (every
+      # policy-guard script, including `test:ast-checks` and `knip`) and
+      # followed by the `postbuild` secret-leak guards. NEVER disable any
+      # guard in that chain to make this step pass -- fix the underlying
+      # violation instead.
+      #
+      # Lockfile parity (dashboard#949 unwedge, vercel/next.js#67998 /
+      # #86390): a DUAL-lockfile repo (package-lock.json alongside
+      # pnpm-lock.yaml) ships its container image via `npm ci` +
+      # package-lock.json -- a flat node_modules. Turbopack's `next build`
+      # currently emits broken references to
+      # next/dist/server/route-modules/app-route/vendored/contexts/* under
+      # pnpm's symlinked layout whenever a route handler transitively imports
+      # `next/navigation` (next-auth does), while the identical build is
+      # green under the npm flat layout the Dockerfile uses. The
+      # authoritative merge gate must build the way the product builds, so
+      # when the repo carries a package-lock.json the heavy build
+      # installs+builds via npm, mirroring the Dockerfile exactly
+      # (`npm ci --ignore-scripts --legacy-peer-deps` + `npm run build`,
+      # which runs the same prebuild/postbuild hook chain). Single-lockfile
+      # (pnpm-only) repos keep `pnpm build`. Revisit when the upstream
+      # Turbopack bug is fixed.
+      - name: detect dual-lockfile (npm-built image repo)
+        if: ${{ inputs.tier == 'heavy' }}
+        id: lockfiles
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "npm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "npm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: build (prebuild guard chain + next build + postbuild guards)
+        if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm != 'true' }}
+        run: pnpm build
+
+      - name: npm ci (Dockerfile-parity flat layout)
+        if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm == 'true' }}
+        env:
+          # A repo-level .npmrc may reference ${NODE_AUTH_TOKEN} for the
+          # GitHub Packages registry; npm (unlike pnpm) hard-fails when the
+          # env var is unset even if no scoped package is installed. The
+          # workflow token satisfies the reference; repos with real GitHub
+          # Packages deps get read access via the installation token.
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf node_modules
+          npm ci --ignore-scripts --legacy-peer-deps
+          # Dockerfile parity: extract native binaries for packages that
+          # need a per-arch rebuild after --ignore-scripts.
+          if [ -d node_modules/lightningcss ]; then npm rebuild lightningcss; fi
+
+      - name: build (prebuild guard chain + next build + postbuild guards, npm)
+        if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm == 'true' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm run build

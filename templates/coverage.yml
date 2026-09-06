@@ -1,0 +1,18 @@
+# Per-repo coverage gate config (slice 5.5).
+# Copy to repo root; the reusable test workflow runs scripts/coverage-compare.sh
+# against this config + the generated coverage.out.
+
+coverage:
+  floor: 0.60
+  tolerance: 0.005   # 0.5pp slack on per-package floor comparison
+  exclude:
+    - "**/*.pb.go"
+    - "**/*_grpc.pb.go"
+    - "**/zz_generated*.go"
+    # Test helpers + startup wiring exempt from floor
+    - "internal/testing/**"
+    - "cmd/**"
+
+delta:
+  per-pr: 0.0
+  tolerance: 0.005   # 0.5pp slack on delta comparison

@@ -1,0 +1,248 @@
+name: Reusable Go CI (tiered)
+
+# Canonical three-tier Go CI for every Go repo in the workspace.
+# Epic: cicd-efficiency (board #44), slice S2 (gibson#1128). See
+# docs/architecture/CICD-CONTEXT.md and docs/adr/0060-*.
+#
+# ONE reusable, called with a `tier` that maps to the caller's trigger:
+#
+#   pull_request  -> tier: fast   (quick contributor signal; no images, no race)
+#   merge_group   -> tier: heavy  (authoritative gate; race + coverage + govulncheck)
+#
+# The old all-in-one reusable-go-check ran every step on every call; splitting
+# by tier is what removes the per-push redundancy that dominated the bill.
+#
+# The heavy tier is TWO jobs, `go-ci` (race) and `govulncheck`, not one. They
+# used to be one job, and that job sat at the edge of its runtime: 12 minutes
+# on a normal day, more than 25 on a slow one. On 2026-09-01 hosted runners ran
+# at half speed for a whole afternoon, every heavy job in the gibson merge
+# queue died at the 25-minute mark, and the queue could not land anything.
+# A gate that only passes on a fast day is a defect in the gate. Two jobs run
+# in parallel and each stays inside a 15-minute envelope on a slow runner.
+#
+# Callers pin a RELEASE TAG, never @main (ADR-0060 blast-radius):
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-go-ci.yml@v2
+#
+# Every first-party module is public: the Go toolchain resolves it through
+# proxy.golang.org and sum.golang.org like any other dependency.
+
+on:
+  workflow_call:
+    inputs:
+      tier:
+        description: "fast (pull_request) | heavy (merge_group)"
+        type: string
+        required: true
+      go-mod-path:
+        description: "Path to the module root (default: repo root)"
+        type: string
+        required: false
+        default: ""
+      build-tags:
+        description: "Comma-separated build tags for build/test (e.g. setec_integration)"
+        type: string
+        required: false
+        default: ""
+      golangci-config:
+        description: "Path to .golangci.yml (default: auto-discover)"
+        type: string
+        required: false
+        default: ""
+      skip-lint:
+        description: "Skip golangci-lint (repos not yet on the shared lint baseline)"
+        type: boolean
+        required: false
+        default: false
+      vuln-severity:
+        description: "Minimum severity to fail govulncheck (heavy tier only)"
+        type: string
+        required: false
+        default: "MEDIUM"
+      vuln-allowlist:
+        description: >
+          Path, relative to go-mod-path, of a govulncheck allowlist file. When
+          empty (the default) govulncheck runs exactly as before and ANY finding
+          fails the build. When set, listed advisories are tolerated until their
+          stated expiry — see the caller's file for the format. An entry that has
+          expired, or that no longer matches a real finding, FAILS the build:
+          an exemption that outlives its reason is worse than none, because it
+          reads as reviewed.
+        type: string
+        required: false
+        default: ""
+permissions:
+  contents: read
+
+jobs:
+  go-ci:
+    name: go-ci (${{ inputs.tier }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.tier == 'heavy' && 30 || 15 }}
+    env:
+      # Build tags flow to both build and test so the fast compile-check and the
+      # heavy race run exercise the same variant the images ship.
+      GOFLAGS: ${{ inputs.build-tags != '' && format('-tags={0}', inputs.build-tags) || '' }}
+      # PIPE, not comma. Go's default is `https://proxy.golang.org,direct`, and
+      # with a COMMA the fallback engages only on 404/410 — a transport error is
+      # fatal. So an HTTP/2 stream reset from the proxy fails the whole job with
+      #
+      #   read "https://proxy.golang.org/<mod>/@v/<ver>.zip": stream error:
+      #   stream ID 191; INTERNAL_ERROR; received from peer
+      #
+      # which Go reports once per importing file, so it reads like a broken
+      # build rather than a failed download.
+      #
+      # On 2026-08-20 this evicted gibson#1493 and its release PR from the merge
+      # queue repeatedly. It is NOT a broad outage: the setup-go cache hit, 274
+      # modules downloaded fine in the same job, and exactly ONE module failed
+      # per run — a different one each time, all small and all fetchable from a
+      # workstation in ~0.15s.
+      #
+      # The cause of the resets is not established, and this does not claim to
+      # fix it. It removes the part that is ours: one module's transport failure
+      # should not be fatal when that module is fetchable from its origin. A
+      # PIPE falls through on ANY error, so Go fetches it directly and the job
+      # proceeds. No second proxy is added on purpose — `direct` introduces no
+      # new trusted party, and GOSUMDB verifies every module against
+      # sum.golang.org either way.
+      GOPROXY: https://proxy.golang.org|direct
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # ---- secret scan of the tree (attic#18) ----
+      # Runs on the checkout before anything is installed, so node_modules and
+      # build outputs are never in scope. Pinned by version AND sha256, no
+      # marketplace action. A repo-local .gitleaks.toml (which should
+      # `[extend] useDefault = true`) is honoured when present; fixtures that
+      # must look like a credential carry a same-line `gitleaks:allow` comment,
+      # so the allowlist is keyed by content, never by line number.
+      # BEGIN-GITLEAKS-PIN
+      - name: gitleaks (secret scan of the tree)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          curl -sSfL -o /tmp/gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c - >/dev/null
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+          cfg=(); [ -f .gitleaks.toml ] && cfg=(-c .gitleaks.toml)
+          /tmp/gitleaks dir . --no-banner --redact --exit-code 1 "${cfg[@]}"
+      # END-GITLEAKS-PIN
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}
+          cache: true
+
+      # ---- FAST tier (pull_request): quick signal, no race, no images ----
+      - name: go mod tidy + drift check
+        if: ${{ inputs.tier == 'fast' }}
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go mod tidy
+          git diff --exit-code go.mod
+          test ! -f go.sum || git diff --exit-code go.sum
+
+      - name: go vet
+        if: ${{ inputs.tier == 'fast' }}
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go vet ./...
+
+      - name: golangci-lint
+        if: ${{ inputs.tier == 'fast' && ! inputs.skip-lint }}
+        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.5.2
+        with:
+          version: v2.0.2
+          working-directory: ${{ inputs.go-mod-path }}
+          args: --timeout=10m
+
+      - name: go build (compile-check)
+        if: ${{ inputs.tier == 'fast' }}
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go build ./...
+
+      - name: go test (unit, no race)
+        if: ${{ inputs.tier == 'fast' }}
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go test ./...
+
+      # ---- HEAVY tier (merge_group): authoritative gate before landing ----
+      - name: go test (race)
+        if: ${{ inputs.tier == 'heavy' }}
+        run: |
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go test -race ./...
+
+  # ---- HEAVY tier, second leg: govulncheck in its own job ----
+  # Same preamble as go-ci (checkout, private modules, setup-go) so the scan
+  # sees the module exactly as the race run does, including build tags.
+  # `go install govulncheck` plus the scan is a few minutes on a normal runner
+  # and was still downloading modules at the five-minute mark on the slow one,
+  # so the timeout is generous and separate from the race run's.
+  govulncheck:
+    name: govulncheck (${{ inputs.tier }})
+    if: ${{ inputs.tier == 'heavy' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Same two settings as go-ci, for the same reasons; the long-form
+      # rationale lives on that job.
+      GOFLAGS: ${{ inputs.build-tags != '' && format('-tags={0}', inputs.build-tags) || '' }}
+      GOPROXY: https://proxy.golang.org|direct
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: ${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}
+          cache: true
+
+      - name: govulncheck
+        if: ${{ inputs.vuln-allowlist == '' }}
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          govulncheck ./...
+
+      # Same scan, but findings are checked against the caller's allowlist.
+      # Kept as a separate step rather than a branch inside the one above so the
+      # default path is byte-identical to what every other caller runs today.
+      #
+      # The checker is the CALLER'S script, not a copy carried here. A reusable
+      # workflow checks out the caller, so the caller's script is what runs. The
+      # first version of this inlined the logic, and gibson promptly had to write
+      # the same rules a second time for its binary-mode scan in security.yaml —
+      # then one copy got a parser fix the other did not, which cost two merge
+      # queue evictions (gibson#1483). One policy, one implementation.
+      - name: govulncheck (allowlisted)
+        if: ${{ inputs.vuln-allowlist != '' }}
+        env:
+          VULN_ALLOWLIST: ${{ inputs.vuln-allowlist }}
+        run: |
+          set -euo pipefail
+          cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
+          checker=scripts/check-govulncheck-allowlist.py
+          if [ ! -f "$checker" ]; then
+            echo "::error::vuln-allowlist is set but $checker does not exist in this repo." >&2
+            echo "The allowlist policy is implemented by the caller so there is exactly one" >&2
+            echo "copy of it. Add the script, or unset vuln-allowlist to fail on any finding." >&2
+            exit 1
+          fi
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          # govulncheck exits non-zero merely for HAVING findings; the checker
+          # owns the verdict and exits non-zero itself when they are not
+          # tolerated, so this step still fails when it should.
+          govulncheck -format json ./... > /tmp/govulncheck.json || true
+          test -s /tmp/govulncheck.json || {
+            echo "::error::govulncheck produced no output — a failed scan, not a clean one" >&2
+            exit 1
+          }
+          python3 "$checker" "$VULN_ALLOWLIST" /tmp/govulncheck.json

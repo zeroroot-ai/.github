@@ -1,0 +1,175 @@
+name: release-pipeline-health
+
+# Daily audit of the release pipeline across every org repo. Closes the
+# blind spot behind zeroroot-ai/.github#263, where six repos silently
+# stopped releasing and nothing went red.
+#
+# ── The failure mode this detects ────────────────────────────────────────
+# release-please must not run under the default GITHUB_TOKEN (AGENTS.md
+# §9b). When it does, the release PR branch is pushed by
+# `github-actions[bot]` and GitHub refuses to run the PR's CI. The refusal
+# is never red:
+#
+#   1. the `pull_request` runs complete with `conclusion: action_required`
+#      ("waiting for approval") and never execute, or
+#   2. no workflow run is created at all, so the PR has zero check runs.
+#
+# Either way the required contexts stay `expected` for ever, the PR sits
+# BLOCKED, and no alert fires. `gitops` sat unreleased for 45 days that
+# way. Approving the pending runs by hand only clears one head sha; the
+# next push re-gates.
+#
+# ── What is audited ──────────────────────────────────────────────────────
+# A. IDENTITY (static, the root cause). Every repo carrying a
+#    `.github/workflows/release-please.yml` must pass the
+#    release-please-action step an explicit `token:` that is neither
+#    `secrets.GITHUB_TOKEN` nor `github.token`.
+#
+# B. STALL (live, the symptom). Every open `release-please--*` PR must have
+#    zero `action_required` runs on its head sha, and must have check runs
+#    once it is more than a day old.
+#
+# The two halves are both needed: A catches a regression the day it lands,
+# B catches a stall that arrives by any other route (revoked PAT, expired
+# App installation, a required context nobody produces).
+#
+# ── Why this only reports ────────────────────────────────────────────────
+# The violations live in OTHER repos, so failing this repo's job would
+# block work here for drift it cannot fix. It files one tracked issue and
+# closes it again when the org is clean — same contract as
+# makefile-contract.yml and per-repo-claude-md-drift.yml.
+#
+# Daily, not monthly: a stalled release is on the launch-gate critical
+# path, and the whole point is that it is invisible between scans.
+
+on:
+  schedule:
+    - cron: "45 11 * * *"  # daily, 11:45 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/release-pipeline-health.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Audit release-please identity and open release PRs
+        env:
+          # PLATFORM_RO PAT enumerates PRIVATE repos; the default
+          # GITHUB_TOKEN returns only PUBLIC org repos, so the audit would
+          # silently skip every private repo and report a false all-clear
+          # (the .github#170 under-reporting mode). `gitops` is one of the
+          # affected repos AND is private, so this is load-bearing here.
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name')
+
+          # Blind-spot guard: if the token cannot see private repos they
+          # vanish from the enumeration and the audit becomes a false
+          # all-clear. Canary is `gitops` — private, long-lived, and itself
+          # one of the repos this audit exists to catch. Fail loudly.
+          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
+            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
+            exit 1
+          fi
+
+          IDENTITY=""
+          STALLED=""
+          NOW=$(date -u +%s)
+
+          for REPO in $REPOS; do
+            # ---- A. identity of the release-please step -----------------
+            WF=""
+            for EXT in yml yaml; do
+              WF=$(gh api "/repos/zeroroot-ai/$REPO/contents/.github/workflows/release-please.$EXT" \
+                     --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+              [ -n "$WF" ] && break
+            done
+
+            if [ -n "$WF" ]; then
+              # Read the `token:` belonging to the release-please-action
+              # step only. Taking the file's first `token:` would pick up an
+              # unrelated step's input (deploy has several).
+              TOKEN_LINE=$(printf '%s\n' "$WF" | awk '
+                /googleapis\/release-please-action/ { instep = 1; next }
+                instep && /^[[:space:]]*-[[:space:]]/ { instep = 0 }
+                instep && /^[[:space:]]*token:/ { print; exit }
+              ')
+
+              if [ -z "$TOKEN_LINE" ]; then
+                IDENTITY="${IDENTITY}\n- \`$REPO\` — no \`token:\` on the release-please step, so it runs as \`github-actions[bot]\`"
+              elif printf '%s' "$TOKEN_LINE" | grep -qE 'secrets\.GITHUB_TOKEN|github\.token'; then
+                IDENTITY="${IDENTITY}\n- \`$REPO\` — passes the default GITHUB_TOKEN explicitly (\`$(printf '%s' "$TOKEN_LINE" | sed 's/^[[:space:]]*//')\`)"
+              fi
+            fi
+
+            # ---- B. open release PRs that are not running CI ------------
+            PRS=$(gh pr list -R "zeroroot-ai/$REPO" --state open \
+                    --json number,headRefName,headRefOid,createdAt \
+                    --jq '.[] | select(.headRefName | startswith("release-please--")) | [.number, .headRefOid, .createdAt] | @tsv' \
+                  2>/dev/null || echo "")
+
+            while IFS=$'\t' read -r NUM SHA CREATED; do
+              [ -z "${NUM:-}" ] && continue
+
+              GATED=$(gh api "/repos/zeroroot-ai/$REPO/actions/runs?head_sha=$SHA&per_page=100" \
+                        --jq '[.workflow_runs[] | select(.conclusion == "action_required")] | length' 2>/dev/null || echo 0)
+              CHECKS=$(gh api "/repos/zeroroot-ai/$REPO/commits/$SHA/check-runs" \
+                         --jq '.total_count' 2>/dev/null || echo 0)
+              AGE_DAYS=$(( (NOW - $(date -u -d "$CREATED" +%s)) / 86400 ))
+
+              if [ "$GATED" -gt 0 ]; then
+                STALLED="${STALLED}\n- zeroroot-ai/$REPO#$NUM — ${GATED} run(s) on head sha \`${SHA:0:7}\` completed \`action_required\`; open ${AGE_DAYS}d"
+              elif [ "$CHECKS" -eq 0 ] && [ "$AGE_DAYS" -ge 1 ]; then
+                STALLED="${STALLED}\n- zeroroot-ai/$REPO#$NUM — zero check runs on head sha \`${SHA:0:7}\` after ${AGE_DAYS}d; no workflow run was ever created"
+              fi
+            done <<< "$PRS"
+          done
+
+          TITLE="Release pipeline health — $(date -u +%Y-%m-%d)"
+
+          if [ -z "$IDENTITY" ] && [ -z "$STALLED" ]; then
+            echo "::notice::release pipeline healthy — every release-please runs under a real identity and no open release PR is gated"
+            CLEAN_EXISTING=$(gh issue list -R zeroroot-ai/.github \
+                               --state open --search 'in:title "Release pipeline health"' \
+                               --json number --jq '.[0].number // empty')
+            if [ -n "$CLEAN_EXISTING" ]; then
+              gh issue close "$CLEAN_EXISTING" -R zeroroot-ai/.github \
+                --comment "Every release-please runs under a non-default identity and no open release PR is gated. Auto-closed by the release-pipeline-health audit."
+            fi
+            exit 0
+          fi
+
+          BODY="## Release pipeline health report\n\nSee AGENTS.md §9b. A release PR pushed by the default GITHUB_TOKEN never runs its CI, and the failure is never red.\n"
+          # NB: never write a `$`+`{{` expression into this body — GitHub
+          # Actions substitutes it inside the `run:` block before bash ever
+          # sees it. Name the secret in prose instead.
+          [ -n "$IDENTITY" ] && BODY="${BODY}\n### release-please runs as \`github-actions[bot]\`${IDENTITY}\n\nFix: give the release-please-action step a \`token:\` input reading the repo's \`RELEASE_PLEASE_TOKEN\` secret, or a GitHub App token minted with \`actions/create-github-app-token\` — and make sure that secret exists in the repo. See AGENTS.md §9b for the exact snippet.\n"
+          [ -n "$STALLED" ] && BODY="${BODY}\n### Open release PRs that are not running CI${STALLED}\n\nApproving the pending runs clears one head sha only. Fix the identity.\n"
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # Self-test run against live org state. Report, do not file — the
+            # drift belongs to other repos and this PR cannot fix it.
+            printf "%b\n" "$BODY"
+            echo "::notice::pull_request run — findings printed, no issue filed"
+            exit 0
+          fi
+
+          EXISTING=$(gh issue list -R zeroroot-ai/.github \
+                       --state open --search 'in:title "Release pipeline health"' \
+                       --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            printf "%b" "$BODY" | gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file -
+          else
+            printf "%b" "$BODY" | gh issue create -R zeroroot-ai/.github --title "$TITLE" --body-file - --label "ready-for-agent"
+          fi

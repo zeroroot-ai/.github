@@ -1,0 +1,99 @@
+name: launch-scorecard
+
+# Writes the pinned "LAUNCH SCORECARD" issue in this repo.
+#
+# The scorecard is the fleet's status board. Every agent session reads it for
+# current state before starting work. It reports facts and gives no orders.
+#
+# It measures two things:
+#   1. Outcomes — the latest conclusion of each blocker's exit-test workflow.
+#      A blocker is done when its workflow is green. Merged is not done. Closed is
+#      not done.
+#   2. Behaviour — issues filed, PRs merged, hygiene share, rework share, open
+#      PR load. These detect the failure mode of 2026-08-13..17, when ~570
+#      commits and 425 closed issues fixed zero launch blockers.
+#
+# Why an issue, not a Project board: an agent must read the whole thing in ONE
+# command (`gh issue view --json body`). Projects v2 needs GraphQL, holds no time
+# series, and measures item state — the metric that failed.
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily, before the working day
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/launch-scorecard.yml"
+      - "scripts/launch-scorecard.sh"
+      - "scripts/test-launch-scorecard.sh"
+      - "data/launch-blockers.tsv"
+      - "data/launch-signals.tsv"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launch-scorecard
+  cancel-in-progress: false
+
+jobs:
+  # On a PR, only prove the renderer still turns bad numbers into the right
+  # orders. No network, no writes.
+  test:
+    name: renderer fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - run: bash scripts/test-launch-scorecard.sh
+
+  publish:
+    name: measure and publish
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Collect measured facts
+        env:
+          # PLATFORM_RO enumerates PRIVATE repos. The default GITHUB_TOKEN sees
+          # public repos only, which would silently drop deploy/gitops/dashboard
+          # from every number — the same blind spot as .github#170 and #241.
+          # collect() fails loudly when it cannot see `gitops`.
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
+        run: |
+          set -euo pipefail
+          scripts/launch-scorecard.sh collect > /tmp/scorecard.json
+          jq -r '"blockers green: \(.green)/\(.total)"' /tmp/scorecard.json
+
+      - name: Render the body, carrying the trend forward
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh issue list -R "${GITHUB_REPOSITORY%/*}/.github" --state open --limit 1 \
+            --search 'in:title "LAUNCH SCORECARD"' --json body --jq '.[0].body // ""' \
+            > /tmp/prev.md || true
+          PREV_BODY=/tmp/prev.md scripts/launch-scorecard.sh render \
+            < /tmp/scorecard.json > /tmp/scorecard.md
+          wc -l /tmp/scorecard.md
+
+      - name: Publish the pinned issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: scripts/launch-scorecard.sh publish < /tmp/scorecard.md
+
+      - name: Summary
+        if: always()
+        run: cat /tmp/scorecard.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Fail loudly
+        if: failure()
+        run: |
+          echo "::error::the scorecard did not update. Agents will read a stale board. Fix the publish step."
+          exit 1
