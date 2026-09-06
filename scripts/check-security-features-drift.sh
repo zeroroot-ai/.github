@@ -45,15 +45,21 @@ fetch() {
     eval "$SECURITY_FETCH_CMD"
     return
   fi
-  gh api graphql -f query='
-    query($org:String!,$cursor:String){ organization(login:$org){
-      repositories(first:50, after:$cursor, isArchived:false){
-        pageInfo{ hasNextPage endCursor }
-        nodes{ name isPrivate primaryLanguage{ name } } } } }' \
-    -f org="$ORG" --paginate \
-    --jq '.data.organization.repositories.nodes[]
-          | [.name, (if .isPrivate then "private" else "public" end),
-             (.primaryLanguage.name // "-")] | @tsv' \
+  # REST, not GraphQL, and deliberately.
+  #
+  # The org-wide GraphQL enumeration this used to run is expensive, and the
+  # GraphQL budget is a USER-level limit shared by every token that user holds
+  # — so one agent exhausting it blocks everyone. This guard runs hourly and
+  # after every repo recreation, so it is exactly the kind of recurring cost
+  # that should not sit on a contended budget.
+  #
+  # /orgs/{org}/repos returns name, private, archived and language, which is
+  # everything the GraphQL query selected. The per-repo call below was already
+  # REST, so this leaves the guard on one API surface.
+  gh api "/orgs/${ORG}/repos?per_page=100&type=all" --paginate \
+    --jq '.[] | select(.archived | not)
+          | [.name, (if .private then "private" else "public" end), (.language // "-")]
+          | @tsv' \
   | while IFS=$'\t' read -r name vis lang; do
       sa=$(gh api "repos/${ORG}/${name}" --jq '.security_and_analysis' 2>/dev/null)
       g() { printf '%s' "$sa" | jq -r ".$1.status // \"absent\"" 2>/dev/null; }
