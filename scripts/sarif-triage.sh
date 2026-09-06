@@ -237,11 +237,11 @@ main() {
   repos=$(gh api "orgs/${ORG}/repos" --paginate --jq '.[].name' | \
           grep -vE '^(\.github|.*\.github\.io)$')
 
-  # Blind-spot guard (kept from .github#243): `gitops` is a known private,
-  # long-lived repo. If it is absent the token cannot see private repos and
+  # Blind-spot guard (kept from .github#243): `hosted` is a known private,
+  # long-lived repo (`gitops` was the canary until it was deleted, ADR-0086). If it is absent the token cannot see private repos and
   # the triage would be a false all-clear for them — fail loudly instead.
-  if ! printf '%s\n' "$repos" | grep -qx 'gitops'; then
-    echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; triage would silently cover public repos only"
+  if ! printf '%s\n' "$repos" | grep -qx 'hosted'; then
+    echo "::error::repo enumeration is missing private repos (hosted not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; triage would silently cover public repos only"
     exit 1
   fi
 
