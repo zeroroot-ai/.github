@@ -76,10 +76,11 @@ jobs:
 
           # Blind-spot guard: if the token cannot see private repos they
           # vanish from the enumeration and the audit becomes a false
-          # all-clear. Canary is `gitops` — private, long-lived, and itself
-          # one of the repos this audit exists to catch. Fail loudly.
-          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
-            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
+          # all-clear. Canary is `hosted`: private, long-lived, and itself
+          # one of the repos this audit exists to catch (`gitops` was the
+          # canary until it was deleted, ADR-0086). Fail loudly.
+          if ! printf '%s\n' "$REPOS" | grep -qx 'hosted'; then
+            echo "::error::repo enumeration is missing private repos (hosted not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
             exit 1
           fi
 
