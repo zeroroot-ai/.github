@@ -40,8 +40,6 @@ mirrors:
     tag: "1.25-alpine"     # floating: tracks the latest 1.25.x-alpine patch
     dest: golang
     refresh: true
-  - source: docker.io/library/golang
-    tag: "1.26.6-alpine"   # sdk's builder (sdk go.mod go 1.26.8, builder not yet moved; epic .github#20 slice #25 covers the Go repos, sdk follows on its next bump)
     dest: golang
   - source: docker.io/library/golang
     tag: "1.26.8-alpine"   # gibson, gibson-bootstrap, ext-authz, spiffe-jwks-exporter builders: the Go their go.mod names (.github#22 guard, #25)
