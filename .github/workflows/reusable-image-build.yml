@@ -338,6 +338,12 @@ jobs:
           format: sarif
           output: trivy-${{ inputs.component_name }}.sarif
           severity: ${{ inputs.trivy_severity }}
+          # Only report CVEs the distro or module has a fix for. An unfixed
+          # OS-package CVE has no action a repo can take (2026-09-07: 1165 of
+          # 1484 open Trivy alerts org-wide had an empty "Fixed Version"),
+          # and it hides the fixable ones. Trivy re-raises the alert the day
+          # a fixed version ships, so nothing is lost by waiting for it.
+          ignore-unfixed: true
           exit-code: 1
       # Guaranteed-readable findings surface (failure mode 3 above): render the
       # findings table into the run's step summary so agents/humans can read
@@ -351,6 +357,7 @@ jobs:
           format: table
           output: trivy-${{ inputs.component_name }}.txt
           severity: ${{ inputs.trivy_severity }}
+          ignore-unfixed: true
           exit-code: 0
           skip-setup-trivy: true
       - name: Append findings to summary
