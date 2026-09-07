@@ -427,7 +427,6 @@ def selftest() -> int:
     check(all(c.get("image") for l in real["links"] for c in l.get("consumers", []) if c.get("before")),
           "every image-pin consumer in version-links.yaml names its image")
     # an `after` consumer (inline image reference) is drift-only: the fan-out refuses it loudly
-    import tempfile
     with tempfile.TemporaryDirectory() as d:
         open(os.path.join(d, "values.yaml"), "w").write("zitadel:\n  initContainers:\n    - image: ghcr.io/o/alpine-k8s:1.31.0\n")
         try:
