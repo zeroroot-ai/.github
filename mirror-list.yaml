@@ -41,13 +41,13 @@ mirrors:
     dest: golang
     refresh: true
   - source: docker.io/library/golang
-    tag: "1.25.11-alpine"  # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); kept as an explicit floor alongside the refreshing 1.25-alpine
+    tag: "1.26.6-alpine"   # sdk's builder (sdk go.mod go 1.26.8, builder not yet moved; epic .github#20 slice #25 covers the Go repos, sdk follows on its next bump)
     dest: golang
   - source: docker.io/library/golang
-    tag: "1.26.4-alpine"   # gibson go.mod pins go 1.26.4 (govulncheck stdlib fix gibson#612); builders must match (gibson#777)
+    tag: "1.26.8-alpine"   # gibson, gibson-bootstrap, ext-authz, spiffe-jwks-exporter builders: the Go their go.mod names (.github#22 guard, #25)
     dest: golang
   - source: docker.io/library/golang
-    tag: "1.26.6-alpine"   # pinned patch (go1.26.6 stdlib CVE fixes GO-2026-6090/5972; setec#254); alpine sibling of the 1.26.6 entry below
+    tag: "1.26.8"          # debian-based; setec and the gibson operator builders (apt in the build stage): the Go their go.mod names (.github#22 guard, #25)
     dest: golang
 
   # ---------------------------------------------------------------------------
@@ -118,19 +118,6 @@ mirrors:
   - source: docker.io/library/alpine
     tag: "3.20"
     dest: alpine
-  - source: docker.io/library/golang
-    tag: "1.25"           # floating debian-based; tenant-operator builder needs CGO_ENABLED toggles
-    dest: golang
-    refresh: true
-  - source: docker.io/library/golang
-    tag: "1.25.11"        # pinned patch (go1.25.11 stdlib CVE fixes, .github#173); explicit floor alongside the refreshing 1.25
-    dest: golang
-  - source: docker.io/library/golang
-    tag: "1.26.4"         # debian-based; gibson go.mod pins go 1.26.4 (gibson#612); operator builders must match (gibson#777)
-    dest: golang
-  - source: docker.io/library/golang
-    tag: "1.26.6"         # debian-based; setec go.mod moved to go 1.26.6 (stdlib CVE fixes GO-2026-6090/5972, setec#254); its Dockerfile builders must match
-    dest: golang
   - source: docker.io/library/node
     tag: "20-alpine"      # floating: tracks the latest 20.x-alpine patch
     dest: node
