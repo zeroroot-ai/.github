@@ -237,6 +237,37 @@ def apply_consumer(dest: str, c: dict, value: str, gw) -> str:
     return f"{c['file']}:{c['key']} = {value}"
 
 
+def regenerate(dest: str, repo: str, consumers: list[dict]) -> list[str]:
+    """Run the consumer repo's declared `regenerate` commands after the rewrite.
+
+    A consumer may carry derived files (golden snapshots, an air-gap image
+    list) that its merge gate compares against the values. charts#26 (the
+    first live fan-out) was red on exactly that. The commands come from the
+    manifest, run in the clone in declaration order, once per repo, and every
+    tracked file they touch joins the commit. Untracked output is a defect in
+    the declaration and fails loudly: the fan-out never guesses what to add.
+    """
+    cmds: list[str] = []
+    for c in consumers:
+        for cmd in c.get("regenerate", []) or []:
+            if cmd not in cmds:
+                cmds.append(cmd)
+    if not cmds:
+        return []
+    for cmd in cmds:
+        print(f"{repo}: regenerate: {cmd}")
+        r = subprocess.run(["sh", "-c", cmd], cwd=dest, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise FanoutError(f"regenerate `{cmd}` failed ({r.returncode}): {(r.stderr or r.stdout).strip()[-800:]}")
+    untracked = [ln[3:] for ln in sh("git", "status", "--porcelain", cwd=dest).splitlines() if ln.startswith("??")]
+    if untracked:
+        raise FanoutError(f"regenerate left untracked files the fan-out will not guess at: {', '.join(untracked)}")
+    sh("git", "add", "-u", cwd=dest)
+    touched = [ln.strip() for ln in sh("git", "diff", "--cached", "--name-only", cwd=dest).splitlines()]
+    consumer_files = {c["file"] for c in consumers}
+    return [f"{f} (regenerated)" for f in touched if f not in consumer_files]
+
+
 def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: str,
            dry_run: bool, work: str) -> int:
     link = find_link(manifest, link_name)
@@ -263,6 +294,7 @@ def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: st
                 continue
             for c in consumers:
                 sh("git", "add", "--", c["file"], cwd=dest)
+            changes += regenerate(dest, repo, consumers)
             title = f"fix({link_name}): bump to {value}"
             body = pr_body(link_name, value, src, changes)
             sh("git", "commit", "-q", "-m", title, "-m", f"Automated by zeroroot-ai/.github reusable-version-fanout ({EPIC}).",
@@ -413,6 +445,32 @@ def selftest() -> int:
         gw = FixtureGateway(files, {("zitadel-login", "v4.17.3"): DIG})
         rc = fanout(MANIFEST, "zitadel", gw, None, "main", True, w)
         check(rc == 0 and not gw.calls, "dry-run makes no push or PR call")
+    # 8. a consumer's `regenerate` commands run in the clone and their tracked output joins the commit
+    with tempfile.TemporaryDirectory() as w:
+        m = json.loads(json.dumps(MANIFEST))
+        m["links"][0]["consumers"][0]["regenerate"] = ["wc -l < helm/values.yaml > derived/lines.txt"]
+        m["links"][0]["consumers"][1]["regenerate"] = ["wc -l < helm/values.yaml > derived/lines.txt"]  # same command twice: runs once
+        f2 = dict(files); f2[("o/charts", "derived/lines.txt")] = "stale\n"
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.17.3"): DIG})
+        rc = fanout(m, "zitadel", gw, None, "main", False, w)
+        committed = sh("git", "show", "--name-only", "--format=", "HEAD", cwd=os.path.join(w, "o__charts")).split()
+        check(rc == 0 and "derived/lines.txt" in committed and "helm/values.yaml" in committed, "regenerated tracked file is in the fan-out commit")
+        check(open(os.path.join(w, "o__charts", "derived/lines.txt")).read().strip() != "stale", "the regenerate command actually ran")
+        body = [c[4] for c in gw.calls if c[0] == "create" and c[1] == "o/charts"][0]
+        check("derived/lines.txt (regenerated)" in body, "PR body names the regenerated file")
+    # 9. regenerate that leaves untracked output, or fails, is loud and opens nothing for that repo
+    with tempfile.TemporaryDirectory() as w:
+        m = json.loads(json.dumps(MANIFEST))
+        m["links"][0]["consumers"][0]["regenerate"] = ["echo x > new-file.txt"]
+        gw = FixtureGateway(files, {("zitadel-login", "v4.17.3"): DIG})
+        rc = fanout(m, "zitadel", gw, None, "main", False, w)
+        check(rc == 1 and not any(c[0] == "create" and c[1] == "o/charts" for c in gw.calls), "untracked regenerate output is refused")
+    with tempfile.TemporaryDirectory() as w:
+        m = json.loads(json.dumps(MANIFEST))
+        m["links"][0]["consumers"][0]["regenerate"] = ["exit 3"]
+        gw = FixtureGateway(files, {("zitadel-login", "v4.17.3"): DIG})
+        rc = fanout(m, "zitadel", gw, None, "main", False, w)
+        check(rc == 1 and not any(c[0] == "create" and c[1] == "o/charts" for c in gw.calls), "a failing regenerate command is loud")
     # 7. unknown link / unsafe value are errors
     try:
         fanout(MANIFEST, "nope", FixtureGateway(files, {}), None, "main", True, tempfile.mkdtemp()); check(False, "unknown link raises")

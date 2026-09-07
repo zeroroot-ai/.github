@@ -91,6 +91,15 @@ jobs:
           owner: zeroroot-ai
           repositories: ${{ steps.consumers.outputs.repos }}
 
+      # A consumer's `regenerate` commands may render charts (golden
+      # snapshots, the air-gap image list); they need helm and a ghcr login
+      # for the mirrored sub-charts. Harmless for links that declare none.
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+        with:
+          version: v3.16.2
+      - name: Log helm in to ghcr.io
+        run: echo "${{ github.token }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Fan out
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
