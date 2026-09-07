@@ -1,0 +1,50 @@
+# version-links.yaml — every cross-repo version link the org keeps by hand.
+#
+# Epic: zeroroot-ai/.github#20. One upstream version is copied into several
+# places, and a README checklist was the only thing that kept the copies
+# equal. This file names each link once. `version-drift.yml` reads it on a
+# schedule, compares every value on `main`, checks the upstream release feed,
+# and refreshes ONE tracker issue in this repo (see scripts/version-drift.py).
+# `reusable-version-fanout.yml` reads the same entries to open the consumer PR
+# when a source publishes.
+#
+# Schema (version 1):
+#   links[].name        stable id, used in issue rows and fan-out inputs
+#   links[].source      the ONE place a human edits
+#     repo, file, key   key is `NAME` for format env (a `NAME=value` line) or a
+#                       dotted path for format yaml
+#     format            env | yaml
+#   links[].consumers[] places that must equal the source
+#     repo, file, key, format   as above
+#     before            optional: compare only the part of the value before
+#                       this string (image pins carry `@sha256:<digest>`)
+#   links[].upstream    optional: the upstream release feed to watch
+#     repo              GitHub owner/name; the newest non-prerelease,
+#                       non-draft release by semver is "newest"
+#
+# Every value is read from the repo's default branch. A link is IN SYNC when
+# every consumer equals the source and no upstream release is newer than the
+# source.
+version: 1
+links:
+  - name: zitadel
+    # The fork leads (owner decision 2026-09-07): the patch set is re-resolved
+    # in zitadel-login, so UPSTREAM_REF is the one place a human edits. The
+    # chart's server tag and its login image pin follow.
+    source:
+      repo: zeroroot-ai/zitadel-login
+      file: UPSTREAM_REF
+      key: TAG
+      format: env
+    consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: zitadel.image.tag
+        format: yaml
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: zitadel.login.image.tag
+        format: yaml
+        before: "@"
+    upstream:
+      repo: zitadel/zitadel

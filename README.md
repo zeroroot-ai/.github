@@ -28,6 +28,14 @@ commit SHA, and so can you.
 **A change made in the GitHub UI is not "already applied" — it is pending
 deletion.** Edit the JSON and merge it.
 
+## Version links are code
+
+`version-links.yaml` names every version that one repo owns and other repos
+copy (a fork's pinned upstream tag, a chart's image tag and pin). The source
+is the one place a human edits. `version-drift.yml` compares every link daily,
+watches the upstream release feed, and keeps one tracker issue that closes
+itself when the links agree (zeroroot-ai/.github#20).
+
 ## Guards ship with a failing fixture
 
 Every guard in `scripts/` has a matching `test-*.sh` that mutates its input and
