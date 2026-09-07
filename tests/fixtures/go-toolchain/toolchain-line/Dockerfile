@@ -1,0 +1,3 @@
+ARG GOTOOLCHAIN=local
+FROM golang:1.26.8-alpine
+RUN go build ./...

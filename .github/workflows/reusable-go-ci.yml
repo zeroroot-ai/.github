@@ -136,6 +136,23 @@ jobs:
           go-version-file: ${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}
           cache: true
 
+      # ---- Go toolchain guard (.github#22, epic #20) ----
+      # go.mod names the toolchain; every golang builder image must carry the
+      # same version, and the Dockerfile must declare ARG GOTOOLCHAIN=local so
+      # a mismatch fails the build instead of downloading a toolchain. The
+      # guard lives in the org repo and is checked out at main, the same way
+      # pr-title-lint fetches its scripts (github.job_workflow_sha is empty
+      # for reusable workflows, #280).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ inputs.tier == 'fast' }}
+        with:
+          repository: zeroroot-ai/.github
+          ref: main
+          path: .org-dot-github
+      - name: Go toolchain matches the builder image
+        if: ${{ inputs.tier == 'fast' }}
+        run: bash .org-dot-github/scripts/check-go-toolchain.sh --go-mod "${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}"
+
       # ---- FAST tier (pull_request): quick signal, no race, no images ----
       - name: go mod tidy + drift check
         if: ${{ inputs.tier == 'fast' }}

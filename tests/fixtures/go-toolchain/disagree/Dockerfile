@@ -1,0 +1,3 @@
+ARG GOTOOLCHAIN=local
+FROM ghcr.io/zeroroot-ai/mirror/golang:1.26.4-alpine AS builder
+RUN go build ./...
