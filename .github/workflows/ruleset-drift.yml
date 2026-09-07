@@ -90,6 +90,9 @@ jobs:
       - name: Prove the version fan-out rules (.github#24)
         run: python3 scripts/version-fanout.py --selftest
 
+      - name: Mutation-test the Node version guard (.github#23)
+        run: bash scripts/test-node-version-guard.sh
+
   # ---- live vs committed (needs the org-admin token) ----
   live-drift:
     name: live-drift

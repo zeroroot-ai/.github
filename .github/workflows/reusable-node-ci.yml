@@ -162,6 +162,22 @@ jobs:
           /tmp/gitleaks dir . --no-banner --redact --exit-code 1 "${cfg[@]}"
       # END-GITLEAKS-PIN
 
+      # ---- Node version guard (.github#23, epic #20) ----
+      # One version file per repo; every Dockerfile FROM node and every
+      # workflow agree with it. The guard lives in the org repo and is checked
+      # out at main, the same way pr-title-lint fetches its scripts
+      # (github.job_workflow_sha is empty for reusable workflows, #280).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ inputs.tier == 'fast' }}
+        with:
+          repository: zeroroot-ai/.github
+          ref: main
+          path: .org-dot-github
+      - name: Node version file, image and workflows agree
+        if: ${{ inputs.tier == 'fast' }}
+        working-directory: ${{ github.workspace }}
+        run: bash .org-dot-github/scripts/check-node-version.sh --dir "${{ inputs.working-directory }}" --version-file "${{ inputs.node-version-file }}"
+
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
           version: ${{ inputs.pnpm-version }}
