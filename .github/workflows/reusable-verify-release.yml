@@ -101,4 +101,7 @@ jobs:
           format: sarif
           output: trivy-verify.sarif
           severity: HIGH,CRITICAL
+          # Same policy as reusable-image-build: unfixed OS-package CVEs have
+          # no action a repo can take and drown the fixable ones.
+          ignore-unfixed: true
           exit-code: 1
