@@ -135,6 +135,10 @@ mirrors:
     tag: "20-alpine"      # floating: tracks the latest 20.x-alpine patch
     dest: node
     refresh: true
+  - source: docker.io/library/node
+    tag: "24-alpine"      # floating: tracks the latest 24.x-alpine patch; dashboard moved to Node 24 (dashboard#5, jsdom 30 needs >= 22.22)
+    dest: node
+    refresh: true
   # Python base for the gibson belief-field sidecar (gibson#750, deploy#936).
   # The sidecar is a published first-party image, so its base must come from the
   # mirror like every other production image (test fixtures may use docker.io
