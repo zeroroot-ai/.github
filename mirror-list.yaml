@@ -47,7 +47,7 @@ mirrors:
     tag: "1.26.8-alpine"   # gibson, gibson-bootstrap, ext-authz, spiffe-jwks-exporter builders: the Go their go.mod names (.github#22 guard, #25)
     dest: golang
   - source: docker.io/library/golang
-    tag: "1.26.8"          # debian-based; setec and the gibson operator builders (apt in the build stage): the Go their go.mod names (.github#22 guard, #25)
+    tag: "1.26.8"          # debian-based; setec builders (gibson moved every builder to 1.26.8-alpine): the Go its go.mod names (.github#22 guard, #25)
     dest: golang
 
   # ---------------------------------------------------------------------------
