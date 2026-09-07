@@ -232,7 +232,9 @@ def evaluate(manifest: dict, gw) -> list[dict]:
             except FetchError as e:
                 rows.append(dict(link=name, role="subchart", where=link["subchart"]["name"], value="", state=ERROR, note=str(e)))
                 continue
-            if semver_key(src_val) == semver_key(app):
+            if link["subchart"].get("tool"):
+                note = f"tool image the chart runs; the chart ships appVersion {app}"
+            elif semver_key(src_val) == semver_key(app):
                 note = "override equals the appVersion the chart ships"
             elif semver_key(src_val) > semver_key(app):
                 note = f"override {src_val} is ahead of the appVersion the chart ships"
@@ -476,6 +478,12 @@ def selftest() -> int:
     check(scr["state"] == OK and scr["value"] == "v4.13.1" and "ahead" in scr["note"], "subchart row reads appVersion v4.13.1 for the pinned 9.34.1 and says the override is ahead")
     upsert(rows, gw, "o/.github", today)
     check(not [c for c in gw.calls if c[0] == "create"], "a subchart distance alone files nothing")
+    sub["links"][0]["subchart"]["tool"] = True
+    gw = FixtureGateway({**files_ok, ("o/charts", "Chart.yaml"): chart}, {"up/zitadel": REL_SAME},
+                        indexes={"https://charts.example/index.yaml": index})
+    scr = [r for r in evaluate(sub, gw) if r["role"] == "subchart"][0]
+    check(scr["state"] == OK and "tool image" in scr["note"] and "ahead" not in scr["note"], "a tool image records the appVersion without comparing against it")
+    del sub["links"][0]["subchart"]["tool"]
     gw = FixtureGateway({**files_ok, ("o/charts", "Chart.yaml"): chart}, {"up/zitadel": REL_SAME})
     rows = evaluate(sub, gw)
     rc = upsert(rows, gw, "o/.github", today)
