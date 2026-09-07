@@ -113,6 +113,21 @@ def set_yaml_scalar(text: str, dotted: str, value: str) -> str:
     return "".join(out)
 
 
+def push_with_lease(dest: str, branch: str, env: dict | None = None) -> None:
+    """Force-push the fan-out branch with a lease that names what the remote holds.
+
+    The clone is shallow and the branch is created locally, so there is no
+    remote-tracking ref for it. A bare `--force-with-lease` then has no lease
+    to check and rejects a rerun ("stale info"): the second live fan-out
+    (zitadel-login run after .github#37) failed exactly there. Fetch the
+    remote branch first; the lease is its tip, or "must not exist" when the
+    branch is new. A rerun updates the bot's own branch and nothing else.
+    """
+    r = subprocess.run(["git", "fetch", "-q", "origin", f"refs/heads/{branch}"], cwd=dest, env=env, capture_output=True, text=True)
+    expect = sh("git", "rev-parse", "FETCH_HEAD", cwd=dest, env=env).strip() if r.returncode == 0 else ""
+    sh("git", "push", f"--force-with-lease=refs/heads/{branch}:{expect}", "--quiet", "-u", "origin", branch, cwd=dest, env=env)
+
+
 # --------------------------------------------------------------------------
 # GitHub / registry boundary. The selftest swaps this class.
 class Gateway:
@@ -153,7 +168,7 @@ class Gateway:
         sh("git", "config", "user.email", BOT_MAIL, cwd=dest)
 
     def push_branch(self, dest: str, branch: str) -> None:
-        sh("git", "push", "--force-with-lease", "--quiet", "-u", "origin", branch, cwd=dest, env=self.env)
+        push_with_lease(dest, branch, self.env)
 
     def open_pr_for_branch(self, repo: str, branch: str) -> int | None:
         out = sh("gh", "pr", "list", "-R", repo, "--head", branch, "--state", "open", "--json", "number", env=self.env)
@@ -471,6 +486,28 @@ def selftest() -> int:
         gw = FixtureGateway(files, {("zitadel-login", "v4.17.3"): DIG})
         rc = fanout(m, "zitadel", gw, None, "main", False, w)
         check(rc == 1 and not any(c[0] == "create" and c[1] == "o/charts" for c in gw.calls), "a failing regenerate command is loud")
+    # 10. push_with_lease against a real bare remote: first push creates, a rerun from a fresh shallow
+    #     clone updates the bot branch, and a branch moved by someone else is refused
+    with tempfile.TemporaryDirectory() as w:
+        bare = os.path.join(w, "origin.git"); sh("git", "init", "-q", "--bare", bare)
+        seed = os.path.join(w, "seed"); sh("git", "init", "-q", seed)
+        sh("git", "config", "user.name", "t", cwd=seed); sh("git", "config", "user.email", "t@t", cwd=seed)
+        open(os.path.join(seed, "f"), "w").write("1\n"); sh("git", "add", "f", cwd=seed); sh("git", "commit", "-q", "-m", "base", cwd=seed)
+        sh("git", "push", "-q", bare, "HEAD:refs/heads/main", cwd=seed)
+        def fresh(name):
+            d = os.path.join(w, name); sh("git", "clone", "-q", "--depth", "50", "-b", "main", bare, d)
+            sh("git", "config", "user.name", "t", cwd=d); sh("git", "config", "user.email", "t@t", cwd=d)
+            sh("git", "checkout", "-q", "-B", "chore/version-fanout-x-v1", cwd=d)
+            open(os.path.join(d, "f"), "a").write(name + "\n"); sh("git", "commit", "-q", "-am", name, cwd=d); return d
+        d1 = fresh("first"); push_with_lease(d1, "chore/version-fanout-x-v1"); check(True, "first push creates the bot branch")
+        d2 = fresh("rerun"); push_with_lease(d2, "chore/version-fanout-x-v1")
+        tip = sh("git", "--git-dir", bare, "log", "-1", "--format=%s", "chore/version-fanout-x-v1")
+        check(tip == "rerun", "a rerun from a fresh shallow clone replaces the bot branch")
+        d3 = fresh("stale"); sh("git", "--git-dir", bare, "update-ref", "refs/heads/chore/version-fanout-x-v1", sh("git", "rev-parse", "HEAD", cwd=d2))
+        # d3 fetched the tip before the ref moved? No: fetch happens inside push_with_lease, so simulate a race by moving the ref between fetch and push
+        # via a lease pinned to an old value.
+        r = subprocess.run(["git", "push", "--force-with-lease=refs/heads/chore/version-fanout-x-v1:" + sh("git", "rev-parse", "HEAD~1", cwd=d3), "-q", "origin", "chore/version-fanout-x-v1"], cwd=d3, capture_output=True, text=True)
+        check(r.returncode != 0 and "stale" in (r.stderr + r.stdout).lower(), "a lease that names the wrong tip is refused")
     # 7. unknown link / unsafe value are errors
     try:
         fanout(MANIFEST, "nope", FixtureGateway(files, {}), None, "main", True, tempfile.mkdtemp()); check(False, "unknown link raises")
