@@ -1,0 +1,3 @@
+ARG GOTOOLCHAIN=local
+FROM golang:${GO_VERSION} AS build
+RUN go build ./...

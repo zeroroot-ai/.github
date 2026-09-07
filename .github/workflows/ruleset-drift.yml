@@ -84,6 +84,9 @@ jobs:
       - name: Mutation-test the ADR-0088 security-features guard
         run: bash scripts/test-security-features-drift.sh
 
+      - name: Mutation-test the Go toolchain guard (.github#22)
+        run: bash scripts/test-go-toolchain-guard.sh
+
   # ---- live vs committed (needs the org-admin token) ----
   live-drift:
     name: live-drift

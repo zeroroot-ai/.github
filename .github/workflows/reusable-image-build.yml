@@ -51,6 +51,17 @@ on:
         type: string
         default: ""
         description: Newline-separated BUILD_ARGS passed to docker/build-push-action.
+      go_toolchain_local:
+        required: false
+        type: boolean
+        default: false
+        description: |
+          Pass `GOTOOLCHAIN=local` as a build-arg (.github#22). A Go Dockerfile
+          declares `ARG GOTOOLCHAIN=local` and `ENV GOTOOLCHAIN=${GOTOOLCHAIN}`
+          in its builder stage, so the build fails when go.mod names a
+          toolchain the base image does not carry, instead of downloading it.
+          The reusable Go CI guard (check-go-toolchain.sh) requires the ARG;
+          this input makes the CI build agree with a local `docker build`.
       trivy_severity:
         required: false
         type: string
@@ -204,7 +215,9 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           provenance: true
           sbom: true
-          build-args: ${{ inputs.build_args }}
+          build-args: |
+            ${{ inputs.build_args }}
+            ${{ inputs.go_toolchain_local && 'GOTOOLCHAIN=local' || '' }}
           secrets: |
             ghtoken=${{ secrets.ghtoken }}
             npm_token=${{ secrets.GITHUB_TOKEN }}
