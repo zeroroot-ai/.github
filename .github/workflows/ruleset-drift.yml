@@ -87,6 +87,9 @@ jobs:
       - name: Mutation-test the Go toolchain guard (.github#22)
         run: bash scripts/test-go-toolchain-guard.sh
 
+      - name: Prove the version fan-out rules (.github#24)
+        run: python3 scripts/version-fanout.py --selftest
+
   # ---- live vs committed (needs the org-admin token) ----
   live-drift:
     name: live-drift
