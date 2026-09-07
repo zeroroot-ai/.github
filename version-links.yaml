@@ -14,7 +14,9 @@
 #     repo, file, key   key is `NAME` for format env (a `NAME=value` line) or a
 #                       dotted path for format yaml
 #     format            env | yaml
-#   links[].consumers[] places that must equal the source
+#   links[].consumers[] places that must equal the source; may be absent when
+#                       the source repo derives every copy itself and the
+#                       link exists only for the upstream watch
 #     repo, file, key, format   as above
 #     before            optional: compare only the part of the value before
 #                       this string (image pins carry `@sha256:<digest>`)
@@ -132,3 +134,18 @@ links:
       file: helm/gibson/Chart.yaml
       name: zitadel
       tool: true
+
+  - name: kata
+    # setec pins the kata-containers release once, in kata.env (setec#26).
+    # The installer image build, the dev k3s script and the packer AMI bake
+    # all read that file, and scripts/check-kata-pin.sh in setec fails when
+    # any of them names a literal. So the link has no consumers to compare;
+    # it is declared for the upstream watch: a new kata release shows up
+    # here, not in a Trivy digest months later.
+    source:
+      repo: zeroroot-ai/setec
+      file: kata.env
+      key: KATA_VERSION
+      format: env
+    upstream:
+      repo: kata-containers/kata-containers
