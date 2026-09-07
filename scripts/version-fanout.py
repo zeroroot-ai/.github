@@ -501,13 +501,15 @@ def selftest() -> int:
             open(os.path.join(d, "f"), "a").write(name + "\n"); sh("git", "commit", "-q", "-am", name, cwd=d); return d
         d1 = fresh("first"); push_with_lease(d1, "chore/version-fanout-x-v1"); check(True, "first push creates the bot branch")
         d2 = fresh("rerun"); push_with_lease(d2, "chore/version-fanout-x-v1")
-        tip = sh("git", "--git-dir", bare, "log", "-1", "--format=%s", "chore/version-fanout-x-v1")
+        tip = sh("git", "--git-dir", bare, "log", "-1", "--format=%s", "chore/version-fanout-x-v1").strip()
         check(tip == "rerun", "a rerun from a fresh shallow clone replaces the bot branch")
-        d3 = fresh("stale"); sh("git", "--git-dir", bare, "update-ref", "refs/heads/chore/version-fanout-x-v1", sh("git", "rev-parse", "HEAD", cwd=d2))
-        # d3 fetched the tip before the ref moved? No: fetch happens inside push_with_lease, so simulate a race by moving the ref between fetch and push
-        # via a lease pinned to an old value.
-        r = subprocess.run(["git", "push", "--force-with-lease=refs/heads/chore/version-fanout-x-v1:" + sh("git", "rev-parse", "HEAD~1", cwd=d3), "-q", "origin", "chore/version-fanout-x-v1"], cwd=d3, capture_output=True, text=True)
-        check(r.returncode != 0 and "stale" in (r.stderr + r.stdout).lower(), "a lease that names the wrong tip is refused")
+        # A lease that names a tip the remote no longer holds (a race between
+        # fetch and push) is refused by git, so a rerun can never clobber a
+        # branch someone else moved.
+        d3 = fresh("stale")
+        wrong = sh("git", "rev-parse", "HEAD~1", cwd=d3).strip()
+        r = subprocess.run(["git", "push", "--force-with-lease=refs/heads/chore/version-fanout-x-v1:" + wrong, "-q", "origin", "chore/version-fanout-x-v1"], cwd=d3, capture_output=True, text=True)
+        check(r.returncode != 0 and "stale info" in (r.stderr + r.stdout).lower(), "a lease that names the wrong tip is refused")
     # 7. unknown link / unsafe value are errors
     try:
         fanout(MANIFEST, "nope", FixtureGateway(files, {}), None, "main", True, tempfile.mkdtemp()); check(False, "unknown link raises")
