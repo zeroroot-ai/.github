@@ -1,0 +1,66 @@
+name: version-drift
+
+# Epic zeroroot-ai/.github#20: one upstream version is copied into several
+# places by hand (a fork's UPSTREAM_REF, a chart's image tag, a chart's image
+# pin) and only a README checklist kept them equal. `version-links.yaml` names
+# every such link once. This workflow reads the manifest on a schedule,
+# resolves each value on the repo's default branch, compares consumers against
+# the source and the source against the newest upstream release, and keeps
+# ONE tracker issue in this repo.
+#
+# Behavior contract (implemented in scripts/version-drift.py, proved by its
+# --selftest, which gates every scheduled run):
+#   * One tracker issue, found by the title prefix
+#     "ci(version-drift): version links out of sync", edited in place.
+#   * Zero drift CLOSES the open tracker with a dated comment. The next drift
+#     opens a fresh one, so the history reads as episodes.
+#   * An API error or a missing file is an ERROR row: printed, run red,
+#     never filed. The tracker only carries values the script actually read.
+#   * "upstream ahead" counts as drift. Newest = highest semver among
+#     non-prerelease, non-draft releases.
+#
+# Token: GH_PAT_PLATFORM_RO reads private repos (charts) and files issues, as
+# sarif-triage does; the default GITHUB_TOKEN is the fallback.
+
+on:
+  schedule:
+    - cron: "30 9 * * *"  # daily, 30 min after sarif-triage
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/version-drift.yml"
+      - "scripts/version-drift.py"
+      - "version-links.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-self-test:
+    # Fixtures + mutations: consumer drift files ONE tracker, an existing one
+    # is edited, in-sync closes it, a missing file or an API error files
+    # nothing and goes red, two drifting links still file ONE, dry-run
+    # touches nothing, and the real manifest parses.
+    name: version-drift-fixture-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run fixture + mutation tests
+        run: python3 scripts/version-drift.py --selftest
+
+  drift:
+    name: compare-version-links
+    if: github.event_name != 'pull_request'
+    needs: fixture-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare every link and refresh the tracker
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO || secrets.GITHUB_TOKEN }}
+        run: python3 scripts/version-drift.py --manifest version-links.yaml --tracker-repo "${{ github.repository }}"
