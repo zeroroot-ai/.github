@@ -34,6 +34,9 @@
 #   links[].subchart    optional: the Helm dependency this value overrides
 #     repo, file        the umbrella Chart.yaml
 #     name              the dependency's alias or name in that file
+#     tool              optional, true when the override is a tool image the
+#                       subchart runs, not the subchart's own app; the row
+#                       then records the appVersion without comparing
 #                       The detector reads the dependency's pinned version and
 #                       repository, fetches `<repository>/index.yaml`, and
 #                       records that chart version's appVersion, the version
@@ -111,6 +114,7 @@ links:
       repo: zeroroot-ai/charts
       file: helm/gibson/Chart.yaml
       name: zitadel
+      tool: true
 
   - name: wait4x
     # The init-container tool image of the zitadel subchart's login
@@ -127,3 +131,4 @@ links:
       repo: zeroroot-ai/charts
       file: helm/gibson/Chart.yaml
       name: zitadel
+      tool: true
