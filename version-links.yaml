@@ -18,6 +18,8 @@
 #     repo, file, key, format   as above
 #     before            optional: compare only the part of the value before
 #                       this string (image pins carry `@sha256:<digest>`)
+#     image             required with `before`: the ghcr.io/zeroroot-ai image
+#                       whose `<value>` tag the fan-out resolves to a digest
 #   links[].upstream    optional: the upstream release feed to watch
 #     repo              GitHub owner/name; the newest non-prerelease,
 #                       non-draft release by semver is "newest"
@@ -46,5 +48,6 @@ links:
         key: zitadel.login.image.tag
         format: yaml
         before: "@"
+        image: zitadel-login
     upstream:
       repo: zitadel/zitadel

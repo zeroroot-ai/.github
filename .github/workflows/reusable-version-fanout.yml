@@ -1,0 +1,103 @@
+name: Reusable version fan-out
+
+# Epic zeroroot-ai/.github#20, slice #24. A source repo calls this after its
+# artifact publishes. The workflow reads the link from version-links.yaml in
+# this repo, mints the fan-out App token for the link's consumer repos,
+# rewrites every consumer key to the source value, and opens or updates ONE
+# PR per consumer repo (scripts/version-fanout.py). A rerun for the same value
+# edits the PR in place. Auto-merge is never armed: the consumer PR goes
+# through its own merge gate and sign-off (ADR-0012).
+#
+# Caller shape (zitadel-login image.yml, after the publish job):
+#
+#   fanout:
+#     needs: build
+#     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+#     uses: zeroroot-ai/.github/.github/workflows/reusable-version-fanout.yml@<sha>
+#     permissions:
+#       contents: read
+#       packages: read
+#     with:
+#       link: zitadel
+#     secrets:
+#       app-id: ${{ secrets.SDK_FANOUT_APP_ID }}
+#       app-private-key: ${{ secrets.SDK_FANOUT_APP_PRIVATE_KEY }}
+#
+# The App (zeroday-sdk-fanout) is installed on every org repo; the two
+# secrets must exist on the CALLER, the same way sdk holds them.
+# packages: read on the caller is what resolves the digest of the caller's
+# own image for an image-pin consumer.
+
+on:
+  workflow_call:
+    inputs:
+      link:
+        required: true
+        type: string
+        description: The `links[].name` in version-links.yaml to fan out.
+      value:
+        required: false
+        type: string
+        default: ""
+        description: Override the value read from the link's source (normally empty; the source on `main` is the truth).
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+        description: Rewrite and print the diff, push nothing, open nothing.
+    secrets:
+      app-id:
+        required: true
+      app-private-key:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  fanout:
+    name: fan-out ${{ inputs.link }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout the org manifest and script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: zeroroot-ai/.github
+          ref: main
+          path: org-dot-github
+
+      - name: Prove the fan-out rules still hold
+        run: python3 org-dot-github/scripts/version-fanout.py --selftest
+
+      - name: Resolve the link's consumer repos
+        id: consumers
+        run: |
+          set -euo pipefail
+          repos=$(yq -r '.links[] | select(.name == "${{ inputs.link }}") | .consumers[].repo' org-dot-github/version-links.yaml | sed 's|^zeroroot-ai/||' | sort -u | paste -sd,)
+          [ -n "$repos" ] || { echo "::error::link ${{ inputs.link }} has no consumers in version-links.yaml"; exit 1; }
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+          echo "consumers: $repos"
+
+      - name: Mint the fan-out App token for the consumers
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          owner: zeroroot-ai
+          repositories: ${{ steps.consumers.outputs.repos }}
+
+      - name: Fan out
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=(--link "${{ inputs.link }}" --manifest org-dot-github/version-links.yaml --source-ref "${{ github.sha }}")
+          [ -n "${{ inputs.value }}" ] && args+=(--value "${{ inputs.value }}")
+          [ "${{ inputs.dry_run }}" = "true" ] && args+=(--dry-run)
+          python3 org-dot-github/scripts/version-fanout.py "${args[@]}"
