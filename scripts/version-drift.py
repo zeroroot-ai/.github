@@ -15,7 +15,13 @@ gates the scheduled job in .github/workflows/version-drift.yml):
   * "upstream ahead" is drift: the source must move, or a human must record
     why it does not. Only non-prerelease, non-draft releases count, and
     "newest" is the highest semver, not the first in the feed (zitadel
-    publishes a v3 maintenance line next to v4).
+    publishes a v3 maintenance line next to v4). The compare runs at the
+    precision of the source: a floating `3.6` is in sync with `v3.6.4`.
+  * A `subchart` block adds one informational row: the appVersion the pinned
+    Helm dependency ships, read from the chart repository's index.yaml. It
+    is never drift; it says how far the override sits from the tested app.
+  * A consumer with `after` compares the part of the value after the last
+    occurrence of that string (inline `registry/name:tag` references).
 
 Reads YAML through `yq -o=json` (present on the GitHub runners and on the
 workstation) so the script needs nothing beyond the Python standard library.
@@ -33,6 +39,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.request
 from datetime import datetime, timezone
 
 TITLE_PREFIX = "ci(version-drift): version links out of sync"
@@ -68,6 +75,13 @@ class GitHubGateway:
         if not isinstance(data, list):
             raise FetchError(f"{repo}: releases response is not a list")
         return data
+
+    def chart_index(self, url: str) -> dict:
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                return yaml_to_json(r.read().decode())
+        except Exception as e:  # noqa: BLE001
+            raise FetchError(f"{url}: {e}") from e
 
     def find_open_tracker(self, tracker_repo: str) -> int | None:
         out = self._gh(
@@ -116,9 +130,12 @@ def read_key(text: str, fmt: str, key: str) -> str:
     if fmt == "yaml":
         node = yaml_to_json(text)
         for part in key.split("."):
-            if not isinstance(node, dict) or part not in node:
+            if isinstance(node, list) and part.isdigit() and int(part) < len(node):
+                node = node[int(part)]
+            elif isinstance(node, dict) and part in node:
+                node = node[part]
+            else:
                 raise FetchError(f"key {key} not found (yaml)")
-            node = node[part]
         if not isinstance(node, (str, int, float)):
             raise FetchError(f"key {key} is not a scalar")
         return str(node)
@@ -143,6 +160,32 @@ def newest_release(releases: list[dict]) -> str | None:
     return max(tags, key=semver_key)
 
 
+def upstream_ahead(newest: str, source: str) -> bool:
+    """Compare at the precision of the source: `3.6` vs `v3.6.4` is in sync."""
+    precision = len(source.lstrip("vV").split("-")[0].split("+")[0].split("."))
+    return semver_key(newest)[:precision] > semver_key(source)[:precision]
+
+
+def subchart_app_version(link: dict, gw) -> tuple[str, str]:
+    """(where, appVersion) for the Helm dependency a link's source overrides."""
+    sc = link["subchart"]
+    chart = yaml_to_json(gw.file_text(sc["repo"], sc["file"]))
+    dep = next((d for d in chart.get("dependencies", [])
+                if d.get("alias") == sc["name"] or d.get("name") == sc["name"]), None)
+    if dep is None:
+        raise FetchError(f"dependency {sc['name']} not in {sc['repo']}:{sc['file']}")
+    repo_url = str(dep.get("repository", ""))
+    if not repo_url.startswith("http"):
+        raise FetchError(f"dependency {sc['name']}: repository {repo_url!r} has no index.yaml")
+    version = str(dep.get("version", ""))
+    where = f"{dep['name']}@{version} ({repo_url})"
+    index = gw.chart_index(repo_url.rstrip("/") + "/index.yaml")
+    entry = next((e for e in index.get("entries", {}).get(dep["name"], []) if str(e.get("version")) == version), None)
+    if entry is None or not entry.get("appVersion"):
+        raise FetchError(f"{where}: no appVersion in index.yaml")
+    return where, str(entry["appVersion"])
+
+
 # --------------------------------------------------------------------------
 # Evaluation.
 def evaluate(manifest: dict, gw) -> list[dict]:
@@ -165,6 +208,7 @@ def evaluate(manifest: dict, gw) -> list[dict]:
                 rows.append(dict(link=name, role="consumer", where=cwhere, value="", state=ERROR, note=str(e)))
                 continue
             val = raw.split(c["before"], 1)[0] if c.get("before") else raw
+            val = val.rsplit(c["after"], 1)[-1] if c.get("after") else val
             state = OK if val == src_val else MISMATCH
             note = "" if state == OK else f"source is {src_val}"
             rows.append(dict(link=name, role="consumer", where=cwhere, value=val, state=state, note=note))
@@ -178,10 +222,23 @@ def evaluate(manifest: dict, gw) -> list[dict]:
             if newest is None:
                 rows.append(dict(link=name, role="upstream", where=up["repo"], value="", state=ERROR, note="no stable release"))
                 continue
-            ahead = semver_key(newest) > semver_key(src_val)
+            ahead = upstream_ahead(newest, src_val)
             rows.append(dict(link=name, role="upstream", where=up["repo"], value=newest,
                              state=UPSTREAM_AHEAD if ahead else OK,
                              note=f"source is {src_val}" if ahead else ""))
+        if link.get("subchart"):
+            try:
+                where, app = subchart_app_version(link, gw)
+            except FetchError as e:
+                rows.append(dict(link=name, role="subchart", where=link["subchart"]["name"], value="", state=ERROR, note=str(e)))
+                continue
+            if semver_key(src_val) == semver_key(app):
+                note = "override equals the appVersion the chart ships"
+            elif semver_key(src_val) > semver_key(app):
+                note = f"override {src_val} is ahead of the appVersion the chart ships"
+            else:
+                note = f"override {src_val} is behind the appVersion the chart ships"
+            rows.append(dict(link=name, role="subchart", where=where, value=app, state=OK, note=note))
     return rows
 
 
@@ -235,10 +292,17 @@ def upsert(rows: list[dict], gw, tracker_repo: str, today: str, dry_run: bool = 
 # Selftest: fixtures + mutations that prove every guard can fire.
 class FixtureGateway:
     def __init__(self, files: dict, releases: dict, existing: int | None = None,
-                 fail_files: set | None = None, fail_releases: set | None = None):
+                 fail_files: set | None = None, fail_releases: set | None = None,
+                 indexes: dict | None = None):
         self.files, self.rel, self.existing = files, releases, existing
         self.fail_files, self.fail_releases = fail_files or set(), fail_releases or set()
+        self.indexes = indexes or {}
         self.calls: list[tuple] = []
+
+    def chart_index(self, url):
+        if url not in self.indexes:
+            raise FetchError("HTTP 404 mocked index")
+        return self.indexes[url]
 
     def file_text(self, repo, path):
         if (repo, path) in self.fail_files:
@@ -369,10 +433,53 @@ def selftest() -> int:
     upsert(evaluate(MANIFEST_FIXTURE, gw), gw, "o/.github", today, dry_run=True)
     check(not gw.calls, "dry-run makes no issue call")
 
-    # 11. the real manifest parses and names at least one link with a source and a consumer
+    # 11. the real manifest parses; every link has a source and at least one of consumers/upstream/subchart
     real = yaml_to_json(open(os.path.join(os.path.dirname(__file__), "..", "version-links.yaml")).read())
-    check(real.get("version") == 1 and real["links"] and all(l.get("source") and l.get("consumers") for l in real["links"]),
-          "version-links.yaml parses and every link has a source and consumers")
+    check(real.get("version") == 1 and real["links"] and all(
+        l.get("source") and (l.get("consumers") or l.get("upstream") or l.get("subchart")) for l in real["links"]),
+        "version-links.yaml parses and every link has a source and a consumer, upstream or subchart")
+
+    # 12. `after` consumer: an inline image reference compares on the tag after the last ':'; list index keys read
+    tools = {
+        "version": 1,
+        "links": [{
+            "name": "alpine-k8s",
+            "source": {"repo": "o/charts", "file": "values.yaml", "key": "zitadel.tools.kubectl.image.tag", "format": "yaml"},
+            "consumers": [{"repo": "o/charts", "file": "values.yaml", "key": "zitadel.initContainers.0.image",
+                           "format": "yaml", "after": ":"}],
+        }],
+    }
+    vals = ('zitadel:\n  tools:\n    kubectl:\n      image:\n        tag: "1.33.0"\n'
+            '  initContainers:\n    - name: wait\n      image: ghcr.io/o/mirror/alpine-k8s:1.31.0\n')
+    rows = evaluate(tools, FixtureGateway({("o/charts", "values.yaml"): vals}, {}))
+    cons = [r for r in rows if r["role"] == "consumer"][0]
+    check(cons["state"] == MISMATCH and cons["value"] == "1.31.0", "`after: ':'` reads the tag of an inline image reference through a list index")
+    vals_ok = vals.replace("alpine-k8s:1.31.0", "alpine-k8s:1.33.0")
+    rows = evaluate(tools, FixtureGateway({("o/charts", "values.yaml"): vals_ok}, {}))
+    check(all(r["state"] == OK for r in rows), "`after` consumer equal to the source reads OK")
+
+    # 13. upstream compare at the precision of the source: floating minor `3.6`
+    check(not upstream_ahead("v3.6.4", "3.6"), "source 3.6 is in sync with newest v3.6.4")
+    check(upstream_ahead("v3.7.1", "3.6"), "source 3.6 is behind newest v3.7.1")
+    check(upstream_ahead("v4.17.4", "v4.17.3") and not upstream_ahead("v4.17.3", "v4.17.3"), "full versions compare at patch precision")
+
+    # 14. subchart row: informational, never drift; index failure is ERROR
+    chart = ('dependencies:\n  - name: zitadel\n    alias: zitadel\n    version: "9.34.1"\n'
+             '    repository: "https://charts.example"\n')
+    index = {"entries": {"zitadel": [{"version": "9.34.1", "appVersion": "v4.13.1"}, {"version": "9.35.0", "appVersion": "v4.14.0"}]}}
+    sub = json.loads(json.dumps(MANIFEST_FIXTURE))
+    sub["links"][0]["subchart"] = {"repo": "o/charts", "file": "Chart.yaml", "name": "zitadel"}
+    gw = FixtureGateway({**files_ok, ("o/charts", "Chart.yaml"): chart}, {"up/zitadel": REL_SAME},
+                        indexes={"https://charts.example/index.yaml": index})
+    rows = evaluate(sub, gw)
+    scr = [r for r in rows if r["role"] == "subchart"][0]
+    check(scr["state"] == OK and scr["value"] == "v4.13.1" and "ahead" in scr["note"], "subchart row reads appVersion v4.13.1 for the pinned 9.34.1 and says the override is ahead")
+    upsert(rows, gw, "o/.github", today)
+    check(not [c for c in gw.calls if c[0] == "create"], "a subchart distance alone files nothing")
+    gw = FixtureGateway({**files_ok, ("o/charts", "Chart.yaml"): chart}, {"up/zitadel": REL_SAME})
+    rows = evaluate(sub, gw)
+    rc = upsert(rows, gw, "o/.github", today)
+    check(rc == 1 and any(r["role"] == "subchart" and r["state"] == ERROR for r in rows), "unreachable chart index is an ERROR row and turns the run red")
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
