@@ -106,17 +106,28 @@ links:
       name: openfga
 
   - name: alpine-k8s
-    # The kubectl tool image the zitadel subchart runs in its setup and
-    # cleanup Jobs, and the same image in the chart's own wait-for-system-key
-    # init container. The two are pinned by hand in two places and must
-    # agree. No upstream feed: the alpine/k8s image tracks Kubernetes patch
-    # versions, and the right version is the cluster's, not the newest.
+    # The alpine-k8s tool image (kubectl + sh) every first-party Job, init
+    # container, gate and helm-test probe renders through `gibson.toolImage`
+    # (charts `global.toolImage`, the source). Two more copies live in the
+    # same values file and must equal it: the zitadel subchart's own kubectl
+    # tool image, which the fan-out rewrites, and the wait-for-system-key
+    # init container, a plain string the upstream zitadel chart takes
+    # verbatim, so it is drift-only. No upstream feed: the alpine/k8s image
+    # tracks Kubernetes minors, and the right version is the cluster's, not
+    # the newest. Add a new tag to mirror-list.yaml before moving it.
     source:
       repo: zeroroot-ai/charts
       file: helm/gibson/values.yaml
-      key: zitadel.tools.kubectl.image.tag
+      key: global.toolImage.tag
       format: yaml
     consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: zitadel.tools.kubectl.image.tag
+        format: yaml
+        regenerate:
+          - ./scripts/golden.sh update
+          - ./bigbang/images/generate-image-list.py
       - repo: zeroroot-ai/charts
         file: helm/gibson/values.yaml
         key: zitadel.initContainers.0.image
