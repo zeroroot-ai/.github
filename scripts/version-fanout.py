@@ -216,6 +216,9 @@ def apply_consumer(dest: str, c: dict, value: str, gw) -> str:
     if not os.path.isfile(path):
         raise FanoutError(f"{c['repo']}:{c['file']} missing")
     text = open(path).read()
+    if c.get("after"):
+        raise FanoutError(f"{c['repo']}:{c['file']}:{c['key']} is an `after` consumer (inline image reference); "
+                          "the fan-out does not rewrite those, edit it by hand")
     if c["format"] == "env":
         open(path, "w").write(set_env_key(text, c["key"], value))
         return f"{c['file']}:{c['key']} = {value}"
@@ -421,8 +424,19 @@ def selftest() -> int:
         check(True, "unsafe value refused")
     # 8. the real manifest names an image for every `before: "@"` consumer
     real = yaml_to_json(open(os.path.join(os.path.dirname(__file__), "..", "version-links.yaml")).read())
-    check(all(c.get("image") for l in real["links"] for c in l["consumers"] if c.get("before")),
+    check(all(c.get("image") for l in real["links"] for c in l.get("consumers", []) if c.get("before")),
           "every image-pin consumer in version-links.yaml names its image")
+    # an `after` consumer (inline image reference) is drift-only: the fan-out refuses it loudly
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        open(os.path.join(d, "values.yaml"), "w").write("zitadel:\n  initContainers:\n    - image: ghcr.io/o/alpine-k8s:1.31.0\n")
+        try:
+            apply_consumer(d, {"repo": "o/charts", "file": "values.yaml", "key": "zitadel.initContainers.0.image",
+                               "format": "yaml", "after": ":"}, "1.33.0", None)
+            check(False, "`after` consumer is refused")
+        except FanoutError as e:
+            check("after" in str(e), "`after` consumer is refused with a message that names it")
+
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 

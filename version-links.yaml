@@ -20,13 +20,29 @@
 #                       this string (image pins carry `@sha256:<digest>`)
 #     image             required with `before`: the ghcr.io/zeroroot-ai image
 #                       whose `<value>` tag the fan-out resolves to a digest
+#     after             optional: compare only the part of the value after
+#                       the last occurrence of this string (an inline image
+#                       reference `registry/name:tag` carries the tag after
+#                       the last `:`). Drift-only: the fan-out refuses to
+#                       rewrite an `after` consumer, a human edits it.
 #   links[].upstream    optional: the upstream release feed to watch
 #     repo              GitHub owner/name; the newest non-prerelease,
-#                       non-draft release by semver is "newest"
+#                       non-draft release by semver is "newest". The compare
+#                       runs at the precision of the source value: a source
+#                       `3.6` is in sync with a newest `v3.6.4` and behind a
+#                       `v3.7.0` (floating minor tags track patches upstream).
+#   links[].subchart    optional: the Helm dependency this value overrides
+#     repo, file        the umbrella Chart.yaml
+#     name              the dependency's alias or name in that file
+#                       The detector reads the dependency's pinned version and
+#                       repository, fetches `<repository>/index.yaml`, and
+#                       records that chart version's appVersion, the version
+#                       the chart was tested with. Informational, never drift.
 #
 # Every value is read from the repo's default branch. A link is IN SYNC when
 # every consumer equals the source and no upstream release is newer than the
-# source.
+# source. A link needs a source and at least one of consumers, upstream or
+# subchart.
 version: 1
 links:
   - name: zitadel
@@ -51,3 +67,63 @@ links:
         image: zitadel-login
     upstream:
       repo: zitadel/zitadel
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: zitadel
+
+  # ---- charts: hand-overridden subchart image tags (charts#14) -------------
+  # Each entry below is an image tag in the umbrella values that overrides a
+  # subchart's own image. The override in charts IS the source: nothing else
+  # carries the version, so the link exists to record the subchart's tested
+  # appVersion and to watch upstream. No override is changed by declaring it.
+  - name: openfga
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: openfga.image.tag
+      format: yaml
+    upstream:
+      repo: openfga/openfga
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: openfga
+
+  - name: alpine-k8s
+    # The kubectl tool image the zitadel subchart runs in its setup and
+    # cleanup Jobs, and the same image in the chart's own wait-for-system-key
+    # init container. The two are pinned by hand in two places and must
+    # agree. No upstream feed: the alpine/k8s image tracks Kubernetes patch
+    # versions, and the right version is the cluster's, not the newest.
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: zitadel.tools.kubectl.image.tag
+      format: yaml
+    consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: zitadel.initContainers.0.image
+        format: yaml
+        after: ":"
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: zitadel
+
+  - name: wait4x
+    # The init-container tool image of the zitadel subchart's login
+    # Deployment. `3.6` is a floating minor tag on purpose: the mirror
+    # refresh picks up patches. The upstream compare runs at minor precision.
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: zitadel.tools.wait4x.image.tag
+      format: yaml
+    upstream:
+      repo: wait4x/wait4x
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: zitadel
