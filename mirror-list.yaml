@@ -91,9 +91,8 @@ mirrors:
     tag: "1.31.4"
     dest: kubectl
   # NOTE: bitnamilegacy/kubectl 1.29.x and 1.30.x were removed upstream
-  # in 2026-05. The chart now uses :1.31.4 everywhere — see
-  # `enterprise/deploy/helm/gibson/templates/{tests,operations}` and
-  # spec `deploy-simplification` Phase 1.7. If a future patch requires
+  # in 2026-05. The chart now uses :1.31.4 everywhere — see the `gibson`
+  # chart in zeroroot-ai/charts (`helm/gibson`). If a future patch requires
   # another kubectl minor, mirror it here AND update the chart together.
 
   # ---------------------------------------------------------------------------
@@ -197,7 +196,7 @@ mirrors:
   # entire ingress edge, and alpine/k8s is the init/Job image on a dozen
   # workloads, so a throttled pull is an outage rather than a slow start.
   #
-  # Tags track enterprise/deploy helm/gibson*/values.yaml + the third-party
+  # Tags track zeroroot-ai/charts helm/gibson*/values.yaml + the third-party
   # subchart overrides in helm/gibson/values.yaml. All are fully pinned, so
   # none needs `refresh: true`. When a chart bump moves a tag, add the new
   # entry here FIRST, let this workflow run, and only then repoint the chart —

@@ -1,7 +1,7 @@
 # Reusable workflow that requires every fix-PR to either:
 #
-#  (a) reference an open or merged companion PR on zeroroot-ai/docs via the
-#      trailer `Docs-PR: <url>` in the PR body — used when the fix surfaces
+#  (a) reference an open or merged companion PR on zeroroot-ai/docs-site via
+#      the trailer `Docs-PR: <url>` in the PR body — used when the fix surfaces
 #      an architectural invariant, repo-wiring detail, or edge case worth
 #      capturing for the next agent; OR
 #
@@ -30,17 +30,18 @@
 # can read a uniform set of fields regardless of which event triggered the run.
 # The pull_request path is untouched — same fields, same source (github.event.pull_request.*).
 #
-# DOCS_REPO_READ_TOKEN should be a fine-grained PAT or GitHub-App token with
-# `Pull requests: read` on zeroroot-ai/docs. Stored as an organization-level
-# secret so every repo's workflow can read it. If absent, the workflow falls
-# back to URL-syntax-only validation and emits a loud warning — the gate is
-# weaker but the workflow still runs.
+# zeroroot-ai/docs-site is public, so `github.token` reads the companion PR
+# and the gate always verifies it. DOCS_REPO_READ_TOKEN stays declared as an
+# optional override because consumer workflows still pass it; it is unset in
+# the organization today. Removing the input needs a coordinated change in
+# every calling repository, so it is tracked separately.
 #
 # Required check name: architectural-doc-coverage (declared in the calling
 # workflow's job id).
 #
-# Rationale + design notes:
-#   docs/README.md + docs/CONTEXT-MAP.md in zeroroot-ai/docs.
+# The internal docs repository was deleted on 2026-09-05. Architecture pages
+# and ADRs now live only in the local workspace and have no PR to link, so a
+# change to one of those uses the not-applicable trailer and names the file.
 
 name: architectural-doc-coverage
 
@@ -48,7 +49,7 @@ on:
   workflow_call:
     secrets:
       DOCS_REPO_READ_TOKEN:
-        description: "PAT/App token with pull_requests:read on zeroroot-ai/docs"
+        description: "Optional PAT/App token used instead of github.token to read zeroroot-ai/docs-site"
         required: false
 
 permissions:
@@ -180,11 +181,13 @@ jobs:
         if: steps.bypass.outputs.matched != 'true' && steps.na.outputs.matched != 'true'
         run: |
           set -euo pipefail
-          # Match: Docs-PR: https://github.com/zeroroot-ai/<docs|docs-site>/pull/<N>
-          # docs-site is the canonical home for contributor procedures
-          # (docs ADR-0067, 2026-08-24); docs holds architecture + ADRs.
+          # Match: Docs-PR: https://github.com/zeroroot-ai/docs-site/pull/<N>
+          # docs-site is the one public home for contributor procedures
+          # (ADR-0067 "docs-site owns contributor documentation", 2026-08-24).
+          # The internal docs repository was deleted on 2026-09-05, so a URL
+          # into it can never resolve and is no longer accepted here.
           # $body comes from $GITHUB_ENV — never template-substituted.
-          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zeroroot-ai/(docs|docs-site)/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
+          URL=$(printf '%s\n' "$body" | grep -oE 'Docs-PR:[[:space:]]+https://github\.com/zeroroot-ai/docs-site/pull/[0-9]+' | head -1 | sed -E 's/^Docs-PR:[[:space:]]+//' || true)
           if [ -z "$URL" ]; then
             cat <<EOF >&2
 
@@ -198,10 +201,10 @@ jobs:
 
                       Docs-PR: https://github.com/zeroroot-ai/docs-site/pull/<N>
 
-                  NOTE: zeroroot-ai/docs was DELETED on 2026-09-05 and is now
-                  local-only. Architecture notes, ADRs, edge cases and repo
-                  docs live there and have no PR to link, so for those use (b)
-                  and name the local file you updated.
+                  NOTE: the internal docs repository was deleted on
+                  2026-09-05. Architecture notes, ADRs, edge cases and repo
+                  docs live only in the local workspace and have no PR to
+                  link, so for those use (b) and name the file you updated.
 
             (b) Explicitly opt out for cosmetic/mechanical fixes:
 
@@ -217,32 +220,24 @@ jobs:
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           NUM=$(echo "$URL" | sed -E 's|.*/pull/([0-9]+)$|\1|')
           echo "num=$NUM" >> "$GITHUB_OUTPUT"
-          DOCS_REPO=$(echo "$URL" | sed -E 's|https://github\.com/zeroroot-ai/([^/]+)/pull/.*|\1|')
-          echo "repo=$DOCS_REPO" >> "$GITHUB_OUTPUT"
 
       - name: Verify docs PR exists and is open or merged
         if: steps.bypass.outputs.matched != 'true' && steps.na.outputs.matched != 'true'
         env:
           GH_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN || github.token }}
-          TOKEN_CONFIGURED: ${{ secrets.DOCS_REPO_READ_TOKEN != '' }}
           NUM: ${{ steps.extract.outputs.num }}
           URL: ${{ steps.extract.outputs.url }}
-          DOCS_REPO: ${{ steps.extract.outputs.repo }}
         run: |
           set -euo pipefail
           # All inputs come from env vars. Never template-substitute into the
           # script source — see the equivalent comment in the body-resolution
           # step for the failure mode this avoids.
+          #
+          # zeroroot-ai/docs-site is public, so github.token reads it and the
+          # PR state is always verified. There is no syntax-only fallback.
 
-          if [ "$TOKEN_CONFIGURED" != "true" ]; then
-            echo "::warning::DOCS_REPO_READ_TOKEN is not configured. Falling back to URL-syntax validation only — the docs PR's existence is not verified."
-            echo "::warning::To strengthen this gate, set the DOCS_REPO_READ_TOKEN org-level secret with pull_requests:read on zeroroot-ai/docs."
-            echo "Docs-PR URL is syntactically valid: $URL"
-            exit 0
-          fi
-
-          STATE=$(gh pr view "$NUM" --repo "zeroroot-ai/$DOCS_REPO" --json state --jq .state 2>/dev/null || echo "MISSING")
-          IS_DRAFT=$(gh pr view "$NUM" --repo "zeroroot-ai/$DOCS_REPO" --json isDraft --jq .isDraft 2>/dev/null || echo "true")
+          STATE=$(gh pr view "$NUM" --repo "zeroroot-ai/docs-site" --json state --jq .state 2>/dev/null || echo "MISSING")
+          IS_DRAFT=$(gh pr view "$NUM" --repo "zeroroot-ai/docs-site" --json isDraft --jq .isDraft 2>/dev/null || echo "true")
 
           case "$STATE" in
             OPEN|MERGED)
@@ -254,8 +249,8 @@ jobs:
               echo "✅ Docs-PR ${URL} is ${STATE}; doc-coverage gate satisfied."
               ;;
             MISSING)
-              echo "❌ Docs-PR ${URL} could not be resolved on zeroroot-ai/docs."
-              echo "Either the URL is wrong, the PR was deleted, or DOCS_REPO_READ_TOKEN lacks pull_requests:read."
+              echo "❌ Docs-PR ${URL} could not be resolved on zeroroot-ai/docs-site."
+              echo "Either the URL is wrong or the PR was deleted."
               exit 1
               ;;
             CLOSED)

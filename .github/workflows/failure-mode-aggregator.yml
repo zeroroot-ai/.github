@@ -1,13 +1,14 @@
 name: failure-mode-aggregator
 
 # Walks every org repo for failure-mode.yaml manifests, validates them
-# against schemas/failure-mode.json, and emits a consolidated table to
-# docs/agents/failure-modes.md in zeroroot-ai/docs.
+# against schemas/failure-mode.json, and emits a consolidated table as a
+# workflow artifact.
 #
-# Slice 6.5 of the production-readiness epic (gibson#176 → board #16).
+# Slice 6.5 of the production-readiness epic.
 #
-# Runs monthly + manually. Drift detector: regenerated table must match
-# the in-tree copy on docs; if not, opens a PR with the update.
+# Runs monthly + manually. The table belongs in the internal docs tree at
+# docs/agents/failure-modes.md, which is not a GitHub repository, so a
+# human copies the artifact into it.
 #
 # Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
 # board #44) — low-signal maintenance cron, workflow_dispatch still
@@ -48,11 +49,12 @@ jobs:
           mkdir -p /tmp/fm
           REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
 
-          # Blind-spot guard: `gitops` is a known private, long-lived repo.
+          # Blind-spot guard: `hosted` is a known private, long-lived repo.
           # If it is absent the token cannot see private repos and the
           # catalog silently shrinks to public repos — fail loudly instead.
-          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
-            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; catalog would silently cover public repos only"
+          # It replaced `gitops`, deleted on 2026-09-04 (ADR-0086).
+          if ! printf '%s\n' "$REPOS" | grep -qx 'hosted'; then
+            echo "::error::repo enumeration is missing private repos (hosted not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; catalog would silently cover public repos only"
             exit 1
           fi
           for REPO in $REPOS; do
@@ -111,7 +113,6 @@ jobs:
           path: /tmp/failure-modes.md
           retention-days: 14
 
-      # Note: opening a PR against zeroroot-ai/docs to update
-      # docs/agents/failure-modes.md is a follow-up (requires a
-      # cross-repo PAT with PR-write scope). The artifact is downloadable
-      # in the meantime.
+      # The artifact is the deliverable. The internal docs tree that holds
+      # docs/agents/failure-modes.md is not a GitHub repository, so there is
+      # no PR for this workflow to open.

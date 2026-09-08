@@ -55,11 +55,12 @@ jobs:
 
           # Blind-spot guard: if the token cannot see private repos, the
           # enumeration silently shrinks to public repos only. Canary is
-          # `gitops` — private and long-lived (NOT `gibson`, which the
-          # sibling audits use: gibson is public now, so it can no longer
-          # detect this). Fail loudly instead of under-reporting.
-          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
-            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; the flake scan would silently cover public repos only"
+          # `hosted` — private and long-lived. It replaced `gitops`, which was
+          # deleted on 2026-09-04 (ADR-0086), after which this guard fired on
+          # every run. A public canary such as `gibson` can never fire, so it
+          # would stop guarding. Fail loudly instead of under-reporting.
+          if ! printf '%s\n' "$REPOS" | grep -qx 'hosted'; then
+            echo "::error::repo enumeration is missing private repos (hosted not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; the flake scan would silently cover public repos only"
             exit 1
           fi
 

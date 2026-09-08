@@ -184,3 +184,7 @@ obligation back to us. Gibson Runtime and Gibson Console are Elastic License
 **[Read the security docs →](https://docs.zeroroot.ai/docs/security)** · **[Get the ADK →](https://github.com/zeroroot-ai/adk)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
 
 </div>
+
+---
+
+Issue and pull request numbers cited in comments and documents dated before 2026-09-05 refer to the tracker before the history reset, archived offline. They do not resolve on GitHub.

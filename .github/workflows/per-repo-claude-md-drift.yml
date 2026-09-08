@@ -35,14 +35,14 @@ jobs:
           set -euo pipefail
           REPOS=$(gh api orgs/zeroroot-ai/repos --paginate --jq '.[].name' | grep -vE '^(\.github|.*\.github\.io)$')
 
-          # Blind-spot guard: if the token can't see private repos, they
-          # silently vanish and the scan is incomplete. Canary is `gitops`
-          # — private and long-lived. (Previously `gibson`, which went
-          # public with the oss flip; a public canary can never fire, so
-          # the guard had quietly stopped guarding — .github#231/#232
-          # verification.) Fail loudly instead of under-reporting.
-          if ! printf '%s\n' "$REPOS" | grep -qx 'gitops'; then
-            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; scan would be incomplete"
+          # Blind-spot guard: if the token cannot see private repos, they
+          # silently vanish and the scan is incomplete. Canary is `hosted`
+          # — private and long-lived. It replaced `gitops`, deleted on
+          # 2026-09-04 (ADR-0086), after which this guard fired on every run.
+          # A public canary such as `gibson` can never fire, so it would stop
+          # guarding. Fail loudly instead of under-reporting.
+          if ! printf '%s\n' "$REPOS" | grep -qx 'hosted'; then
+            echo "::error::repo enumeration is missing private repos (hosted not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; scan would be incomplete"
             exit 1
           fi
 

@@ -1,8 +1,8 @@
 # ADR-0009 deny-list (vendored snapshot)
 
 This file is a vendored, parse-stable snapshot of the `### Deny-list`
-section in
-`zeroroot-ai/docs/adr/0009-jwt-spiffe-everywhere.md` (local docs → `adr/0009-jwt-spiffe-everywhere.md`).
+section in ADR-0009, "JWT + SPIFFE everywhere". The ADR lives in the
+internal docs tree at `docs/adr/0009-jwt-spiffe-everywhere.md`.
 
 The reusable workflow at
 `.github/workflows/vault-auth-method-deny-list.yml` reads this file
@@ -12,20 +12,16 @@ PRs that introduce any of these strings on a non-allowlisted line.
 
 **Why a vendored copy?**
 
-`zeroroot-ai/docs` is a private repository. Some consumer repos (notably
-`setec`, an OSS repo) don't have access to the `DOCS_REPO_READ_TOKEN`
-org-level secret, so cross-repo `actions/checkout` of the docs repo
-fails. Vendoring the deny-list eliminates the docs-repo dependency
-entirely, at the cost of an extra sync step when ADR-0009 grows.
+The internal docs tree is not a GitHub repository. It was deleted on
+2026-09-05 and now lives only in the local workspace, so no CI runner can
+read the ADR. This snapshot is the only copy the scan has, at the cost of
+one sync step when ADR-0009 grows.
 
 **Sync contract.** When the deny-list table in ADR-0009 changes:
 
-1. Open a PR on `zeroroot-ai/docs` that updates the ADR.
-2. After the ADR PR merges, open a follow-up PR on `zeroroot-ai/.github`
-   that updates this file to match. The two are reviewed together; the
-   intent is that this file never lags the ADR by more than one PR cycle.
-3. A future workflow on `zeroroot-ai/docs` may auto-open the
-   `.github`-repo sync PR — tracked separately.
+1. Update the ADR in the local workspace.
+2. Open a PR on `zeroroot-ai/.github` that updates this file to match, in
+   the same working session. This file must never lag the ADR.
 
 The parser only emits tokens from rows whose first column is exclusively
 one or more backtick-wrapped strings separated by " / " (the

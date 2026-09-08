@@ -1,7 +1,7 @@
 # Reusable workflow that rejects any `runs-on:` label that is not a
 # sanctioned GitHub-hosted runner or the org's ephemeral ARC scale-set.
 #
-# Epic: cicd-efficiency (board #44) / zeroroot-ai/deploy#1067 / ADR-0060
+# Epic: cicd-efficiency. Rule set by ADR-0060
 # ("GitHub-hosted runners are the default for every CI job that does not
 # require bare metal; the only jobs allowed off GitHub-hosted are those
 # needing /dev/kvm, and those run on ephemeral runner pods in staging that
@@ -83,7 +83,7 @@ jobs:
                 label="$(echo "$raw" | xargs)"
                 [ -z "$label" ] && continue
                 if ! classify "$label"; then
-                  echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or an *-ephemeral ARC scale-set are allowed. A bare GitHub expression with no -ephemeral suffix is an unbounded label and is rejected. See ADR-0060 (zeroroot-ai/docs)."
+                  echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or an *-ephemeral ARC scale-set are allowed. A bare GitHub expression with no -ephemeral suffix is an unbounded label and is rejected. See ADR-0060, GitHub-hosted runners are the default."
                   violations=$((violations+1))
                 fi
               done
