@@ -23,8 +23,14 @@ tar -xzf "$tmp/gitleaks.tgz" -C "$tmp" gitleaks
 # case 1: a generated credential-shaped token must be caught. Assembled at run
 # time from random bytes so nothing credential-shaped is committed here, and so
 # it is not one of the documented example values gitleaks itself allowlists.
-rand() { head -c 64 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c "$1"; }
+# 64 random bytes leave only ~15 alphanumerics after tr -dc, and sometimes
+# 8. An 8-character tail is too short for the stripe rule and can fall under
+# the generic rule's entropy floor, so the case failed about 1 run in 100 for
+# no reason. Draw from enough bytes that the tail is always the full length,
+# and prove it.
+rand() { head -c 4096 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c "$1"; }
 FAKE="sk_live_$(rand 24)"
+[ "${#FAKE}" -eq 32 ] || { echo "FAIL: token generator produced ${#FAKE} chars, expected 32"; exit 1; }
 mkdir -p "$tmp/dirty"
 printf 'STRIPE_SECRET_KEY = "%s"\n' "$FAKE" > "$tmp/dirty/config"
 rc=0; "$tmp/gitleaks" dir "$tmp/dirty" --no-banner --redact --exit-code 1 >/dev/null 2>&1 || rc=$?
