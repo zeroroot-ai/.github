@@ -9,9 +9,9 @@ name: tool-catalog-generator
 #   - Make targets (build / test / check / etc.)
 #   - zda-ast subcommands (when the zda-ast CLI lands)
 #
-# Emits a consolidated docs/agents/tools.md to zeroroot-ai/docs as a
-# workflow artifact. PR to actually open the cross-repo PR is a follow-up
-# (needs cross-repo PAT).
+# Emits a consolidated docs/agents/tools.md as a workflow artifact. It
+# belongs in the internal docs tree, which is not a GitHub repository, so a
+# human copies the artifact into it.
 #
 # Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
 # board #44) — low-signal maintenance cron, workflow_dispatch still

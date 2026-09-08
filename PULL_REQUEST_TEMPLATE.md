@@ -18,7 +18,7 @@
 - [ ] <feature-specific verification>
 
 ## Production impact (delete if low risk)
-<!-- For tier-platform-release repos (sdk, deploy, gitops): -->
+<!-- For tier-platform-release repos (sdk, charts, hosted): -->
 - [ ] production-impact-acknowledged
 - Affected systems:
 - Customer-visible? yes / no
@@ -36,10 +36,11 @@ contributor-facing documentation:
 
     Docs-PR: https://github.com/zeroroot-ai/docs-site/pull/<N>
 
-    NOTE: zeroroot-ai/docs was deleted on 2026-09-05 and is now local-only.
-    Architecture pages, ADRs, edge cases and repo docs live there and have no
-    PR to link. When you update one of those, use trailer (b) and name the
-    file — e.g. "Docs-PR: not-applicable: updated local docs/adr/0089".
+    NOTE: the internal docs tree is not a GitHub repository. Architecture
+    pages, ADRs, edge cases and repo docs live only in the local workspace
+    and have no PR to link. When you update one of those, use trailer (b)
+    and name the file — e.g. "Docs-PR: not-applicable: updated local
+    docs/adr/0089".
 
 Trailer (b) — cosmetic/mechanical fix that touches no architectural
 invariant (typo, dep bump, formatting, comment-only). Reviewers will push

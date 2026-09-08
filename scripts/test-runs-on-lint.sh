@@ -67,7 +67,7 @@ echo "== no GitHub expression survives inside the run: block =="
 # COMMENT in a `run:` block. Leaving one there does not fail the step — it
 # invalidates the whole workflow file, and every caller gets
 # "This run likely failed because of a workflow file issue" with no log to
-# read. Cost us a full round-trip on zeroroot-ai/gitops#544.
+# read. That cost a full round-trip on a repo that has since been deleted.
 runblock="$(awk '/- name: Reject non-sanctioned/,0' "$wf")"
 if printf '%s' "$runblock" | grep -q '\${{'; then
   echo "FAIL  a literal GitHub expression appears inside the run: block:"

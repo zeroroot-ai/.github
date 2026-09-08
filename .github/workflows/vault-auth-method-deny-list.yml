@@ -1,22 +1,21 @@
 # Reusable workflow that enforces ADR-0009's deny-list.
 #
-# ADR-0009 (zeroroot-ai/docs#33, amended docs#34) establishes that every
-# platform service-to-service auth uses JWT + SPIFFE. The "### Deny-list"
-# section enumerates literal tokens that MUST NOT appear in any consumer
-# repo's source tree. This workflow scans the calling repo for those
-# tokens and fails the PR on any new (non-allowlisted) occurrence.
+# ADR-0009, "JWT + SPIFFE everywhere", establishes that every platform
+# service-to-service auth uses JWT + SPIFFE. The "### Deny-list" section
+# enumerates literal tokens that MUST NOT appear in any consumer repo's
+# source tree. This workflow scans the calling repo for those tokens and
+# fails the PR on any new (non-allowlisted) occurrence.
 #
 # Source of truth for the deny-list:
-#   the local docs repo → adr/0009-jwt-spiffe-everywhere.md
+#   the local workspace → docs/adr/0009-jwt-spiffe-everywhere.md
 #
 # Parse-stable vendored snapshot in this repo:
-#   data/adr-0009-deny-list.md
+#   actions/vault-auth-deny-list/adr-0009-deny-list.md
 #
-# The workflow reads the deny-list from the vendored snapshot (not the
-# docs repo directly), because zeroroot-ai/docs is private and not every
-# consumer repo has DOCS_REPO_READ_TOKEN. The vendored file is kept in
-# lockstep with the ADR via the sync contract documented at the top of
-# `data/adr-0009-deny-list.md`.
+# The scan reads the deny-list from that vendored snapshot. The ADR lives
+# in an internal docs tree that no CI runner can read, so the snapshot is
+# the only copy CI has. It is kept in lockstep with the ADR via the sync
+# contract at the top of `actions/vault-auth-deny-list/adr-0009-deny-list.md`.
 #
 # Called by per-repo workflows via:
 #   uses: zeroroot-ai/.github/.github/workflows/vault-auth-method-deny-list.yml@main

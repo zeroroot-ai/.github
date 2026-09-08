@@ -1,115 +1,28 @@
-# NOTE (2026-09-05): zeroroot-ai/docs was DELETED and is now a local-only
-# repository, so every `gh api /repos/zeroroot-ai/docs/...` call below 404s.
-# That is harmless and deliberate: each call already falls back to a warning
-# and `exit 0`, so reference resolution is skipped rather than failed. The
-# calls are left in place so this starts working again untouched if the repo
-# is ever restored. Nothing consumes this workflow today.
-
 name: doc-freshness
 
-# Slice 6.8 of the production-readiness epic (gibson#176 → board #16).
-# Runs four checks against any PR (or via cron) that gate documentation
-# references and link health:
+# Two documentation checks that run on every PR against this repository:
 #
-#   - // adr: N comments resolve to an existing file in docs/adr/
-#   - // trap: T<NNNN> comments resolve to an entry in docs/agents/traps.md
-#   - Workspace CLAUDE.md does not reference removed/renamed files
-#   - Markdown links via lychee (covers all .md across called repo)
+#   - every Markdown link resolves (lychee, across all .md files)
+#   - CLAUDE.md and AGENTS.md name no file that has been removed or renamed
+#
+# The `// adr: N` and `// trap: T<NNNN>` reference resolution used to run here
+# too. It read the ADR and trap catalogs over the API from the internal docs
+# repository. That repository was deleted on 2026-09-05 and both catalogs now
+# live only in the local workspace, so no CI runner can resolve either
+# reference. The two jobs and their fixture self-test are deleted rather than
+# skipped, because a disabled dead path reads as coverage that is not there.
+#
+# The `workflow_call` trigger and the docs-repo read token went with them: no
+# repository ever called this workflow, and the token existed only to read the
+# private docs repository.
 
 on:
   pull_request:
-  workflow_call:
-    secrets:
-      DOCS_REPO_READ_TOKEN:
-        description: "PAT/App token with contents:read on zeroroot-ai/docs (private repo)"
-        required: false
 
 permissions:
   contents: read
 
 jobs:
-  adr-trap-references:
-    name: adr + trap reference resolution
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Fetch docs repo's ADR + traps catalog
-        id: fetch-refs
-        env:
-          GH_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/refs
-
-          # Pull docs/adr/ file names.
-          # Falls back gracefully when the docs repo is private and DOCS_REPO_READ_TOKEN
-          # is not configured — the resolution steps then emit warnings but don't fail,
-          # which mirrors how architectural-doc-coverage.yml handles the same situation.
-          if gh api /repos/zeroroot-ai/docs/contents/adr --paginate \
-              --jq '.[] | select(.name | startswith("0") and endswith(".md")) | .name' \
-              2>/dev/null \
-            | sed -E 's/^0*([0-9]+).*/\1/' | sort -u > /tmp/refs/adrs.txt && \
-             [ -s /tmp/refs/adrs.txt ]; then
-            echo "refs_available=true" >> "$GITHUB_OUTPUT"
-            echo "ADRs: $(wc -l < /tmp/refs/adrs.txt)"
-          else
-            echo "refs_available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Could not fetch docs/adr — zeroroot-ai/docs was deleted 2026-09-05 (now local-only), or DOCS_REPO_READ_TOKEN is unset. Skipping reference resolution; not a failure."
-            touch /tmp/refs/adrs.txt /tmp/refs/traps.txt
-            exit 0
-          fi
-
-          # Pull docs/agents/traps.md to find trap IDs
-          gh api /repos/zeroroot-ai/docs/contents/agents/traps.md --jq '.content' 2>/dev/null \
-            | base64 -d \
-            | grep -oE 'T[0-9]{4}' | sort -u > /tmp/refs/traps.txt || touch /tmp/refs/traps.txt
-          echo "Traps: $(wc -l < /tmp/refs/traps.txt)"
-
-      - name: "Resolve adr-comment references"
-        if: steps.fetch-refs.outputs.refs_available == 'true'
-        run: |
-          set -uo pipefail
-          BAD=0
-          # Scan Go + TS files for `// adr: N` references
-          while IFS= read -r LINE; do
-            FILE=$(echo "$LINE" | cut -d: -f1)
-            NUM=$(echo "$LINE" | grep -oE 'adr:[[:space:]]*[0-9]+' | grep -oE '[0-9]+')
-            if [ -n "$NUM" ] && ! grep -qFx "$NUM" /tmp/refs/adrs.txt; then
-              echo "::error file=$FILE::// adr: $NUM does not resolve to docs/adr/"
-              BAD=1
-            fi
-          done < <(grep -rE '// adr:[[:space:]]*[0-9]+' \
-                     --include='*.go' --include='*.ts' --include='*.tsx' \
-                     --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=.worktrees \
-                     2>/dev/null || true)
-          if [ "$BAD" = "0" ]; then
-            echo "::notice::all // adr: N references resolve"
-          fi
-          exit $BAD
-
-      - name: "Resolve trap-comment references"
-        if: steps.fetch-refs.outputs.refs_available == 'true'
-        run: |
-          set -uo pipefail
-          BAD=0
-          while IFS= read -r LINE; do
-            FILE=$(echo "$LINE" | cut -d: -f1)
-            ID=$(echo "$LINE" | grep -oE 'T[0-9]{4}')
-            if [ -n "$ID" ] && ! grep -qFx "$ID" /tmp/refs/traps.txt; then
-              echo "::error file=$FILE::// trap: $ID does not resolve to docs/agents/traps.md"
-              BAD=1
-            fi
-          done < <(grep -rE '// trap:[[:space:]]*T[0-9]{4}' \
-                     --include='*.go' --include='*.ts' --include='*.tsx' \
-                     --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=.worktrees \
-                     2>/dev/null || true)
-          if [ "$BAD" = "0" ]; then
-            echo "::notice::all // trap: T<NNNN> references resolve"
-          fi
-          exit $BAD
-
   lychee:
     name: broken-link check
     runs-on: ubuntu-latest
@@ -127,51 +40,15 @@ jobs:
             --exclude 'example\.(com|org)'
             --exclude 'img\.shields\.io'
             --exclude 'discord\.gg'
-            --exclude 'github\.com/zeroroot-ai/docs'
             --exclude 'docs\.zeroroot\.ai'
             './**/*.md'
           fail: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  fixture-self-test:
-    # Validates that the adr/trap resolution logic itself is correct.
-    # Proves a valid reference (adr:7, T0001) passes and a stale one
-    # (adr:9999, T9999) fails — so a regression in the check logic would
-    # itself fail CI.
-    name: adr + trap fixture self-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Fetch docs repo refs (same as adr-trap-references job)
-        id: fixture-refs
-        env:
-          GH_TOKEN: ${{ secrets.DOCS_REPO_READ_TOKEN || secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/refs
-          if gh api /repos/zeroroot-ai/docs/contents/adr --paginate \
-              --jq '.[] | select(.name | startswith("0") and endswith(".md")) | .name' \
-              2>/dev/null \
-            | sed -E 's/^0*([0-9]+).*/\1/' | sort -u > /tmp/refs/adrs.txt && \
-             [ -s /tmp/refs/adrs.txt ]; then
-            echo "refs_available=true" >> "$GITHUB_OUTPUT"
-            gh api /repos/zeroroot-ai/docs/contents/agents/traps.md --jq '.content' 2>/dev/null \
-              | base64 -d | grep -oE 'T[0-9]{4}' | sort -u > /tmp/refs/traps.txt || touch /tmp/refs/traps.txt
-          else
-            echo "refs_available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::DOCS_REPO_READ_TOKEN not configured; fixture self-test skipped"
-            touch /tmp/refs/adrs.txt /tmp/refs/traps.txt
-          fi
-      - name: Run fixture self-test
-        if: steps.fixture-refs.outputs.refs_available == 'true'
-        run: bash scripts/test-doc-freshness.sh
-
   claude-md-drift:
     name: CLAUDE.md drift (stale paths)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Detect stale file/workflow refs in CLAUDE.md

@@ -3,9 +3,9 @@
 #
 # Scans the calling-repo's source tree for ADR-0009 deny-list tokens.
 #
-# Source of truth: zeroroot-ai/docs / adr/0009-jwt-spiffe-everywhere.md
-# The "### Deny-list" Markdown table is parsed at workflow run time so the
-# scanner and the ADR cannot diverge.
+# Source of truth: ADR-0009, "JWT + SPIFFE everywhere", vendored next to this
+# script as adr-0009-deny-list.md. The "### Deny-list" Markdown table is
+# parsed at run time so the scanner and the deny-list cannot diverge.
 #
 # Tokens are extracted from the first column of the deny-list table:
 # every backtick-wrapped string in a `|` row becomes a deny-list entry.
@@ -46,10 +46,14 @@
 
 set -euo pipefail
 
-ADR_PATH="${ADR_PATH:-./docs-repo/adr/0009-jwt-spiffe-everywhere.md}"
+# The vendored deny-list is a sibling of this script. It used to default to a
+# checkout of the internal docs repository, which was deleted on 2026-09-05.
+ADR_PATH="${ADR_PATH:-$(dirname "${BASH_SOURCE[0]}")/adr-0009-deny-list.md}"
 REPO_ROOT="${REPO_ROOT:-${GITHUB_WORKSPACE:-.}}"
 ALLOWLIST="${ALLOWLIST:-$REPO_ROOT/.github/.vault-auth-deny-list-allowlist.json}"
-ADR_URL="https://github.com/zeroroot-ai/docs/blob/main/adr/0009-jwt-spiffe-everywhere.md"
+# The ADR has no public URL: the internal docs tree is not a GitHub
+# repository. Point the reader at the vendored table instead.
+ADR_URL='ADR-0009 "JWT + SPIFFE everywhere" (vendored table: zeroroot-ai/.github actions/vault-auth-deny-list/adr-0009-deny-list.md)'
 
 MODE="${1:-scan}"
 

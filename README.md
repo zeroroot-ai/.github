@@ -57,3 +57,9 @@ Dependabot raises bumps for these across the org.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md).
 Security issues: [SECURITY.md](SECURITY.md).
+
+## License and history
+
+Apache License 2.0. See [LICENSE](LICENSE). Copyright Zero Root AI.
+
+Issue and pull request numbers cited in comments and documents dated before 2026-09-05 refer to the tracker before the history reset, archived offline. They do not resolve on GitHub.

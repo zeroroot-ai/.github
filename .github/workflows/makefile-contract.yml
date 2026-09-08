@@ -12,7 +12,7 @@ name: makefile-contract
 # A repo's Makefile that's missing any required target fails this gate.
 #
 # Exempt repos (no Go service/library — a Makefile build/test/check
-# contract does not apply): docs, gitops, deploy (Helm + Terraform
+# contract does not apply): charts, hosted (Helm + Terraform
 # cluster bootstrap), the pnpm/TypeScript repos (dashboard, sdk-ts,
 # zerocool-plugins — their contract is package.json scripts; a stub
 # Makefile wrapping pnpm would be a second entrypoint that drifts), the
@@ -63,21 +63,21 @@ jobs:
           # Blind-spot guard: if the token cannot see private repos, they
           # silently vanish from the enumeration and the audit becomes a
           # false all-clear (the root cause of .github#170 under-reporting).
-          # Canary is `gitops` — private and long-lived — checked against the
-          # UNFILTERED enumeration (it is exempt from the audit itself).
-          # Previously the canary was `gibson`, which went public with the
-          # oss flip; a public canary can never fire, so the guard had
-          # quietly stopped guarding (.github#231/#232 verification).
-          if ! printf '%s\n' "$ALL_REPOS" | grep -qx 'gitops'; then
-            echo "::error::repo enumeration is missing private repos (gitops not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
+          # Canary is `hosted` — private and long-lived — checked against the
+          # UNFILTERED enumeration (it is exempt from the audit itself). It
+          # replaced `gitops`, deleted on 2026-09-04 (ADR-0086), after which
+          # this guard fired on every run. A public canary such as `gibson`
+          # can never fire, so it would stop guarding.
+          if ! printf '%s\n' "$ALL_REPOS" | grep -qx 'hosted'; then
+            echo "::error::repo enumeration is missing private repos (hosted not visible) — GH_PAT_PLATFORM_RO is unset or lacks org read; audit would be incomplete"
             exit 1
           fi
 
-          # Exclude infra/non-Go repos: org repo, docs, gitops, deploy
-          # (Helm + Terraform), the pnpm/TypeScript repos (dashboard,
+          # Exclude infra/non-Go repos: org repo, the Helm and Terraform
+          # repos (charts, hosted), the pnpm/TypeScript repos (dashboard,
           # sdk-ts, zerocool-plugins), and the pages site.
           REPOS=$(printf '%s\n' "$ALL_REPOS" | \
-                  grep -vE '^(\.github|docs|gitops|deploy|dashboard|sdk-ts|zerocool-plugins|.*\.github\.io)$')
+                  grep -vE '^(\.github|charts|hosted|dashboard|sdk-ts|zerocool-plugins|.*\.github\.io)$')
 
           MISSING=""
           for REPO in $REPOS; do

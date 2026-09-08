@@ -62,9 +62,9 @@ jobs:
       - name: Collect measured facts
         env:
           # PLATFORM_RO enumerates PRIVATE repos. The default GITHUB_TOKEN sees
-          # public repos only, which would silently drop deploy/gitops/dashboard
-          # from every number — the same blind spot as .github#170 and #241.
-          # collect() fails loudly when it cannot see `gitops`.
+          # public repos only, which would silently drop hosted and billing
+          # from every number. collect() fails loudly when it cannot see
+          # `hosted`.
           GH_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
         run: |
           set -euo pipefail
