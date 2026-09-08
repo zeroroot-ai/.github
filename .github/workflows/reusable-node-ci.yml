@@ -28,14 +28,14 @@ name: Reusable Node CI (tiered)
 # Callers pin a RELEASE TAG, never @main (ADR-0060 blast-radius):
 #   uses: zeroroot-ai/.github/.github/workflows/reusable-node-ci.yml@v2
 #
-# CALLER PERMISSIONS CONTRACT: the node-ci job requests `packages: read`
-# (GitHub Packages, #240). A private-repo caller whose workflow grants only
-# `contents: read` fails validation as a JOBLESS startup_failure — no error
-# text anywhere in the UI or API (observed on zerocool-plugins#30 and
-# sdk-ts#10, 2026-08-13). Callers must grant at least:
+# CALLER PERMISSIONS CONTRACT: the node-ci job requests `contents: read`.
+# A caller whose workflow grants less than the job requests fails
+# validation as a JOBLESS startup_failure — no error text anywhere in the
+# UI or API (observed on zerocool-plugins#30 and sdk-ts#10, 2026-08-13,
+# when the job still requested `packages: read` for GitHub Packages).
+# Callers must grant at least:
 #   permissions:
 #     contents: read
-#     packages: read
 #
 # Sibling-repo-dependent generators (plans.ts, stripe_gen.ts, the authz
 # registry, the RBAC helm-template check) cannot run in a single-repo
@@ -110,17 +110,11 @@ jobs:
     # Job-level permissions, not the workflow-root block above: a root-level
     # `permissions:` combined with a cross-repository workflow_call caused a
     # startup_failure with zero jobs created (observed on
-    # zeroroot-ai/dashboard#1030 immediately after #238 added `packages:
-    # read` at the root — reverted here). reusable-image-build.yml already
-    # grants its buildx job packages access this same way
-    # (jobs.build-and-push.permissions), which is the pattern GitHub
-    # documents as supported for workflow_call. `packages: read` is needed
-    # so the pnpm/npm install steps' GITHUB_TOKEN can read org-internal-
-    # visibility GitHub Packages (npm.pkg.github.com) — NODE_AUTH_TOKEN alone
-    # (#237) authenticates the request but the token still needs the scope.
+    # zeroroot-ai/dashboard#1030 immediately after #238 added a grant at the
+    # root — reverted here). Every npm dependency resolves from
+    # registry.npmjs.org, so the install steps need no registry scope.
     permissions:
       contents: read
-      packages: read
     defaults:
       run:
         working-directory: ${{ inputs.working-directory }}
@@ -188,19 +182,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
 
-      - name: Authenticate pnpm to GitHub Packages (user-level ~/.npmrc)
-        # pnpm v10 refuses to expand ${NODE_AUTH_TOKEN} referenced from a
-        # COMMITTED project .npmrc (it could leak the token to an attacker-
-        # controlled registry), so the install step's NODE_AUTH_TOKEN env is
-        # silently ignored and npm.pkg.github.com 401s (dashboard#1030,
-        # @zeroroot-ai/brand). Writing the credential to the user-level
-        # ~/.npmrc — which pnpm trusts for env expansion — is pnpm's own
-        # documented fix. Harmless for callers with no GitHub-Packages
-        # dependency: the line is simply never used.
-        run: printf '//npm.pkg.github.com/:_authToken=%s\n' "${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
-
       # Private git-dependency auth MUST be configured before install --
       # pnpm clones git+ssh:// dependencies during `pnpm install`. A deploy
       # key is the least-privilege credential GitHub offers for this: it
@@ -221,18 +202,6 @@ jobs:
           git config --global core.sshCommand "ssh -i $HOME/.ssh/private_dep_key -o IdentitiesOnly=yes"
 
       - name: pnpm install (frozen lockfile)
-        env:
-          # Same reasoning as the npm ci step below: a repo-level .npmrc may
-          # reference ${NODE_AUTH_TOKEN} for the GitHub Packages registry.
-          # pnpm does not hard-fail when it's unset (unlike npm), it just
-          # warns "Failed to replace env in config" -- but a real fetch from
-          # npm.pkg.github.com then 401s, because the unresolved
-          # _authToken=${NODE_AUTH_TOKEN} line sends no credential at all.
-          # This was invisible until a caller repo had a real GitHub-Packages
-          # pnpm dependency (dashboard#1030, @zeroroot-ai/brand) -- every
-          # prior caller's pnpm-lock.yaml had nothing to fetch from that
-          # registry, so the missing token silently never mattered.
-          NODE_AUTH_TOKEN: ${{ github.token }}
         run: pnpm install --frozen-lockfile
 
       # ---- FAST tier (pull_request): quick contributor signal ----
@@ -287,13 +256,6 @@ jobs:
 
       - name: npm ci (Dockerfile-parity flat layout)
         if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm == 'true' }}
-        env:
-          # A repo-level .npmrc may reference ${NODE_AUTH_TOKEN} for the
-          # GitHub Packages registry; npm (unlike pnpm) hard-fails when the
-          # env var is unset even if no scoped package is installed. The
-          # workflow token satisfies the reference; repos with real GitHub
-          # Packages deps get read access via the installation token.
-          NODE_AUTH_TOKEN: ${{ github.token }}
         run: |
           rm -rf node_modules
           npm ci --ignore-scripts --legacy-peer-deps
@@ -303,6 +265,4 @@ jobs:
 
       - name: build (prebuild guard chain + next build + postbuild guards, npm)
         if: ${{ inputs.tier == 'heavy' && steps.lockfiles.outputs.npm == 'true' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
         run: npm run build
