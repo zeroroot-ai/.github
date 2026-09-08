@@ -112,14 +112,10 @@ on:
       digest:
         description: Manifest digest of the pushed image (sha256:…)
         value: ${{ jobs.build-and-push.outputs.digest }}
-    secrets:
-      ghtoken:
-        required: false
-        description: |
-          Optional PAT/GitHub-App token passed as a buildx secret named
-          `ghtoken`. Dockerfiles that need cross-repo private-module
-          access read it via `--mount=type=secret,id=ghtoken`. Callers
-          that don't need it can omit the `secrets:` block entirely.
+    # No secrets. Every first-party Dockerfile builds with no credential
+    # (AIRGAP.md section 6 item 8): a stranger's `docker build` and this
+    # workflow take the same path. The `ghtoken` buildx secret that used to
+    # be declared here had no caller and no Dockerfile mount left.
 
 jobs:
   build-and-push:
@@ -208,8 +204,6 @@ jobs:
           build-args: |
             ${{ inputs.build_args }}
             ${{ inputs.go_toolchain_local && 'GOTOOLCHAIN=local' || '' }}
-          secrets: |
-            ghtoken=${{ secrets.ghtoken }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - if: github.event_name != 'pull_request'
