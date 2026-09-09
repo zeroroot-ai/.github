@@ -1,9 +1,15 @@
 name: doc-freshness
 
-# Two documentation checks that run on every PR against this repository:
+# One documentation check that runs on every PR against this repository:
+# CLAUDE.md and AGENTS.md name no file that has been removed or renamed.
 #
-#   - every Markdown link resolves (lychee, across all .md files)
-#   - CLAUDE.md and AGENTS.md name no file that has been removed or renamed
+# The broken-link check moved to link-check.yml, which every repo in the org
+# calls and which this repo calls from tree-guards.yml. The job here carried a
+# second copy of the lychee flags, so the two could disagree about what a
+# broken link is. The three repo-specific exclusions it held (img.shields.io,
+# discord.gg, docs.zeroroot.ai) are not carried over: the org policy accepts
+# 403 and retries three times, which is what those exclusions were for, and
+# all three hosts answer today.
 #
 # The `// adr: N` and `// trap: T<NNNN>` reference resolution used to run here
 # too. It read the ADR and trap catalogs over the API from the internal docs
@@ -23,28 +29,6 @@ permissions:
   contents: read
 
 jobs:
-  lychee:
-    name: broken-link check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
-        with:
-          args: >-
-            --no-progress
-            --max-concurrency 8
-            --exclude-loopback
-            --exclude '^mailto:'
-            --exclude '^localhost'
-            --exclude 'example\.(com|org)'
-            --exclude 'img\.shields\.io'
-            --exclude 'discord\.gg'
-            --exclude 'docs\.zeroroot\.ai'
-            './**/*.md'
-          fail: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-
   claude-md-drift:
     name: CLAUDE.md drift (stale paths)
     runs-on: ubuntu-latest
