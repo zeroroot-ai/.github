@@ -20,6 +20,12 @@
         "required_status_checks": [
           {
             "context": "ci-required"
+          },
+          {
+            "context": "brand-guard / brand-guard"
+          },
+          {
+            "context": "link-check / link-check"
           }
         ]
       }
