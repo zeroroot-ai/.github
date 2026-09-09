@@ -56,6 +56,12 @@
           },
           {
             "context": "policy-guards / vault-auth-method-deny-list"
+          },
+          {
+            "context": "brand-guard / brand-guard"
+          },
+          {
+            "context": "link-check / link-check"
           }
         ]
       }

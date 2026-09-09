@@ -41,6 +41,12 @@
         "required_status_checks": [
           {
             "context": "fast / node-ci (fast)"
+          },
+          {
+            "context": "brand-guard / brand-guard"
+          },
+          {
+            "context": "link-check / link-check"
           }
         ]
       }
