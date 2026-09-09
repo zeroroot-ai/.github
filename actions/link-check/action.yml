@@ -84,7 +84,11 @@ runs:
 
     - name: Check the links
       id: lychee
-      uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+      # v2.9.0 is the first release that finds the binary when the release
+      # tarball carries it inside a directory, which every lychee release
+      # after v0.23.0 does. v2.8.0 installs nothing and fails with
+      # "install: cannot stat .../lychee-download/lychee".
+      uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
       with:
         workingDirectory: ${{ inputs.repo-root }}
         args: ${{ steps.args.outputs.args }}
