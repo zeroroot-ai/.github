@@ -1,0 +1,52 @@
+# Reusable workflow: the org-wide link checker.
+#
+# lychee reads every Markdown file in the calling repository and checks each
+# link. Relative file links and anchors are checked offline, so a heading that
+# gets renamed and a document that gets moved both fail here. External URLs are
+# fetched.
+#
+# The flags, the org policy and the caller-override contract live in
+# actions/link-check/. Read actions/link-check/lychee.toml for what is
+# excluded and why.
+#
+# Called by per-repo workflows via:
+#   uses: zeroroot-ai/.github/.github/workflows/link-check.yml@main
+#
+# Required check name: link-check
+#
+# Per-repo additions: a repository may carry `.lychee.toml` at its root. lychee
+# merges repeated --config files and list keys append, so the caller file adds
+# to the org policy and never replaces it.
+
+name: link-check
+
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: >-
+          Space-separated list of directories or Markdown files to check,
+          relative to the repository root. Default: the whole repository.
+        type: string
+        required: false
+        default: "."
+
+permissions:
+  contents: read
+
+jobs:
+  link-check:
+    name: link-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: caller
+
+      - name: Check every link
+        uses: zeroroot-ai/.github/actions/link-check@main
+        with:
+          repo-root: ${{ github.workspace }}/caller
+          paths: ${{ inputs.paths }}

@@ -1,0 +1,37 @@
+name: brand-guard
+description: Fail a repository tree that carries a retired brand string
+
+# WHY THIS IS AN ACTION AND NOT A CHECKOUT
+#
+# The guard and its self-test live here, in zeroroot-ai/.github. A reusable
+# workflow that reached them with actions/checkout of this repository would
+# need a token that can read it: GITHUB_TOKEN is scoped to the CALLING
+# repository only, so that checkout fails with "Repository not found" whenever
+# this org is private. The runner fetches a composite action's repository
+# itself, with the same mechanism that already fetches the reusable workflow.
+# No token, no secret, no visibility change. actions/vault-auth-deny-list in
+# this repo is consumed cross-repo the same way.
+
+inputs:
+  repo-root:
+    description: "Path to the calling repository's checkout, the tree to scan"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # The self-test builds a throwaway git repository per assertion and
+    # requires the scanner to reject each failing fixture. It runs BEFORE the
+    # scan for one reason: a guard that cannot catch a known-bad file must
+    # never report a clean tree.
+    - name: Prove the guard can fail
+      shell: bash
+      run: |
+        chmod +x "${{ github.action_path }}/check-brand.sh"
+        "${{ github.action_path }}/check-brand.sh" --selftest
+
+    - name: Scan the tree for retired brand strings
+      shell: bash
+      env:
+        REPO_ROOT: ${{ inputs.repo-root }}
+      run: "${{ github.action_path }}/check-brand.sh"

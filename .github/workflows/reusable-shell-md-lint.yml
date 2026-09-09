@@ -1,7 +1,7 @@
-# Reusable shell + markdown + broken-link lint workflow.
+# Reusable shell + markdown lint workflow.
 #
 # Slice 2.5 of the production-readiness epic (zeroroot-ai/gibson#172 →
-# board #16). Three sub-jobs:
+# board #16). Two sub-jobs:
 #
 # 1. shellcheck — every `*.sh` file in the calling repo. Severity
 #    threshold: warning+ blocks (info-level diagnostics ignored). Fails
@@ -12,11 +12,9 @@
 #    fenced-code-blocks); style rules disabled (line-length, em-style,
 #    list-indent — those are noise, not bugs).
 #
-# 3. lychee — broken-link checker on all markdown. Catches stale internal
-#    file refs (the most common drift class) + dead external URLs.
-#    Allowlist for known-stable-but-flaky external URLs lives in
-#    `.lychee.toml` at the caller-repo root, or falls back to the shared
-#    config bundled here.
+# Link checking is NOT here. It moved to link-check.yml, which every repo in
+# the org calls. The job this workflow used to carry accepted 404 as a passing
+# status code, so it could not fail on a dead link.
 #
 # Called from per-repo `.github/workflows/lint.yml` via:
 #
@@ -27,7 +25,7 @@
 # Implementation rules:
 #   - DO NOT use continue-on-error: the gates fail loud (per ADR-0013).
 #   - DO NOT skip files via wildcard exclusions in CI; per-rule disables
-#     belong in the config file (`.markdownlint.json` / `.lychee.toml`)
+#     belong in the config file (`.markdownlint.json`)
 #     so they're git-tracked.
 #
 # Closes slice 2.5 (zeroroot-ai/.github#40).
@@ -37,11 +35,6 @@ name: shell-md-lint
 on:
   workflow_call:
     inputs:
-      lychee-fail-on:
-        description: "Status codes to fail on (lychee default: any 4xx/5xx)"
-        type: string
-        required: false
-        default: "200,206,404,410,500,502,503,504"
       markdownlint-config-path:
         description: "Path to .markdownlint.json relative to repo root"
         type: string
@@ -141,29 +134,3 @@ jobs:
             --ignore "**/CHANGELOG.md" \
             --ignore "**/testdata/**" \
             "**/*.md"
-
-  lychee:
-    name: lychee
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Run lychee
-        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
-        with:
-          # Lychee accepts globs; pass via --args. Caller's
-          # `.lychee.toml` (if present at repo root) is auto-discovered.
-          # No-progress for clean CI logs.
-          args: >-
-            --no-progress
-            --max-concurrency 8
-            --accept ${{ inputs.lychee-fail-on }}
-            --exclude-loopback
-            --exclude '^mailto:'
-            --exclude '^localhost'
-            --exclude 'example\.com'
-            --exclude 'example\.org'
-            './**/*.md'
-          fail: true
-          token: ${{ secrets.GITHUB_TOKEN }}
