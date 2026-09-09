@@ -1,0 +1,107 @@
+# tree-guards - this repository is the first consumer of the two tree guards it
+# publishes, and the place their failing fixtures run.
+#
+# WHY THE JOBS CALL THE ACTIONS AND NOT THE REUSABLE WORKFLOWS
+#
+# .github/workflows/brand-guard.yml and .github/workflows/link-check.yml both
+# reach their action at `zeroroot-ai/.github/...@main`, which is correct for a
+# consumer repository and wrong here: a pull request that breaks an action
+# would still run the version already on main and pass. These jobs use the
+# actions from the checkout, so the pull request tests itself. Every other repo
+# calls the reusable workflows, as templates/tree-guards.yml shows.
+#
+# The brand-guard action runs its own self-test before every scan, so the guard
+# proves it can fail on every pull request here and in every consumer.
+#
+# The link checker needs a job of its own for that, because its fixtures are
+# files rather than synthesised trees: link-check-fixtures runs the same action
+# against one broken file and one clean file and asserts both exit codes.
+
+name: tree-guards
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tree-guards-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  brand-guard:
+    name: brand-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prove the guard can fail, then scan this tree
+        uses: ./actions/brand-guard
+        with:
+          repo-root: ${{ github.workspace }}
+
+  link-check:
+    name: link-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check every link in this repository
+        uses: ./actions/link-check
+        with:
+          repo-root: ${{ github.workspace }}
+
+  link-check-fixtures:
+    name: link-check-fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # `config: ""` runs the org policy alone. The repository configuration
+      # excludes tests/link-check/, which is exactly what this job must see.
+      - name: Check the broken fixture
+        id: broken
+        uses: ./actions/link-check
+        with:
+          repo-root: ${{ github.workspace }}
+          paths: tests/link-check/fixture-broken.md
+          config: ""
+          fail: "false"
+
+      - name: The broken fixture must fail the check
+        env:
+          EXIT_CODE: ${{ steps.broken.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ "${EXIT_CODE}" = "0" ]; then
+            echo "::error::the link checker accepted tests/link-check/fixture-broken.md"
+            exit 1
+          fi
+          echo "PASS: the broken fixture was rejected (exit ${EXIT_CODE})"
+
+      - name: Check the clean fixture
+        id: ok
+        uses: ./actions/link-check
+        with:
+          repo-root: ${{ github.workspace }}
+          paths: tests/link-check/fixture-ok.md
+          config: ""
+          fail: "false"
+
+      - name: The clean fixture must pass the check
+        env:
+          EXIT_CODE: ${{ steps.ok.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          if [ "${EXIT_CODE}" != "0" ]; then
+            echo "::error::the link checker rejected tests/link-check/fixture-ok.md (exit ${EXIT_CODE})"
+            exit 1
+          fi
+          echo "PASS: the clean fixture was accepted"

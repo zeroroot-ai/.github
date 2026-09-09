@@ -1,0 +1,12 @@
+# Link-check additions for this repository.
+#
+# The org policy lives in actions/link-check/lychee.toml and always applies
+# first. lychee merges configuration files given with repeated --config flags,
+# and list keys append, so this file adds to the policy and never replaces it.
+
+exclude_path = [
+  # The link-check fixtures are deliberately broken. The fixture job in
+  # .github/workflows/tree-guards.yml checks them on their own and asserts the
+  # exit codes; the repository-wide job must not see them.
+  "^tests/link-check/",
+]

@@ -1,0 +1,103 @@
+name: link-check
+description: Check every link in a repository's Markdown with lychee
+
+# WHY THIS IS AN ACTION AND NOT A STEP IN THE REUSABLE WORKFLOW
+#
+# Two callers run the same check: .github/workflows/link-check.yml, which every
+# repo in the org calls, and the fixture job in .github/workflows/tree-guards.yml,
+# which proves the check can fail. One invocation, in one file, means the
+# fixture job exercises what the org runs rather than a copy of it.
+#
+# The action also carries the org policy file, lychee.toml, so a caller repo
+# needs no configuration of its own.
+
+inputs:
+  repo-root:
+    description: "Path to the calling repository's checkout, the tree to check"
+    required: true
+  paths:
+    description: >-
+      Space-separated list of directories or Markdown files to check, relative
+      to repo-root. A directory contributes its whole `**/*.md` and `**/*.mdx`
+      tree. Default: the whole repository.
+    required: false
+    default: "."
+  config:
+    description: >-
+      Caller configuration file, relative to repo-root, applied after the org
+      policy. A missing file is not an error. Set it to an empty string to run
+      the org policy alone, which is what the fixture job does.
+    required: false
+    default: ".lychee.toml"
+  fail:
+    description: >-
+      Fail the step when lychee reports a broken link. The fixture job sets
+      this to false and asserts on exit_code instead.
+    required: false
+    default: "true"
+
+outputs:
+  exit_code:
+    description: "The exit code lychee returned. 0 means every link resolved."
+    value: ${{ steps.lychee.outputs.exit_code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Build the lychee arguments
+      id: args
+      shell: bash
+      env:
+        REPO_ROOT: ${{ inputs.repo-root }}
+        PATHS: ${{ inputs.paths }}
+        CALLER_CONFIG: ${{ inputs.config }}
+        ORG_CONFIG: ${{ github.action_path }}/lychee.toml
+      run: |
+        set -euo pipefail
+
+        # lychee-action runs `eval lychee ... $ARGS`, so every path is quoted
+        # here and the quotes survive to the command line.
+        args="--no-progress --max-concurrency 8"
+
+        # Relative links and anchors are the drift class that a link checker
+        # catches and nothing else does. --include-fragments resolves an
+        # anchor against the heading it points at, in the file it points at.
+        args="$args --include-fragments"
+
+        args="$args --config '${ORG_CONFIG}'"
+        if [ -n "$CALLER_CONFIG" ] && [ -f "${REPO_ROOT}/${CALLER_CONFIG}" ]; then
+          args="$args --config '${CALLER_CONFIG}'"
+          echo "::notice::applying the caller configuration ${CALLER_CONFIG} on top of the org policy"
+        fi
+
+        args="$args --"
+        for p in $PATHS; do
+          case "$p" in
+            *.md|*.mdx) args="$args '${p}'" ;;
+            */)         args="$args '${p}**/*.md' '${p}**/*.mdx'" ;;
+            *)          args="$args '${p}/**/*.md' '${p}/**/*.mdx'" ;;
+          esac
+        done
+
+        echo "args=$args" >>"$GITHUB_OUTPUT"
+        echo "lychee $args"
+
+    - name: Check the links
+      id: lychee
+      # v2.9.0 is the first release that finds the binary when the release
+      # tarball carries it inside a directory, which every lychee release
+      # after v0.23.0 does. v2.8.0 installs nothing and fails with
+      # "install: cannot stat .../lychee-download/lychee".
+      uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+      with:
+        workingDirectory: ${{ inputs.repo-root }}
+        args: ${{ steps.args.outputs.args }}
+        fail: ${{ inputs.fail }}
+        # A glob that matches no Markdown at all is a configuration error, not
+        # a clean repository.
+        failIfEmpty: true
+        # Pinned so the workstation and the runner check the same way.
+        lycheeVersion: v0.24.2
+        # lychee resolves github.com links through the API when a token is
+        # present, which is what keeps the anonymous rate limit out of CI.
+        token: ${{ github.token }}

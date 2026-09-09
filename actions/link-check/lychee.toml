@@ -1,0 +1,46 @@
+# The org link-check policy. Every call applies this file first.
+#
+# A caller repository may add `.lychee.toml` at its own root. lychee merges
+# configuration files given with repeated `--config` flags, and list keys
+# append, so a caller file ADDS to this policy and never replaces it. Put
+# repo-specific exclusions there, never here.
+#
+# Read actions/link-check/action.yml for the flags that are not settable from
+# a configuration file.
+
+# Fail on any 4xx or 5xx except these two.
+#   429  the host is rate-limiting the runner, which says nothing about the link
+#   403  what github.com returns to an unauthenticated caller it is throttling.
+#        lychee cannot scope an accepted code to one host, so 403 is accepted
+#        everywhere. The action passes GITHUB_TOKEN, so real github.com links
+#        are resolved through the API rather than by an anonymous fetch.
+accept = ["200..=299", "403", "429"]
+
+# A flaky host gets three chances before it fails a pull request.
+max_retries = 3
+
+exclude_loopback = true
+
+exclude = [
+  "^mailto:",
+  "^https?://localhost",
+  "^https?://127\\.0\\.0\\.1",
+  "example\\.com",
+  "example\\.org",
+  "\\.local(?:[:/]|$)",
+  # Private repositories in this org. GITHUB_TOKEN is scoped to the calling
+  # repository, so the API returns 404 for every one of these and the link
+  # would fail for a reason that has nothing to do with the link.
+  "github\\.com/zeroroot-ai/(?:hosted|billing|testharness|codeql-go-queries|codeql-ts-queries)",
+]
+
+exclude_path = [
+  "node_modules/",
+  "\\.worktrees/",
+  "/dist/",
+  "\\.next/",
+  "vendor/",
+  # release-please owns the changelog and rewrites it on every release. Its
+  # links point at pull requests, and the pre-reset ones no longer resolve.
+  "CHANGELOG\\.md$",
+]

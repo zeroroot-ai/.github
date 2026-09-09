@@ -1,0 +1,53 @@
+# Reusable workflow: the org-wide brand guard.
+#
+# The org is zeroroot-ai, the domain is zeroroot.ai and the company name is
+# Zero Root AI. Four strings from before the rename still leak into new files,
+# and each one is a public artifact once it reaches main. This workflow scans
+# the calling repository's tracked tree and fails the run on any occurrence
+# outside an exemption.
+#
+# The four strings, the exemption rules and the self-test all live in
+# actions/brand-guard/check-brand.sh. Read that file for the contract.
+#
+# One guard for the whole org. It replaces the per-repo copies that used to
+# live in gibson (scripts/check-brand.sh) and in dashboard
+# (scripts/check-no-legacy-product-name.mjs); both are deleted once every
+# consumer calls this workflow.
+#
+# Called by per-repo workflows via:
+#   uses: zeroroot-ai/.github/.github/workflows/brand-guard.yml@main
+#
+# Required check name: brand-guard
+#
+# Per-repo exemptions: a repository may carry `.brand-guard-allow` at its root.
+# Each entry is a repo-relative path under a `# why:` comment. An entry that no
+# longer matches anything fails the run, so the list shrinks and cannot rot.
+
+name: brand-guard
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  brand-guard:
+    name: brand-guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout calling repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: caller
+
+      # The action carries the scanner and its self-test with it. This is not
+      # an actions/checkout of zeroroot-ai/.github on purpose: GITHUB_TOKEN
+      # cannot read a second private repository, so that checkout fails on
+      # every call once the org goes private. The runner fetches an action's
+      # repository itself.
+      - name: Scan for retired brand strings
+        uses: zeroroot-ai/.github/actions/brand-guard@main
+        with:
+          repo-root: ${{ github.workspace }}/caller
