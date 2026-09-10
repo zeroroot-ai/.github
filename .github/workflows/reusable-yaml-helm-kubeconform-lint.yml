@@ -197,8 +197,23 @@ jobs:
         run: |
           set -euo pipefail
           KUBECONFORM_VERSION="v0.6.7"
-          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
-            | tar -xz -C /usr/local/bin kubeconform
+          url="https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          # Retry the download to a file first, THEN extract. A bare `curl | tar`
+          # fails the whole step on any CDN blip, and the matrix runs this once
+          # per (chart x k8s) leg, so one transient miss reds a required check
+          # 15x per PR (.github#12). curl retries transient HTTP and connection
+          # errors; an outer loop covers a truncated body that still tars badly.
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+                 -o /tmp/kubeconform.tar.gz "$url" \
+               && tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform; then
+              break
+            fi
+            [ "$attempt" -eq 5 ] && { echo "::error::kubeconform download failed after 5 attempts from $url"; exit 1; }
+            echo "kubeconform download/extract attempt $attempt failed; retrying in $((attempt * 3))s"
+            sleep "$((attempt * 3))"
+          done
+          rm -f /tmp/kubeconform.tar.gz
           kubeconform -v
 
       - name: helm template + kubeconform ${{ matrix.chart }} on k8s ${{ matrix.k8s }}

@@ -44,7 +44,11 @@ jobs:
 
       - name: Fetch comparator script
         run: |
-          curl -sSL https://raw.githubusercontent.com/zeroroot-ai/.github/main/scripts/coverage-compare.sh \
+          set -euo pipefail
+          # Retry the fetch: a bare curl reds this required check on any CDN blip
+          # (.github#12, same class as the kubeconform install).
+          curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+            https://raw.githubusercontent.com/zeroroot-ai/.github/main/scripts/coverage-compare.sh \
             -o /tmp/coverage-compare.sh
           chmod +x /tmp/coverage-compare.sh
 
