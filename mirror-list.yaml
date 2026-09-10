@@ -247,7 +247,7 @@ mirrors:
 
   # Identity / authz / secrets
   - source: docker.io/openfga/openfga
-    tag: "v1.19.0"        # charts helm/gibson openfga.image.tag (version-drift tracker .github#28)
+    tag: "v1.20.0"        # charts helm/gibson openfga.image.tag (version-drift tracker .github#28)
     dest: openfga
   - source: docker.io/openbao/openbao
     tag: "2.5.3"
