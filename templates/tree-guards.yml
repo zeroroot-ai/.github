@@ -8,6 +8,12 @@
 # checkout uses the calling repository's own GITHUB_TOKEN, and the scanners
 # travel with the composite actions.
 #
+# Both are pinned to a commit SHA, like every other first-party reusable this
+# org calls. A ref that moves can change what CI runs without a reviewed diff,
+# and `@main` here is what put two "not pinned by hash" alerts in every one of
+# the 19 repositories that copied this file. Re-pin deliberately when you want
+# a newer guard, and say in the comment which change you came for.
+#
 # The merge_group trigger is not optional on a repository with a merge queue. A
 # required status check that never runs on merge_group stalls the queue until
 # it times out, and every check in rulesets/repo/<repo>.json is required in
@@ -34,7 +40,7 @@ concurrency:
 
 jobs:
   brand-guard:
-    uses: zeroroot-ai/.github/.github/workflows/brand-guard.yml@main
+    uses: zeroroot-ai/.github/.github/workflows/brand-guard.yml@3fa85079d3b73fc8d56bb04482a7d94cf4ef1d38 # main, 2026-09-15: pin the org tree guards (.github#59)
 
   link-check:
-    uses: zeroroot-ai/.github/.github/workflows/link-check.yml@main
+    uses: zeroroot-ai/.github/.github/workflows/link-check.yml@3fa85079d3b73fc8d56bb04482a7d94cf4ef1d38 # main, 2026-09-15: pin the org tree guards (.github#59)

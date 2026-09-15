@@ -1,14 +1,37 @@
 #!/usr/bin/env python3
-"""pin-actions.py — pin every third-party GitHub Action `uses:` to a commit SHA.
+"""pin-actions.py — pin every remote GitHub Action `uses:` to a commit SHA.
 
 Usage: pin-actions.py <repo-dir> [--check]
   - `uses: owner/repo[/path]@<tag-or-branch>` becomes `@<sha> # <tag-or-branch>`
   - already-SHA-pinned lines are left alone
   - `uses: ./local` and `uses: docker://` are skipped
-  - zeroroot-ai/* references are skipped (re-pinned by repin-github-consumers.sh)
-  - --check exits 1 if any unpinned third-party action remains (the guard)
+  - --check exits 1 if any unpinned reference remains (the guard)
 The tag is resolved with the GitHub API (annotated tags are dereferenced).
 attic#24.
+
+FIRST-PARTY REFERENCES COUNT TOO (.github#59). This used to skip
+`zeroroot-ai/*` on the grounds that those were "re-pinned by
+repin-github-consumers.sh". No such script has ever existed in this
+repository, so nothing enforced it, and the convention held only where
+somebody remembered: every caller of reusable-image-build.yml,
+architectural-doc-coverage.yml and the policy guards pins a SHA, while
+templates/tree-guards.yml shipped `@main` and was copied verbatim into 19
+repositories. Scorecard and CodeQL each raised it in every repository that
+scans one — 24 alerts, one root cause.
+
+A first-party ref that moves is the same hazard as a third-party one: it
+changes what CI runs with no reviewed diff. The trust boundary is not the
+owner, it is whether the ref can move.
+
+WHAT IS STILL NOT COVERED, and is not a settled exemption: a repository
+referencing an action in ITSELF, which is how .github's reusable workflows
+load their composite actions (`zeroroot-ai/.github/actions/brand-guard@main`
+inside .github/workflows/brand-guard.yml). `./actions/x` cannot be used there
+because a reusable workflow resolves `./` against the CALLER's checkout, and
+a repository cannot pin to its own not-yet-existing commit without a two-step
+merge. So those are skipped here, and the consumer's SHA pin of the workflow
+does NOT protect the action it loads. Tracked in .github#60 — do not read
+this skip as "self-references are safe".
 """
 import json, pathlib, re, subprocess, sys
 
@@ -33,8 +56,23 @@ def resolve(owner_repo, ref):
             continue
     cache[key] = None; return None
 
+def own_slug(repo):
+    """The owner/name this directory IS, so a self-reference can be skipped."""
+    try:
+        url = subprocess.run(['git', '-C', str(repo), 'remote', 'get-url', 'origin'],
+                             check=True, capture_output=True).stdout.decode().strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    m = re.search(r'[:/]([^/:]+/[^/]+?)(?:\.git)?$', url)
+    return m.group(1) if m else None
+
+
 def main():
     repo = pathlib.Path(sys.argv[1]); check = '--check' in sys.argv
+    # Only a real repository root gets the self-reference skip. A fixture tree
+    # sits INSIDE this repository, so asking git would hand it .github's own
+    # slug and exempt the very reference the fixture exists to catch.
+    mine = own_slug(repo) if (repo / '.github').is_dir() else None
     # A repo root: every tracked file under .github. Any other directory (a
     # fixture tree): every yaml file under it.
     files = []
@@ -51,7 +89,8 @@ def main():
         p = repo / rel; lines = p.read_text().splitlines(keepends=True); new = []
         for ln in lines:
             m = USES.match(ln)
-            if not m or m.group(2).startswith('zeroroot-ai/') or SHA.match(m.group(4)) or m.group(2).startswith('.'):
+            # A self-reference is skipped, not blessed — see the module docstring.
+            if not m or SHA.match(m.group(4)) or m.group(2).startswith('.') or m.group(2) == mine:
                 new.append(ln); continue
             if check:
                 unpinned.append(f'{rel}: {m.group(2)}{m.group(3)}@{m.group(4)}'); new.append(ln); continue
@@ -63,7 +102,7 @@ def main():
             p.write_text(''.join(new))
     if check:
         for u in unpinned: print(f'::error::unpinned action {u}')
-        print(f'pin-actions: {len(unpinned)} unpinned third-party action(s)' if unpinned else 'pin-actions: every third-party action is SHA-pinned')
+        print(f'pin-actions: {len(unpinned)} unpinned reference(s)' if unpinned else 'pin-actions: every action and reusable workflow is SHA-pinned')
         sys.exit(1 if unpinned else 0)
     for u in unpinned: print(f'WARN {u}', file=sys.stderr)
     print(f'pin-actions: pinned {changed} reference(s)')

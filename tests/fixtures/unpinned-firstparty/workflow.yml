@@ -1,0 +1,13 @@
+# Fixture for the unpinned-actions guard self-test (.github#59). Lives outside
+# .github/ so GitHub never parses it as a workflow.
+#
+# Every third-party reference here is SHA-pinned, so the ONLY thing that can
+# fail this fixture is the first-party `@main`. That is what makes it prove
+# the scope this guard gained: before .github#59 the checker skipped
+# `zeroroot-ai/*` outright and accepted this file.
+jobs:
+  pinned-third-party:
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+  unpinned-first-party:
+    uses: zeroroot-ai/.github/.github/workflows/brand-guard.yml@main
