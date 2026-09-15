@@ -9,7 +9,7 @@ Usage: pin-actions.py <repo-dir> [--check]
 The tag is resolved with the GitHub API (annotated tags are dereferenced).
 attic#24.
 
-FIRST-PARTY REFERENCES COUNT TOO (.github#59). This used to skip
+FIRST-PARTY REFERENCES COUNT TOO (.github#66). This used to skip
 `zeroroot-ai/*` on the grounds that those were "re-pinned by
 repin-github-consumers.sh". No such script has ever existed in this
 repository, so nothing enforced it, and the convention held only where
@@ -30,7 +30,7 @@ inside .github/workflows/brand-guard.yml). `./actions/x` cannot be used there
 because a reusable workflow resolves `./` against the CALLER's checkout, and
 a repository cannot pin to its own not-yet-existing commit without a two-step
 merge. So those are skipped here, and the consumer's SHA pin of the workflow
-does NOT protect the action it loads. Tracked in .github#60 — do not read
+does NOT protect the action it loads. Tracked in .github#65 — do not read
 this skip as "self-references are safe".
 """
 import json, pathlib, re, subprocess, sys

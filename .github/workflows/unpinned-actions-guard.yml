@@ -1,11 +1,11 @@
 # Org-wide guard: every remote GitHub Action and reusable workflow in every
-# repository is pinned to a commit SHA (attic#24, .github#59). A moved ref
+# repository is pinned to a commit SHA (attic#24, .github#66). A moved ref
 # cannot change what CI runs.
 #
 # Runs nightly and on demand. Clones each repository shallowly with the org
 # read token, then runs scripts/pin-actions.py --check on its .github tree.
 #
-# FIRST-PARTY REFERENCES COUNT (.github#59). This used to exempt
+# FIRST-PARTY REFERENCES COUNT (.github#66). This used to exempt
 # zeroroot-ai/* on the grounds that they were "re-pinned by the consumers'
 # own workflows". Nothing did: templates/tree-guards.yml shipped `@main` and
 # 19 repositories copied it, which is where 24 of the org's open code-scanning

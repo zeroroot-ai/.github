@@ -1,9 +1,9 @@
-# Fixture for the unpinned-actions guard self-test (.github#59). Lives outside
+# Fixture for the unpinned-actions guard self-test (.github#66). Lives outside
 # .github/ so GitHub never parses it as a workflow.
 #
 # Every third-party reference here is SHA-pinned, so the ONLY thing that can
 # fail this fixture is the first-party `@main`. That is what makes it prove
-# the scope this guard gained: before .github#59 the checker skipped
+# the scope this guard gained: before .github#66 the checker skipped
 # `zeroroot-ai/*` outright and accepted this file.
 jobs:
   pinned-third-party:
