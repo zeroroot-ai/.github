@@ -12,7 +12,10 @@ name: sarif-triage
 #     place (same pattern as the flake-report aggregator). The old per-rule
 #     filer mass-filed ~200 issues org-wide on its first successful run
 #     (.github#252).
-#   * Repos with ZERO open alerts are skipped entirely. An API error or a
+#   * Repos with ZERO open alerts file nothing, and a digest left over from
+#     when they HAD alerts is closed (.github#67). "Skipped entirely" used
+#     to mean "left as-is", so a fixed repo kept an issue asserting a count
+#     it no longer had — ten of thirteen were stale that way. An API error or a
 #     non-array response body is never treated as alert data — it is
 #     surfaced in the run log and turns the run red, never filed as an
 #     issue (the old code filed `rule null` issues on repos that have no
