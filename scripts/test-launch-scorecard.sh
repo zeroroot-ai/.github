@@ -123,6 +123,71 @@ mkfixture PASS 4 1 40 0 6 '{"deploy":1}' > "$tmp/a6.json"
 "$SCRIPT" render < "$tmp/a6.json" > "$tmp/a6.md"
 assert_has "$tmp/a6.md" "❌"
 
+echo "== a deleted workflow is NOT_BUILT, however its last run concluded =="
+# THE FIXTURE THIS GUARD EXISTS FOR. GitHub keeps a renamed or deleted workflow
+# addressable by its old filename and still serves its run history, so
+# `gh run list --workflow <gone>.yml` answers with the last run it ever had.
+# On 2026-09-15 exit-test-vanilla-install became exit-test-baseline-install
+# while its last run was green, and the S1 row read PASS against a file that no
+# longer existed. Nothing would ever have moved it off green again.
+#
+# Drive `measure` with a stubbed `gh` so this needs no network. Each row names
+# a workflow the stub answers for.
+stub=$tmp/bin; mkdir -p "$stub"
+cat > "$stub/gh" <<'STUB'
+#!/usr/bin/env bash
+# Minimal `gh` for the measure fixtures. Answers on the workflow FILENAME.
+wf=""
+for a in "$@"; do case "$a" in *.yml) wf=${a##*/} ;; esac; done
+case "$1" in
+  api)
+    # `gh api repos/<org>/<repo>/actions/workflows/<wf> --jq .state`
+    case "$wf" in
+      gone.yml)    echo deleted ;;
+      missing.yml) exit 1 ;;   # 404: gh exits non-zero and prints nothing
+      *)           echo active ;;
+    esac
+    ;;
+  run)
+    # `gh run list ... --jq '.[0] // empty'` — every one of these has history.
+    case "$wf" in
+      skipped.yml) echo '{"conclusion":"skipped","createdAt":"2026-09-15T00:00:00Z","url":"u"}' ;;
+      *)           echo '{"conclusion":"success","createdAt":"2026-09-15T00:00:00Z","url":"u"}' ;;
+    esac
+    ;;
+esac
+STUB
+chmod +x "$stub/gh"
+
+printf 'A\tActive\thosted\tlive.yml\t—\tp\te\n'    > "$tmp/rows.tsv"
+printf 'B\tRenamed\thosted\tgone.yml\t—\tp\te\n'   >> "$tmp/rows.tsv"
+printf 'C\tAbsent\thosted\tmissing.yml\t—\tp\te\n' >> "$tmp/rows.tsv"
+printf 'D\tGated\thosted\tskipped.yml\t—\tp\te\n'  >> "$tmp/rows.tsv"
+
+PATH="$stub:$PATH" "$SCRIPT" measure "$tmp/rows.tsv" > "$tmp/rows.json"
+
+want() { # workflow expected-status
+  local got; got=$(jq -r --arg w "$1" '.[] | select(.workflow==$w) | .status' "$tmp/rows.json")
+  if [ "$got" = "$2" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: $1 measured $got, expected $2"; fi
+}
+# An active workflow still measures its latest run. The guard must not break it.
+want live.yml    PASS
+# Deleted, but its history is green. The board must not carry that green.
+want gone.yml    NOT_BUILT
+# Never existed, or the repo is unreadable. Same answer.
+want missing.yml NOT_BUILT
+# The gated-off run keeps reading SKIPPED.
+want skipped.yml SKIPPED
+
+echo "== every row of every shipped TSV names a workflow that exists =="
+# The S1 row pointed at a deleted workflow for hours before anyone noticed.
+# This asserts the shape of the table, offline: a workflow column must look
+# like a workflow file, so a row can never name a directory or a bare word.
+for f in data/launch-blockers.tsv data/launch-signals.tsv; do
+  bad=$(awk -F'\t' '!/^#/ && NF>3 && $4 !~ /^[a-z0-9-]+\.yml$/ {print $1": "$4}' "$f")
+  if [ -z "$bad" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: $f has a bad workflow column: $bad"; fi
+done
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
