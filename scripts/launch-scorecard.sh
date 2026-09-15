@@ -5,6 +5,7 @@
 # Two stages, deliberately separated so the renderer is testable without network:
 #
 #   collect  → writes a JSON document of measured facts to stdout
+#   measure  → measures one TSV of rows and writes that array to stdout
 #   render   → reads that JSON on stdin, writes the issue body to stdout
 #   publish  → upserts the pinned LAUNCH SCORECARD issue with that body
 #
@@ -50,6 +51,70 @@ search_count() {
   gh api -X GET search/issues -f q="$1" -f per_page=1 --jq '.total_count' 2>/dev/null || echo 0
 }
 
+# --------------------------------------------------------------- measure ----
+# measure_rows <tsv> — one JSON object per row, the latest main run of the
+# row's workflow. Shared by the blockers and the signals so the two tables can
+# never drift in how they measure. Exposed as the `measure` subcommand so a
+# test can drive it with a stubbed `gh`.
+#
+# A row is measured in two steps, and the order matters:
+#
+#   1. Does the workflow still EXIST on main? GitHub keeps a renamed or deleted
+#      workflow addressable by its old filename and still serves its run
+#      history, so `gh run list --workflow <gone>.yml` answers with the last
+#      run it ever had. Reading that answer freezes the row on whatever that
+#      run concluded. A rename that lands on a green — exit-test-vanilla-install
+#      became exit-test-baseline-install on 2026-09-15 — pins the row to PASS
+#      for good, and a board that cannot go red is worse than no board. A
+#      workflow that is absent or not `active` is NOT_BUILT, whatever its
+#      history says.
+#   2. Only then, the conclusion of its latest run on main.
+workflow_state() { # repo wf -> active | deleted_or_absent
+  local repo="$1" wf="$2" st
+  st=$(gh api "repos/${ORG}/${repo}/actions/workflows/${wf}" --jq '.state' 2>/dev/null || true)
+  # An empty answer is a 404 or an unreadable repo. Both mean "do not trust a
+  # run list keyed on this name".
+  [ "$st" = "active" ] && { echo active; return; }
+  echo deleted_or_absent
+}
+
+measure_rows() {
+  local file="$1" out="[]" n name repo wf root plain exit_test
+  while IFS=$'\t' read -r n name repo wf root plain exit_test; do
+    [ -z "$n" ] && continue
+    case "$n" in \#*) continue ;; esac
+    local status="NOT_BUILT" last="" url="" run concl
+    if [ "$(workflow_state "$repo" "$wf")" = "active" ]; then
+      run=$(gh run list -R "${ORG}/${repo}" --workflow "$wf" --branch main --limit 1 \
+              --json conclusion,createdAt,url --jq '.[0] // empty' 2>/dev/null || true)
+      if [ -n "$run" ]; then
+        concl=$(jq -r '.conclusion // ""' <<<"$run")
+        last=$(jq -r '.createdAt // ""' <<<"$run")
+        url=$(jq -r '.url // ""' <<<"$run")
+        case "$concl" in
+          success) status="PASS" ;;
+          # A run whose only job was gated off tested nothing. GitHub reports
+          # that as `skipped`, and reading it as FAIL blames the code for a
+          # missing input. The bank test (S3) is the case: its job is gated on
+          # a repository secret only a human can set, so before someone sets
+          # it every run is skipped. SKIPPED is not PASS either — the board
+          # must never show a green row for a test that never ran.
+          skipped) status="SKIPPED" ;;
+          "")      status="RUNNING" ;;
+          *)       status="FAIL" ;;
+        esac
+      fi
+    fi
+    out=$(jq --argjson c "$out" \
+      --arg n "$n" --arg name "$name" --arg repo "$repo" --arg wf "$wf" \
+      --arg root "$root" --arg plain "$plain" --arg et "$exit_test" --arg st "$status" \
+      --arg last "$last" --arg url "$url" \
+      -n '$c + [{n:($n|tonumber? // $n),name:$name,repo:$repo,workflow:$wf,root:$root,
+                 plain:$plain,exit_test:$et,status:$st,last_run:$last,url:$url}]')
+  done < "$file"
+  printf '%s' "$out"
+}
+
 # ---------------------------------------------------------------- collect ----
 collect() {
   command -v gh >/dev/null || die "gh is not installed"
@@ -72,43 +137,6 @@ collect() {
 
   # --- Outcomes: the conclusion of each blocker's exit-test workflow ------------
   local blockers_json="[]" green=0
-  # measure_rows <tsv> <json-var-name> — one JSON object per row, the latest
-  # main run of the row's workflow. Shared by the blockers and the signals so
-  # the two tables can never drift in how they measure.
-  measure_rows() {
-    local file="$1" out="[]" n name repo wf root plain exit_test
-    while IFS=$'\t' read -r n name repo wf root plain exit_test; do
-      [ -z "$n" ] && continue
-      case "$n" in \#*) continue ;; esac
-      local status="NOT_BUILT" last="" url="" run concl
-      run=$(gh run list -R "${ORG}/${repo}" --workflow "$wf" --branch main --limit 1 \
-              --json conclusion,createdAt,url --jq '.[0] // empty' 2>/dev/null || true)
-      if [ -n "$run" ]; then
-        concl=$(jq -r '.conclusion // ""' <<<"$run")
-        last=$(jq -r '.createdAt // ""' <<<"$run")
-        url=$(jq -r '.url // ""' <<<"$run")
-        case "$concl" in
-          success) status="PASS" ;;
-          # A run whose only job was gated off tested nothing. GitHub reports
-          # that as `skipped`, and reading it as FAIL blames the code for a
-          # missing input. The bank test (S3) is the case: its job is gated on
-          # a repository secret only a human can set, so before someone sets
-          # it every run is skipped. SKIPPED is not PASS either — the board
-          # must never show a green row for a test that never ran.
-          skipped) status="SKIPPED" ;;
-          "")      status="RUNNING" ;;
-          *)       status="FAIL" ;;
-        esac
-      fi
-      out=$(jq --argjson c "$out" \
-        --arg n "$n" --arg name "$name" --arg repo "$repo" --arg wf "$wf" \
-        --arg root "$root" --arg plain "$plain" --arg et "$exit_test" --arg st "$status" \
-        --arg last "$last" --arg url "$url" \
-        -n '$c + [{n:($n|tonumber? // $n),name:$name,repo:$repo,workflow:$wf,root:$root,
-                   plain:$plain,exit_test:$et,status:$st,last_run:$last,url:$url}]')
-    done < "$file"
-    printf '%s' "$out"
-  }
   blockers_json=$(measure_rows "$BLOCKERS_FILE")
   green=$(jq '[.[] | select(.status == "PASS")] | length' <<<"$blockers_json")
   local signals_json="[]"
@@ -314,6 +342,7 @@ prev_body_file() {
 
 case "${1:-all}" in
   collect) collect ;;
+  measure) measure_rows "${2:?usage: $0 measure <tsv>}" ;;
   render)  render ;;
   publish) publish ;;
   all)
@@ -321,5 +350,5 @@ case "${1:-all}" in
     collect | render | publish
     rm -f "$PREV_BODY"
     ;;
-  *) die "usage: $0 {collect|render|publish|all}" ;;
+  *) die "usage: $0 {collect|measure <tsv>|render|publish|all}" ;;
 esac
