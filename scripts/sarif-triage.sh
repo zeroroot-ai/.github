@@ -9,7 +9,8 @@
 #     issues org-wide). The digest is found by the stable title prefix
 #     and updated in place — the same pattern as the flake-report
 #     aggregator in this repo.
-#   * Repos with ZERO open code-scanning alerts are skipped entirely.
+#   * Repos with ZERO open code-scanning alerts file nothing, and any
+#     digest issue left over from when they had alerts is CLOSED.
 #   * "API said no alerts" is distinguished from "API errored". An API
 #     error (or any non-array response body) is NEVER parsed as alerts —
 #     it is surfaced in the run log and turns the run red at the end,
@@ -122,7 +123,7 @@ build_digest() {
   echo
   echo "Full list: ${link}"
   echo
-  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; repos with zero open alerts are skipped. Fix alerts to close them, or dismiss them with a reason per slice 4.6 suppression discipline (ADR-0013)._"
+  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed. Fix alerts to close them, or dismiss them with a reason per slice 4.6 suppression discipline (ADR-0013)._"
 }
 
 # build_digest_summary <repo> <alerts_file> — fallback when the full digest
@@ -146,7 +147,7 @@ build_digest_summary() {
   echo
   echo "Full list: ${link}"
   echo
-  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; repos with zero open alerts are skipped._"
+  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed._"
 }
 
 # render_digest <repo> <alerts_file> <out_file> — full digest, with the byte
@@ -201,6 +202,38 @@ file_digest() {
 }
 
 # ---------------------------------------------------------------------------
+# close_digest <repo> — a repo that reached ZERO open alerts must not keep a
+# digest issue asserting a count it no longer has.
+#
+# "Skip repos with zero alerts" used to mean "leave whatever is already
+# there". So a repo whose alerts were all fixed kept an open issue titled
+# "— N open alerts" forever, and the next reader had no way to tell it from
+# a live one without re-querying the API. On 2026-09-15 that was ten of the
+# thirteen digest issues in the org at once.
+#
+# Closing is safe to repeat: `gh issue list --state open` returns nothing on
+# the second run, so this is a no-op once done.
+close_digest() {
+  local repo="$1" existing
+  if ! existing=$(gh issue list -R "${ORG}/${repo}" --state open \
+        --search "in:title \"${TITLE_PREFIX}\"" \
+        --json number --jq '.[0].number // empty'); then
+    echo "::error::${ORG}/${repo}: failed to query for an existing digest issue — not closing"
+    return 1
+  fi
+  [ -n "$existing" ] || return 0
+
+  if gh issue close "$existing" -R "${ORG}/${repo}" \
+       --comment "Closed by the org SARIF-triage workflow: this repository now has **zero** open code-scanning alerts. A new digest is filed automatically if any alert appears again." >/dev/null; then
+    echo "${ORG}/${repo}: zero open alerts — closed stale digest issue #${existing}"
+  else
+    echo "::error::${ORG}/${repo}: failed to close digest issue #${existing}"
+    return 1
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # process_repo <repo> — fetch, skip-or-render, file. Returns 0 on ok/skip,
 # 1 on an error that must turn the run red (after all repos are processed).
 process_repo() {
@@ -222,9 +255,10 @@ process_repo() {
   local total
   total=$(jq 'length' "$alerts")
   if [ "$total" -eq 0 ]; then
-    echo "${ORG}/${repo}: zero open code-scanning alerts — skipped, nothing filed"
+    local crc=0
+    close_digest "$repo" || crc=1
     rm -f "$alerts"
-    return 0
+    return "$crc"
   fi
 
   local body frc=0

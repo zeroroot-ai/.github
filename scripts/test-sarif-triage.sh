@@ -61,6 +61,9 @@ gh() {
       printf '%s' "$MOCK_EXISTING_ISSUE"
       return 0
       ;;
+    "issue close")
+      return 0
+      ;;
     "issue create"|"issue edit")
       # capture --body-file contents
       local prev=""
@@ -151,6 +154,32 @@ if [ "$rc" -ne 0 ] && [ "$(filed_count)" -eq 0 ]; then
   ok "non-array (error object) response files nothing — no 'rule null' issue possible"
 else
   bad "error-object response: rc=$rc filed=$(filed_count) (want rc!=0 filed=0)"
+fi
+
+# (4a) zero open alerts AND a stale digest issue => close it, file nothing.
+# Without this the digest kept asserting a count the repo no longer had; ten
+# of the org's thirteen digests were stale that way on 2026-09-15.
+fresh
+MOCK_API_STDOUT='[]'
+MOCK_EXISTING_ISSUE='42'
+process_repo "fixedrepo" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && [ "$(filed_count)" -eq 0 ] && grep -q "issue close 42" "$GH_CALLS_LOG"; then
+  ok "zero open alerts closes a stale digest issue and files nothing"
+else
+  fail "zero open alerts must close the stale digest (rc=$rc filed=$(filed_count))"
+fi
+
+# (4b) zero open alerts and NO digest issue => still files nothing, closes nothing
+fresh
+MOCK_API_STDOUT='[]'
+MOCK_EXISTING_ISSUE=''
+process_repo "cleanrepo" >/dev/null 2>&1
+rc=$?
+if [ "$rc" -eq 0 ] && [ "$(filed_count)" -eq 0 ] && ! grep -q "issue close" "$GH_CALLS_LOG"; then
+  ok "zero open alerts with no digest closes nothing"
+else
+  fail "zero open alerts with no digest must not close anything (rc=$rc)"
 fi
 
 # (4) empty array = zero open alerts => skip, file nothing, green
