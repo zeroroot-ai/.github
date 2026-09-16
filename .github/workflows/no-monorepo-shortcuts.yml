@@ -4,7 +4,7 @@
 #   - .gitmodules (git submodules)
 #
 # Called by per-repo workflows via:
-#   uses: zeroroot-ai/.github/.github/workflows/no-monorepo-shortcuts.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/no-monorepo-shortcuts.yml@<sha> # v0.2.0
 #
 # Required check name: no-monorepo-shortcuts (declared in the calling
 # workflow's job id).

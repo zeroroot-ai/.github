@@ -2,7 +2,7 @@
 # with the org-wide lowercase-first subject rule.
 #
 # Called by per-repo workflows via:
-#   uses: zeroroot-ai/.github/.github/workflows/pr-title-lint.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/pr-title-lint.yml@<sha> # v0.2.0
 #
 # Required check name: pr-title-lint (declared in the calling workflow's job id).
 #

@@ -3,7 +3,7 @@ name: Reusable image build
 # Reusable workflow for building + signing + SBOM-attest + scanning platform images.
 # Slice 1.1 of the production-readiness epic (gibson#171 → board #16).
 # Org-level so every image-producing repo can:
-#   uses: zeroroot-ai/.github/.github/workflows/reusable-image-build.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-image-build.yml@<sha> # v0.2.0
 #
 # Job 1 (build-and-push):
 #   build → push → cosign sign → syft SBOM → cosign attest SBOM → trivy.
@@ -177,7 +177,7 @@ jobs:
       # procurement filter both read that as "unlicensed", which is a worse
       # answer than the truth and is not one anybody chose.
       - id: license
-        uses: zeroroot-ai/.github/actions/spdx-from-license@main
+        uses: zeroroot-ai/.github/actions/spdx-from-license@271a10c5de3fd796ef375da9658b569ab17d1ad5 # v0.2.0
         with:
           path: ${{ inputs.component_path }}
       - id: meta
@@ -280,7 +280,7 @@ jobs:
       - name: Block the push on a fixable vulnerability
         # Scanned everywhere, enforced where the push happens.
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/gate-image-vulns@main
+        uses: zeroroot-ai/.github/actions/gate-image-vulns@271a10c5de3fd796ef375da9658b569ab17d1ad5 # v0.2.0
         with:
           report: gate-${{ inputs.component_name }}.json
           severities: ${{ inputs.trivy_severity }}
@@ -312,7 +312,7 @@ jobs:
       # is no pushed reference to inspect.
       - name: The image carries its license text
         if: ${{ github.event_name != 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/verify-image-license@main
+        uses: zeroroot-ai/.github/actions/verify-image-license@271a10c5de3fd796ef375da9658b569ab17d1ad5 # v0.2.0
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
       - if: github.event_name != 'pull_request'

@@ -4,9 +4,10 @@
 # WHY THE JOBS CALL THE ACTIONS AND NOT THE REUSABLE WORKFLOWS
 #
 # .github/workflows/brand-guard.yml and .github/workflows/link-check.yml both
-# reach their action at `zeroroot-ai/.github/...@main`, which is correct for a
-# consumer repository and wrong here: a pull request that breaks an action
-# would still run the version already on main and pass. These jobs use the
+# reach their action at `zeroroot-ai/.github/actions/...@<sha>`, pinned to a
+# release, which is correct for a consumer and wrong here twice over: a pull
+# request that breaks an action would run the RELEASED version and pass, and a
+# pull request that FIXES one would not be able to prove it. These jobs use the
 # actions from the checkout, so the pull request tests itself. Every other repo
 # calls the reusable workflows, as templates/tree-guards.yml shows.
 #

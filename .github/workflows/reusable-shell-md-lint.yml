@@ -18,7 +18,7 @@
 #
 # Called from per-repo `.github/workflows/lint.yml` via:
 #
-#     uses: zeroroot-ai/.github/.github/workflows/reusable-shell-md-lint.yml@main
+#     uses: zeroroot-ai/.github/.github/workflows/reusable-shell-md-lint.yml@<sha> # v0.2.0
 #
 # Required check name suggestion: `shell-md-lint`.
 #

@@ -11,7 +11,7 @@
 # Tracked at: zeroroot-ai/.github#69
 #
 # Used by per-repo workflows via:
-#   - uses: zeroroot-ai/.github/.github/actions/ghcr-login@main
+#   - uses: zeroroot-ai/.github/.github/actions/ghcr-login@<sha> # v0.2.0
 #     with:
 #       password: ${{ secrets.GITHUB_TOKEN }}
 #

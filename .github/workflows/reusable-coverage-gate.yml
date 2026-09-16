@@ -7,7 +7,7 @@ name: Reusable coverage gate
 #   - Any package regression > tolerance vs main baseline (default 0.5pp)
 #
 # Caller:
-#   uses: zeroroot-ai/.github/.github/workflows/reusable-coverage-gate.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/reusable-coverage-gate.yml@<sha> # v0.2.0
 
 on:
   workflow_call:
