@@ -65,6 +65,45 @@ if guard:
     if "\n" in img:
         fails.append("the licence guard's image spans lines — it absorbed a neighbouring value")
 
+# The gate must sit between the local build and the push. If it drifts after
+# the push, a vulnerable image reaches the registry and the gate is decoration.
+def pos_id(step_id):
+    """Index of the step with EXACTLY this id. Substring matching on `uses`
+    once matched docker/setup-buildx-action for "build", which is how this
+    very assertion first went red."""
+    for i, s in enumerate(steps):
+        if s.get("id") == step_id:
+            return i
+    return None
+def pos_uses(frag):
+    for i, s in enumerate(steps):
+        if frag in str(s.get("uses", "")):
+            return i
+    return None
+p_local, p_gate, p_push = pos_id("build-local"), pos_uses("gate-image-vulns"), pos_id("build")
+if None in (p_local, p_gate, p_push):
+    fails.append(f"the pre-push gate is incomplete: build-local={p_local} gate={p_gate} build={p_push}")
+elif not (p_local < p_gate < p_push):
+    fails.append(f"the gate is out of order: build-local={p_local} gate={p_gate} build={p_push} — it must run BETWEEN them")
+
+bl = step_by(lambda s: s.get("id") == "build-local", "the local build step")
+if bl:
+    w = bl.get("with", {})
+    if w.get("load") is not True:
+        fails.append("build-local does not set load: true, so there is no local image to scan")
+    if w.get("push") is not False:
+        fails.append("build-local must not push — that is the whole point of scanning first")
+    if "APT_CACHE_BUST" not in str(w.get("build-args", "")):
+        fails.append("build-local does not pass APT_CACHE_BUST, so it scans a differently-built image than the one pushed")
+
+sc = step_by(lambda s: s.get("id") == "scan", "the trivy scan step")
+if sc:
+    w = sc.get("with", {})
+    if w.get("ignore-unfixed") is not True:
+        fails.append("the scan does not ignore unfixed CVEs, so the gate would block on findings nobody can act on")
+    if str(w.get("exit-code")) != "0":
+        fails.append("the scan must exit 0 and let the gate script decide, so the failure message stays actionable")
+
 lic = step_by(lambda s: "spdx-from-license" in str(s.get("uses", "")),
               "the spdx-from-license step")
 if lic:

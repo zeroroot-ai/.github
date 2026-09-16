@@ -224,6 +224,67 @@ jobs:
       # before its apt/apk layer and referencing it in the RUN. One that does
       # not declare it is unaffected: buildx warns about an unused build arg and
       # builds exactly as before.
+      # ---- the pre-push vulnerability gate (owner decision 2026-09-16) --------
+      #
+      # Build LOCALLY first, scan the real image, and only then push. Before
+      # this, the scan ran after the push: a vulnerable image was already in the
+      # registry and pullable, and the board caught it up to a day later.
+      #
+      # Three parts to the decision, all deliberate:
+      #   * HIGH and CRITICAL block. MEDIUM stays visible and non-blocking,
+      #     matching what the launch scorecard gates on, so the board and the
+      #     build agree about what matters.
+      #   * NO escape hatch. No .trivyignore, no expiring allowlist, no
+      #     per-repo opt-out. Fix the CVE or bump the base.
+      #   * PRs are scanned but NOT blocked. A PR author sees a new base-image
+      #     CVE immediately without being held hostage to one they did not
+      #     introduce; the gate still holds absolutely where the push happens.
+      #
+      # `load: true` works because every image in the org is linux/amd64 only.
+      # provenance and sbom are off here on purpose: they need the OCI exporter,
+      # not the docker one, and this build exists only to be scanned. The push
+      # below is a cache hit that re-does it properly with both attestations.
+      - id: build-local
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ inputs.component_path }}
+          file: ${{ inputs.dockerfile_path }}
+          platforms: ${{ inputs.platforms }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          load: true
+          push: false
+          provenance: false
+          sbom: false
+          build-args: |
+            ${{ inputs.build_args }}
+            ${{ inputs.go_toolchain_local && 'GOTOOLCHAIN=local' || '' }}
+            APT_CACHE_BUST=${{ github.run_id }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Scans the LOADED image, so no registry credentials and no pushed
+      # artifact are involved. exit-code 0: the gate script decides, because it
+      # owns the failure message — and with no escape hatch, that message is the
+      # whole ergonomics of this gate.
+      - id: scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          format: json
+          output: gate-${{ inputs.component_name }}.json
+          severity: ${{ inputs.trivy_severity }}
+          ignore-unfixed: true
+          exit-code: 0
+
+      - name: Block the push on a fixable vulnerability
+        # Scanned everywhere, enforced where the push happens.
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
+        uses: zeroroot-ai/.github/actions/gate-image-vulns@main
+        with:
+          report: gate-${{ inputs.component_name }}.json
+          severities: ${{ inputs.trivy_severity }}
+
       - id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
