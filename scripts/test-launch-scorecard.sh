@@ -237,6 +237,8 @@ echo "== readiness lists only the repos a gate blocks =="
 # appear; a blocked repo must appear with its reason; an unscanned repo must
 # say so and never look clean.
 assert_has   "$tmp/hide.md" "## Open-source readiness"
+# The heading must not claim every repo becomes public. Five never do.
+assert_lacks "$tmp/hide.md" "every repo becomes public"
 assert_lacks "$tmp/hide.md" "| clean-repo |"
 assert_has   "$tmp/hide.md" "| leaky-repo | public | proprietary | 1 | 0 | 3 | live secret alert;"
 assert_has   "$tmp/hide.md" "| opaque-repo | private | osi | ? | ? | ? | never scanned or unreadable |"
