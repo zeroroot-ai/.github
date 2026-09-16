@@ -1,8 +1,10 @@
 # Repositories that will never be published. One name per line.
 #
 # Owner decision, 2026-09-16: `hosted` is the SaaS estate and `billing` is the
-# closed seam. Neither is ever published. `testharness` and the two CodeQL query
-# packs joined the same row on 2026-09-06 (ADR-0089, third amendment).
+# closed seam. Neither is ever published. `www` joined them the same day: the
+# marketing site's SOURCE is private, while the site it builds stays public at
+# www.zeroroot.ai. `testharness` and the two CodeQL query packs joined the row
+# on 2026-09-06 (ADR-0089, third amendment).
 #
 # The open-source readiness section skips every repo named here. It has to: a
 # repo that is never published cannot pass a publication gate, and a rule that
@@ -14,6 +16,7 @@
 # board's view.
 hosted
 billing
+www
 testharness
 codeql-go-queries
 codeql-ts-queries

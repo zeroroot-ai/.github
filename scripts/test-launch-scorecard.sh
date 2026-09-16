@@ -306,6 +306,60 @@ echo "== every name on the shipped list is a real repo in the org =="
 bad=$(grep -v '^#' data/not-distributed.txt | grep -v '^$' | grep -vE '^[a-z0-9][a-z0-9._-]*$' || true)
 if [ -z "$bad" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: not-distributed.txt has a bad name: $bad"; fi
 
+echo "== a BUSL repo blocks publication =="
+# Owner decision 2026-09-16: no BUSL anywhere. Everything distributed is Elastic
+# License 2.0 or a named permissive exception. Before that call `delayed-oss`
+# PASSED the gate, so this fixture is the whole point: a BUSL repo must appear
+# on the board with a reason that says what to do about it.
+jq '.oss.repos += [{repo:"busl-repo",visibility:"public",license:"delayed-oss",
+                    secret_alerts:"0",code_high:"0",dependabot_high:"0",
+                    blocks:"BUSL is not used here, move it to Elastic License 2.0"}]' \
+  "$tmp/hide.json" > "$tmp/busl.json"
+"$SCRIPT" render < "$tmp/busl.json" > "$tmp/busl.md"
+assert_has  "$tmp/busl.md" "| busl-repo | public | delayed-oss |"
+assert_has  "$tmp/busl.md" "BUSL is not used here, move it to Elastic License 2.0"
+# The legend must not still tell a reader BUSL is a deliberate choice that passes.
+assert_lacks "$tmp/busl.md" "and \`delayed-oss\` (BUSL) are deliberate choices"
+
+echo "== the COLLECTOR marks a BUSL repo as blocked =="
+# The render fixture above proves the board shows the reason. It does NOT prove
+# the collector produces one: `blocks` is handed to render ready-made. Drive
+# oss_rows against a stubbed `gh` that serves a real BUSL licence file, so
+# deleting the delayed-oss case arm fails here.
+bstub=$tmp/buslbin; mkdir -p "$bstub"
+busl_b64=$(printf 'Business Source License 1.1\n\nParameters\n\nLicensor: Zero Root AI\n' | base64 -w0)
+cat > "$bstub/gh" <<STUB
+#!/usr/bin/env bash
+case "\$*" in
+  *"orgs/"*"/repos"*)               printf 'busl-repo\tpublic\n' ;;
+  *"/license"*)                     echo "$busl_b64" ;;
+  *"repos/"*"/security-advisories"*) echo "" ;;
+  *alerts*)                         echo "" ;;
+  *"actions/permissions/workflow"*) echo '{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}' ;;
+  *"repos/"*)                       echo "NOASSERTION" ;;
+  *)                                echo "" ;;
+esac
+STUB
+chmod +x "$bstub/gh"
+: > "$tmp/nd-empty.txt"
+NOT_DISTRIBUTED_FILE="$tmp/nd-empty.txt" PATH="$bstub:$PATH" "$SCRIPT" oss > "$tmp/busl-collect.json" 2>/dev/null
+got_lic=$(jq -r '.repos[0].license' "$tmp/busl-collect.json")
+got_blk=$(jq -r '.repos[0].blocks' "$tmp/busl-collect.json")
+if [ "$got_lic" = "delayed-oss" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: classified BUSL as '$got_lic', expected delayed-oss"; fi
+case "$got_blk" in
+  *"BUSL is not used here"*) PASS=$((PASS+1)) ;;
+  *) FAIL=$((FAIL+1)); echo "  FAIL: collector did not block a BUSL repo, blocks='$got_blk'" ;;
+esac
+
+echo "== the license gate classes are the ones the ADR names =="
+# Offline shape check on the classifier's own case arms, so a class cannot be
+# added to the collector without a decision about whether it passes.
+for cls in osi source-available delayed-oss proprietary none; do
+  grep -q "printf '$cls'" scripts/launch-scorecard.sh \
+    && PASS=$((PASS+1)) \
+    || { FAIL=$((FAIL+1)); echo "  FAIL: license_class no longer emits '$cls'"; }
+done
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
