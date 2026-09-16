@@ -117,3 +117,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/test-verify-image-license.sh
+
+  # The image-build job's step structure. A step spliced into another step's
+  # `with:` block still parses as valid YAML, so a syntax check cannot see it —
+  # and that is exactly how every image build in the org broke on 2026-09-16.
+  image-build-structure:
+    name: reusable-image-build structure
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash scripts/test-reusable-image-build.sh
