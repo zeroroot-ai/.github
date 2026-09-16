@@ -1,0 +1,29 @@
+name: gate-image-vulns
+description: Refuse to push an image that has a fixable HIGH or CRITICAL vulnerability
+
+# WHY THIS IS AN ACTION AND NOT A `run:` STEP
+#
+# A reusable workflow's `run:` steps execute in the CALLER's checkout, so a
+# script kept under this repo's scripts/ is simply not on disk when the step
+# runs. An action ships its own files. This is the third time that has bitten
+# this workflow; the first two were spdx-from-license and verify-image-license.
+#
+# scripts/test-gate-image-vulns.sh holds the fixtures and runs offline against
+# crafted Trivy JSON — no docker, no network.
+
+inputs:
+  report:
+    description: "Trivy JSON report to judge."
+    required: true
+  severities:
+    description: "Comma-separated severities that block. Default HIGH,CRITICAL."
+    required: false
+    default: "HIGH,CRITICAL"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        bash "${{ github.action_path }}/gate-image-vulns.sh" \
+          "${{ inputs.report }}" "${{ inputs.severities }}"
