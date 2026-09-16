@@ -24,19 +24,27 @@ CLEAN=$(printf '%s\n' \
   'sdk	private	Go	enabled	enabled	enabled' \
   'brand	private	CSS	enabled	enabled	disabled')
 
-run() { SECURITY_FETCH_CMD="printf '%s\n' \"\$FLEET\"" FLEET="$1" bash "$GUARD" >/dev/null 2>&1; }
+# default_workflow_permissions  can_approve_pull_request_reviews  sha_pinning_required
+ORG_CLEAN=$(printf 'read\tfalse\ttrue')
+# run <fleet> [<org record>] — the org record defaults to the clean one, so
+# every repo-level fixture below is unchanged by the org assertions.
+run() {
+  SECURITY_FETCH_CMD="printf '%s\n' \"\$FLEET\"" FLEET="$1" \
+  ORG_SETTINGS_FETCH_CMD="printf '%s\n' \"\$ORGSET\"" ORGSET="${2:-$ORG_CLEAN}" \
+  bash "$GUARD" >/dev/null 2>&1
+}
 
 assert_fails() {
-  local label="$1" fleet="$2"
-  if run "$fleet"; then
+  local label="$1" fleet="$2" org="${3:-}"
+  if run "$fleet" "$org"; then
     echo "  NOT DETECTED: $label"; FAIL=$((FAIL+1))
   else
     echo "  detected:     $label"; PASS=$((PASS+1))
   fi
 }
 assert_passes() {
-  local label="$1" fleet="$2"
-  if run "$fleet"; then
+  local label="$1" fleet="$2" org="${3:-}"
+  if run "$fleet" "$org"; then
     echo "  clean:        $label"; PASS=$((PASS+1))
   else
     echo "  FALSE ALARM:  $label"; FAIL=$((FAIL+1))
@@ -78,6 +86,15 @@ assert_passes "code scanning off where CodeQL cannot run (CSS)" \
   "$(printf '%s\n' 'brand	private	CSS	enabled	enabled	disabled')"
 assert_passes "public repo reporting code_security absent" \
   "$(printf '%s\n' 'gibson	public	Go	enabled	enabled	absent')"
+
+echo "org Actions settings the guard must catch (#75):"
+# Each is the value the audit measured on 2026-09-16, planted one at a time
+# against a clean fleet, so a failure here can only be the org check.
+assert_fails "default_workflow_permissions write" "$CLEAN" "$(printf 'write\tfalse\ttrue')"
+assert_fails "Actions may approve pull requests"  "$CLEAN" "$(printf 'read\ttrue\ttrue')"
+assert_fails "sha_pinning_required off"           "$CLEAN" "$(printf 'read\tfalse\tfalse')"
+assert_fails "org settings unreadable (absent)"   "$CLEAN" "$(printf 'absent\tabsent\tabsent')"
+assert_passes "org settings as #75 wants them"    "$CLEAN" "$ORG_CLEAN"
 
 echo "---"
 echo "passed: $PASS   failed: $FAIL"
