@@ -126,10 +126,13 @@ measure_rows() {
 #   1. No open secret-scanning alert. A live credential in a public repo is the
 #      one finding that cannot wait for a review cycle.
 #   2. A license a reader can act on. GitHub reports a non-standard license as
-#      NOASSERTION, so the class is read from the license TEXT: `osi` grants
-#      rights; `source-available` (Elastic License 2.0) and `delayed-oss`
-#      (Business Source License) are deliberate choices and pass; `proprietary`
-#      ("All rights reserved") and `none` grant a reader nothing and fail.
+#      NOASSERTION, so the class is read from the license TEXT. `osi` grants
+#      rights and `source-available` (Elastic License 2.0) is the org default,
+#      so both pass. Three fail: `proprietary` ("All rights reserved") and
+#      `none` grant a reader nothing, and `delayed-oss` (Business Source
+#      License) is banned here by owner decision 2026-09-16 — every repo that
+#      is distributed at all is Elastic License 2.0 or one of the named
+#      permissive exceptions, and BUSL is neither.
 #   3. No open code-scanning alert at critical or high severity.
 #   4. No open Dependabot alert at critical or high severity.
 #
@@ -208,6 +211,7 @@ oss_rows() {
     case "$lic" in
       proprietary) add "license grants a reader nothing" ;;
       none)        add "no license" ;;
+      delayed-oss) add "BUSL is not used here, move it to Elastic License 2.0" ;;
     esac
     if [ "$cs" != "?" ] && [ "$cs" -gt 0 ]; then add "${cs} crit/high code alert(s)"; fi
     if [ "$db" != "?" ] && [ "$db" -gt 0 ]; then add "${db} crit/high dependency alert(s)"; fi
@@ -458,11 +462,12 @@ $(oss_summary "$j")
 $(jq -r '((.oss.repos) // [])[] | select(.blocks != "") | "| \(.repo) | \(.visibility) | \(.license) | \(.secret_alerts) | \(.code_high) | \(.dependabot_high) | \(.blocks) |"' <<<"$j")
 
 A repo is listed only when a measured gate blocks it. \`source-available\` (Elastic
-License 2.0) and \`delayed-oss\` (BUSL) are deliberate choices and pass the license
-gate. \`proprietary\` and \`none\` fail it: a public repo under "All rights reserved"
-grants a reader nothing. \`?\` means the API answered nothing — the feature was
-never enabled on that repo, or the token cannot read it — so the row says so
-rather than reading clean.
+License 2.0) is the org default and passes the license gate, as does \`osi\`.
+Three fail: \`proprietary\` and \`none\` grant a reader nothing, and \`delayed-oss\`
+(BUSL) is banned here — everything distributed is Elastic License 2.0 or a named
+permissive exception. \`?\` means the API answered nothing — the feature was never
+enabled on that repo, or the token cannot read it — so the row says so rather
+than reading clean.
 
 <!-- \`false // "?"\` is "?" in jq: the alternative operator treats false as absent.
      The pull-request row therefore converts with tostring, never with //. -->
