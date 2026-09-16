@@ -33,6 +33,8 @@ BLOCKERS_FILE="${BLOCKERS_FILE:-data/launch-blockers.tsv}"
 # Other launch signals (.github#301): same shape, rendered in their own table,
 # never counted in the green/total verdict.
 SIGNALS_FILE="${SIGNALS_FILE:-data/launch-signals.tsv}"
+# Repos that are never published, so the readiness gates do not apply to them.
+NOT_DISTRIBUTED_FILE="${NOT_DISTRIBUTED_FILE:-data/not-distributed.txt}"
 WINDOW_DAYS="${WINDOW_DAYS:-7}"
 HISTORY_KEEP="${HISTORY_KEEP:-14}"
 
@@ -174,10 +176,21 @@ license_class() {
 # add <reason> — append one reason to $blocks in the caller's scope.
 add() { blocks="${blocks:+$blocks; }$1"; }
 
+# not_distributed <name> — true when the repo is on the never-published list.
+# These repos keep an explicit all-rights-reserved notice, which is the CORRECT
+# license for something that is not distributed. Measuring them against a
+# publication gate would fail them forever, and a permanent breach nobody can
+# clear is how a board stops being read.
+not_distributed() {
+  [ -f "$NOT_DISTRIBUTED_FILE" ] || return 1
+  grep -qxF "$1" <(grep -v '^#' "$NOT_DISTRIBUTED_FILE" | grep -v '^$')
+}
+
 oss_rows() {
   local out="[]" name vis lic sec cs db blocks
   while IFS=$'\t' read -r name vis; do
     [ -z "$name" ] && continue
+    not_distributed "$name" && continue
     lic=$(license_class "$name")
     sec=$(alert_count "repos/${ORG}/${name}/secret-scanning/alerts?state=open&per_page=100" \
             '.[].number')
@@ -287,15 +300,18 @@ collect() {
     openprs=$(jq --argjson o "$openprs" --arg k "$r" --argjson v "${c:-0}" -n '$o + {($k):$v}')
   done
 
-  # --- Open-source readiness: every repo, measured ---------------------------
-  local oss_json oss_org_json
+  # --- Open-source readiness: every repo that will be published --------------
+  local oss_json oss_org_json oss_skipped
   oss_json=$(oss_rows)
   oss_org_json=$(oss_org)
+  oss_skipped=$(grep -v '^#' "$NOT_DISTRIBUTED_FILE" 2>/dev/null | grep -v '^$' \
+                  | jq -R . | jq -s -c . || echo '[]')
 
   jq -n --arg gen "$since_iso" --arg since "$since" --argjson wd "$WINDOW_DAYS" \
         --argjson blockers "$blockers_json" --argjson green "$green" \
         --argjson signals "$signals_json" \
         --argjson oss "$oss_json" --argjson ossorg "$oss_org_json" \
+        --argjson ossskip "$oss_skipped" \
         --argjson filed "${filed:-0}" --argjson closed "${closed:-0}" \
         --argjson merged "${merged:-0}" --argjson hygiene "${hygiene:-0}" \
         --argjson rework "${rework:-0}" --argjson alerts "${alerts:-0}" \
@@ -303,7 +319,7 @@ collect() {
     '{generated_at:$gen, window_since:$since, window_days:$wd,
       blockers:$blockers, green:$green, total:($blockers|length),
       signals:$signals,
-      oss:{org:$ossorg, repos:$oss},
+      oss:{org:$ossorg, repos:$oss, not_distributed:$ossskip},
       process:{issues_filed:$filed, issues_closed:$closed, prs_merged:$merged,
                hygiene_prs:$hygiene, rework_prs:$rework,
                alert_issues_open:$alerts, open_prs:$openprs}}'
@@ -339,12 +355,20 @@ oss_summary() {
   ready=$(( total - blocked ))
   if [ "$total" -eq 0 ]; then
     printf 'Not measured this run.'
+    return
   elif [ "$blocked" -eq 0 ]; then
     printf 'All %s repos pass every publication gate. The table below is empty on purpose.' "$total"
   else
     printf '%s of %s repos pass every publication gate and are not shown. %s are listed below.' \
       "$ready" "$total" "$blocked"
   fi
+  # Name the excluded repos every time. A repo that silently leaves the board is
+  # a repo nobody looks at again.
+  local skipped n_skip
+  skipped=$(jq -r '((.oss.not_distributed) // []) | join(", ")' <<<"$j")
+  n_skip=$(jq -r '((.oss.not_distributed) // []) | length' <<<"$j")
+  [ "$n_skip" -gt 0 ] && printf '\n\nNever published, so no gate applies: %s.' "$skipped"
+  return 0
 }
 
 # ----------------------------------------------------------------- render ----
@@ -519,6 +543,7 @@ case "${1:-all}" in
   collect) collect ;;
   measure) measure_rows "${2:?usage: $0 measure <tsv>}" ;;
   oss)     jq -n --argjson org "$(oss_org)" --argjson repos "$(oss_rows)" '{org:$org,repos:$repos}' ;;
+  not-distributed) grep -v '^#' "$NOT_DISTRIBUTED_FILE" | grep -v '^$' ;;
   render)  render ;;
   publish) publish ;;
   all)
@@ -526,5 +551,5 @@ case "${1:-all}" in
     collect | render | publish
     rm -f "$PREV_BODY"
     ;;
-  *) die "usage: $0 {collect|measure <tsv>|oss|render|publish|all}" ;;
+  *) die "usage: $0 {collect|measure <tsv>|oss|not-distributed|render|publish|all}" ;;
 esac

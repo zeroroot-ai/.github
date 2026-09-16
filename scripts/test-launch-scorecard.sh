@@ -28,6 +28,7 @@ blocker() { # n name status
 # them, one the API would not answer for. Only the last two may ever render.
 OSS_FIXTURE=$(jq -n '{
   org: {default_token:"read", actions_can_approve_prs:false},
+  not_distributed: ["never-shipped"],
   repos: [
     {repo:"clean-repo",  visibility:"public",  license:"osi",
      secret_alerts:"0", code_high:"0", dependabot_high:"0", blocks:""},
@@ -268,6 +269,40 @@ assert_has "$tmp/ticks.md" '<!-- `false // "?"` is "?" in jq'
 if grep -qF '\`\`' "$tmp/ticks.md"; then
   FAIL=$((FAIL+1)); echo "  FAIL: an empty backtick pair rendered — a command substitution ate its content"
 else PASS=$((PASS+1)); fi
+
+echo "== a repo that is never published leaves the gate, and is named =="
+# THE FIXTURE THIS EXISTS FOR. `hosted` and `billing` are never published, and
+# they carry an all-rights-reserved notice, which is the CORRECT licence for a
+# repo that is not distributed. Measuring them against a publication gate fails
+# them forever, and a permanent breach nobody can clear is how a board stops
+# being read. Leaving silently is the other failure, so the line must name them.
+assert_has   "$tmp/hide.md" "Never published, so no gate applies: never-shipped."
+assert_lacks "$tmp/hide.md" "| never-shipped |"
+
+echo "== the not-distributed list actually removes a row from the collector =="
+# Drive `oss_rows` against a stubbed `gh`: two repos, one on the list.
+ndstub=$tmp/ndbin; mkdir -p "$ndstub"
+cat > "$ndstub/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *"orgs/"*"/repos"*) printf 'keep-me\tpublic\nskip-me\tprivate\n' ;;
+  *"/license"*)       echo "" ;;
+  *"alerts"*)         echo "" ;;
+  *"actions/permissions/workflow"*) echo '{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}' ;;
+  *) echo "MIT" ;;
+esac
+STUB
+chmod +x "$ndstub/gh"
+printf '# comment line\nskip-me\n' > "$tmp/nd.txt"
+NOT_DISTRIBUTED_FILE="$tmp/nd.txt" PATH="$ndstub:$PATH" "$SCRIPT" oss > "$tmp/nd.json" 2>/dev/null
+got=$(jq -r '[.repos[].repo] | join(",")' "$tmp/nd.json")
+if [ "$got" = "keep-me" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: collector returned '$got', expected only 'keep-me'"; fi
+
+echo "== every name on the shipped list is a real repo in the org =="
+# A typo here silently un-measures nothing, or worse, measures nothing. Assert
+# the shape offline: a repo name, one per line, no paths and no org prefix.
+bad=$(grep -v '^#' data/not-distributed.txt | grep -v '^$' | grep -vE '^[a-z0-9][a-z0-9._-]*$' || true)
+if [ -z "$bad" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: not-distributed.txt has a bad name: $bad"; fi
 
 echo
 echo "passed=$PASS failed=$FAIL"
