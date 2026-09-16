@@ -105,3 +105,15 @@ jobs:
             exit 1
           fi
           echo "PASS: the clean fixture was accepted"
+
+  # The image-license guard proves it can fail here, the same way the link
+  # checker does. It builds three scratch images — one carrying the licence,
+  # one carrying it at the wrong path, one carrying an empty file — and asserts
+  # all three outcomes. A guard that cannot fail is worse than no guard.
+  image-license-fixtures:
+    name: image-license fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash scripts/test-verify-image-license.sh
