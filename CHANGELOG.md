@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/zeroroot-ai/.github/compare/v0.3.0...v0.4.0) (2026-09-16)
+
+
+### Features
+
+* **guard:** the drift guard asserts the three org Actions settings ([#90](https://github.com/zeroroot-ai/.github/issues/90)) ([7c6b946](https://github.com/zeroroot-ai/.github/commit/7c6b946c85ad9725eb658ba438f834feba1bc878))
+
+
+### Bug Fixes
+
+* **ci:** pin upload-artifact by SHA inside the flake-quarantine action ([#92](https://github.com/zeroroot-ai/.github/issues/92)) ([49b8c12](https://github.com/zeroroot-ai/.github/commit/49b8c12a1d3652f4c79361341c8188c147472acd))
+
 ## [0.3.0](https://github.com/zeroroot-ai/.github/compare/v0.2.0...v0.3.0) (2026-09-16)
 
 
