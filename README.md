@@ -77,13 +77,42 @@ This repo runs both guards on itself, and runs their failing fixtures, in
 
 ## Consuming a reusable workflow
 
-Pin by SHA, not by tag or branch:
+Pin by SHA **and name the release in a trailing comment**:
 
 ```yaml
-uses: zeroroot-ai/.github/.github/workflows/reusable-go-ci.yml@<sha>
+uses: zeroroot-ai/.github/.github/workflows/reusable-go-ci.yml@<sha> # v1.2.3
 ```
 
-Dependabot raises bumps for these across the org.
+Both halves matter, and the second one is not decoration.
+
+The SHA is what actually runs, and it is immutable: a branch ref would mean
+whoever moves `main` here controls what runs in every repo in the org.
+
+The comment is what lets a machine bump it. Dependabot's github-actions updater
+resolves a pinned SHA **against this repo's tags**. That is the same mechanism
+it uses for `actions/checkout` and `github/codeql-action`, and it is why those
+get bumped automatically everywhere.
+
+This repo publishes tags through
+[release-please](.github/workflows/release-please.yml), so Conventional Commit
+titles here become releases, and releases become Dependabot pull requests in
+every consumer.
+
+### Why this is spelled out
+
+Until 2026-09-16 this repo had **no tags at all**. The pins were correct and
+immutable, and nothing could ever bump them: 113 Dependabot pull requests across
+six consumer repos, and not one had ever touched a `zeroroot-ai/.github` ref.
+Dependabot was not broken — there was simply no newer version for it to name.
+
+The cost landed on people. Every shared fix needed a hand-written seven-repo
+fan-out, and on one day four of them meant 28 mechanical pull requests. Two
+shipped wrong: a guard merged while every consumer pin still pointed at the
+commit before it, and a broken workflow that seven repos then had to be walked
+off one at a time.
+
+A pin nothing can bump is not a supply-chain control. It is a manual process
+wearing one's clothes.
 
 ## Contributing
 
