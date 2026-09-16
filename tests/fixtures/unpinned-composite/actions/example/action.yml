@@ -1,0 +1,9 @@
+name: example
+description: FIXTURE — a composite action with an unpinned dependency. Must be rejected.
+runs:
+  using: composite
+  steps:
+    - uses: actions/upload-artifact@v7.0.1
+      with:
+        name: x
+        path: x
