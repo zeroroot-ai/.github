@@ -154,8 +154,18 @@ alert_count() {
 }
 
 # license_class <repo> -> osi | source-available | delayed-oss | proprietary | none
+#
+# The TEXT is classified by actions/spdx-from-license, the same script the image
+# build labels an image with. One rule, two callers, so a repo's board row and
+# its image label can never disagree. That script orders markers by POSITION,
+# which matters here: several of our licence files open with an
+# all-rights-reserved notice and then list sibling repositories' licences, and a
+# fixed case order classified those by whichever arm happened to be tested
+# first.
+SPDX_CLASSIFIER="${SPDX_CLASSIFIER:-actions/spdx-from-license/spdx-from-license.sh}"
+
 license_class() {
-  local repo="$1" spdx text
+  local repo="$1" spdx text dir
   spdx=$(gh api "repos/${ORG}/${repo}" --jq '.license.spdx_id // ""' 2>/dev/null || true)
   case "$spdx" in
     NOASSERTION|"") ;;                 # non-standard, or none: read the text
@@ -166,13 +176,18 @@ license_class() {
   # misread as "none". Read it whole, cut it in bash.
   text=$(gh api "repos/${ORG}/${repo}/license" --jq '.content' 2>/dev/null \
            | tr -d '\n' | base64 -d 2>/dev/null || true)
-  text=${text:0:400}
-  case "$text" in
-    "")                                              printf 'none' ;;
-    *"Elastic License 2.0"*)                         printf 'source-available' ;;
-    *"Business Source License"*)                     printf 'delayed-oss' ;;
-    *"All rights reserved"*|*"All Rights Reserved"*) printf 'proprietary' ;;
-    *)                                               printf 'none' ;;
+  if [ -z "$text" ]; then printf 'none'; return; fi
+
+  dir=$(mktemp -d); printf '%s' "$text" > "$dir/LICENSE"
+  spdx=$(bash "$SPDX_CLASSIFIER" "$dir" 2>/dev/null || echo LicenseRef-Unknown)
+  rm -rf "$dir"
+
+  case "$spdx" in
+    Elastic-2.0)            printf 'source-available' ;;
+    BUSL-1.1)               printf 'delayed-oss' ;;
+    LicenseRef-Proprietary) printf 'proprietary' ;;
+    Apache-2.0|MIT)         printf 'osi' ;;
+    *)                      printf 'none' ;;
   esac
 }
 
@@ -191,6 +206,13 @@ not_distributed() {
 
 oss_rows() {
   local out="[]" name vis lic sec cs db blocks
+  # Check the classifier ONCE, here, before the loop. `die` inside
+  # license_class would only exit the `$( )` subshell that calls it: the loop
+  # would carry on, every repo would classify as "no license", and the board
+  # would fill with breaches nobody caused. A silently wrong board is worse
+  # than no board.
+  [ -f "$SPDX_CLASSIFIER" ] \
+    || die "license classifier not found at ${SPDX_CLASSIFIER} — run from the repo root"
   while IFS=$'\t' read -r name vis; do
     [ -z "$name" ] && continue
     not_distributed "$name" && continue

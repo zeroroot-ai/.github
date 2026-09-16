@@ -1,0 +1,50 @@
+name: spdx-from-license
+description: Print the SPDX id of a component's LICENSE, so an image label names the licence
+
+# WHY THIS IS AN ACTION AND NOT A STEP IN THE REUSABLE WORKFLOW
+#
+# A reusable workflow's `run:` steps execute in the CALLER's checkout, so a
+# script kept under this repo's `scripts/` is not on disk when the step runs.
+# An action ships its own files, so the classifier travels with the step that
+# needs it.
+#
+# WHY IT EXISTS AT ALL
+#
+# `docker/metadata-action` reads the licence from the GitHub API, and the API
+# answers NOASSERTION for anything it does not recognise as an OSI licence.
+# Elastic License 2.0 is not one, so every ELv2 image the org publishes carried
+#
+#     org.opencontainers.image.licenses=NOASSERTION
+#
+# measured on ghcr.io/zeroroot-ai/gibson:latest, 2026-09-16. A scanner and a
+# procurement filter both read NOASSERTION as "unlicensed". That is a worse
+# answer than the truth, and nobody chose it.
+#
+# scripts/test-spdx-from-license.sh holds the fixtures, including the one that
+# matters: a licence file that names OTHER repositories' licences after its own
+# must still classify as its own.
+
+inputs:
+  path:
+    description: >-
+      Directory holding the component's LICENSE. When it has none, the
+      repository root is read instead, because a component subdirectory
+      inherits its repository's licence.
+    required: false
+    default: "."
+
+outputs:
+  spdx:
+    description: "SPDX id, e.g. Elastic-2.0, Apache-2.0, MIT, or LicenseRef-Proprietary"
+    value: ${{ steps.classify.outputs.spdx }}
+
+runs:
+  using: composite
+  steps:
+    - id: classify
+      shell: bash
+      run: |
+        set -euo pipefail
+        spdx=$(bash "${{ github.action_path }}/spdx-from-license.sh" "${{ inputs.path }}")
+        echo "spdx=${spdx}" >> "$GITHUB_OUTPUT"
+        echo "::notice::licence label: ${spdx}"

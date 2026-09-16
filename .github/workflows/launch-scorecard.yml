@@ -26,6 +26,8 @@ on:
       - ".github/workflows/launch-scorecard.yml"
       - "scripts/launch-scorecard.sh"
       - "scripts/test-launch-scorecard.sh"
+      - "scripts/test-spdx-from-license.sh"
+      - "actions/spdx-from-license/**"
       - "data/launch-blockers.tsv"
       - "data/launch-signals.tsv"
 
@@ -46,6 +48,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/test-launch-scorecard.sh
+      # The scorecard's licence gate and the image-build licence label share one
+      # classifier, so its fixtures run beside the renderer's.
+      - run: bash scripts/test-spdx-from-license.sh
 
   publish:
     name: measure and publish
