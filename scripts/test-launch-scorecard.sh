@@ -24,15 +24,29 @@ blocker() { # n name status
       last_run:"2026-08-17T00:00:00Z",url:""}'
 }
 
+# The readiness fixture: one repo that passes every gate, one that fails two of
+# them, one the API would not answer for. Only the last two may ever render.
+OSS_FIXTURE=$(jq -n '{
+  org: {default_token:"read", actions_can_approve_prs:false},
+  repos: [
+    {repo:"clean-repo",  visibility:"public",  license:"osi",
+     secret_alerts:"0", code_high:"0", dependabot_high:"0", blocks:""},
+    {repo:"leaky-repo",  visibility:"public",  license:"proprietary",
+     secret_alerts:"1", code_high:"0", dependabot_high:"3", blocks:"live secret alert; license grants a reader nothing; 3 crit/high dependency alert(s)"},
+    {repo:"opaque-repo", visibility:"private", license:"osi",
+     secret_alerts:"?", code_high:"?", dependabot_high:"?", blocks:"never scanned or unreadable"}
+  ]}')
+
 mkfixture() { # status filed hygiene merged rework alerts openprs
   jq -n \
+    --argjson oss "$OSS_FIXTURE" \
     --argjson blockers "$(jq -s . <<<"$(blocker 1 One "$1"; blocker 2 Two NOT_BUILT)")" \
     --argjson filed "$2" --argjson hygiene "$3" --argjson merged "$4" \
     --argjson rework "$5" --argjson alerts "$6" --argjson openprs "$7" \
     --argjson signals "$(jq -s . <<<"$(blocker '"S1"' "Edge WAF" NOT_BUILT)")" \
     '{generated_at:"2026-08-17T06:00:00Z", window_since:"2026-08-10", window_days:7,
       blockers:$blockers, green:(if $blockers[0].status=="PASS" then 1 else 0 end),
-      total:2, signals:$signals,
+      total:2, signals:$signals, oss:$oss,
       process:{issues_filed:$filed, issues_closed:0, prs_merged:$merged,
                hygiene_prs:$hygiene, rework_prs:$rework, alert_issues_open:$alerts,
                open_prs:$openprs}}'
@@ -187,6 +201,61 @@ for f in data/launch-blockers.tsv data/launch-signals.tsv; do
   bad=$(awk -F'\t' '!/^#/ && NF>3 && $4 !~ /^[a-z0-9-]+\.yml$/ {print $1": "$4}' "$f")
   if [ -z "$bad" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: $f has a bad workflow column: $bad"; fi
 done
+
+echo "== a passing row is hidden, and the hidden line names it =="
+# The board shows what still needs work. A PASS row is an answered question and
+# it buries the rows that are not answered. It must leave the table, and one
+# line must still name it, so the reader loses no information.
+mkfixture PASS 4 1 40 0 0 '{"deploy":1}' > "$tmp/hide.json"
+"$SCRIPT" render < "$tmp/hide.json" > "$tmp/hide.md"
+assert_lacks "$tmp/hide.md" "| 1 | One (deploy#1) | **PASS** |"
+assert_has   "$tmp/hide.md" "| 2 | Two (deploy#1) | **NOT_BUILT** |"
+assert_has   "$tmp/hide.md" "Hidden because they pass: 1 One."
+# The count never moves: the heading still carries the whole picture.
+assert_has   "$tmp/hide.md" "1 of 2 blockers passing"
+# The JSON block keeps every row, hidden or not.
+assert_has   "$tmp/hide.md" '"status": "PASS"'
+
+echo "== when everything passes the table is empty and says so =="
+jq '.blockers[1].status="PASS" | .green=2 | .signals[0].status="PASS"' \
+  "$tmp/hide.json" > "$tmp/allpass.json"
+"$SCRIPT" render < "$tmp/allpass.json" > "$tmp/allpass.md"
+assert_lacks "$tmp/allpass.md" "**PASS** |"
+assert_has   "$tmp/allpass.md" "Every blocker passes, so the table above is empty on purpose."
+assert_has   "$tmp/allpass.md" "Every signal passes, so the table above is empty on purpose."
+assert_has   "$tmp/allpass.md" "2 of 2 blockers passing"
+
+echo "== nothing passing hides nothing =="
+mkfixture FAIL 4 1 40 0 0 '{"deploy":1}' > "$tmp/nopass.json"
+"$SCRIPT" render < "$tmp/nopass.json" > "$tmp/nopass.md"
+assert_has "$tmp/nopass.md" "Nothing hidden: no blocker passes yet."
+assert_has "$tmp/nopass.md" "| 1 | One (deploy#1) | **FAIL** |"
+
+echo "== readiness lists only the repos a gate blocks =="
+# THE FIXTURE THIS SECTION EXISTS FOR. A repo that passes every gate must not
+# appear; a blocked repo must appear with its reason; an unscanned repo must
+# say so and never look clean.
+assert_has   "$tmp/hide.md" "## Open-source readiness"
+assert_lacks "$tmp/hide.md" "| clean-repo |"
+assert_has   "$tmp/hide.md" "| leaky-repo | public | proprietary | 1 | 0 | 3 | live secret alert;"
+assert_has   "$tmp/hide.md" "| opaque-repo | private | osi | ? | ? | ? | never scanned or unreadable |"
+assert_has   "$tmp/hide.md" "1 of 3 repos pass every publication gate and are not shown. 2 are listed below."
+
+echo "== the org Actions row marks a read-write default token =="
+# `false` must render as false. jq's // operator treats false as absent, so a
+# good setting once rendered as "?" and marked ❌.
+"$SCRIPT" render < "$tmp/hide.json" > "$tmp/orgok.md"
+assert_has "$tmp/orgok.md" "| Actions may approve pull requests | false | false | ✅ |"
+assert_has "$tmp/orgok.md" "| Default \`GITHUB_TOKEN\` | read | read | ✅ |"
+jq '.oss.org={default_token:"write",actions_can_approve_prs:true}' "$tmp/hide.json" > "$tmp/orgbad.json"
+"$SCRIPT" render < "$tmp/orgbad.json" > "$tmp/orgbad.md"
+assert_has "$tmp/orgbad.md" "| Default \`GITHUB_TOKEN\` | write | read | ❌ |"
+assert_has "$tmp/orgbad.md" "| Actions may approve pull requests | true | false | ❌ |"
+
+echo "== a run with no readiness data says so, and claims nothing =="
+jq 'del(.oss)' "$tmp/hide.json" > "$tmp/nooss.json"
+"$SCRIPT" render < "$tmp/nooss.json" > "$tmp/nooss.md"
+assert_has "$tmp/nooss.md" "Not measured this run."
 
 echo
 echo "passed=$PASS failed=$FAIL"
