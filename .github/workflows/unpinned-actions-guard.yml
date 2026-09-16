@@ -15,6 +15,7 @@
 # The selftest job proves the guard can fail on BOTH scopes:
 #   tests/fixtures/unpinned-actions      one unpinned third-party action
 #   tests/fixtures/unpinned-firstparty   third-party pinned, first-party @main
+#   tests/fixtures/unpinned-composite    a composite action whose own step is unpinned
 # and .github's own tree must pass.
 name: unpinned-actions-guard
 on:
@@ -27,6 +28,7 @@ on:
       - "scripts/pin-actions.py"
       - "tests/fixtures/unpinned-actions/**"
       - "tests/fixtures/unpinned-firstparty/**"
+      - "tests/fixtures/unpinned-composite/**"
 permissions:
   contents: read
 jobs:
@@ -50,6 +52,16 @@ jobs:
             echo "::error::guard accepted an unpinned first-party reusable workflow"; exit 1
           fi
           echo "PASS: unpinned first-party fixture rejected"
+      - name: the fixture with an unpinned dependency INSIDE A COMPOSITE ACTION must fail
+        # The one unpinned reference the org actually shipped lived in
+        # actions/flake-quarantine/action.yml, not in a workflow. It went
+        # unseen because this repo was exempt from the org job below.
+        run: |
+          set -uo pipefail
+          if python3 scripts/pin-actions.py tests/fixtures/unpinned-composite --check; then
+            echo "::error::guard accepted an unpinned dependency inside a composite action"; exit 1
+          fi
+          echo "PASS: unpinned composite-action fixture rejected"
       - name: this repository must pass
         run: python3 scripts/pin-actions.py . --check
   org:
@@ -67,7 +79,14 @@ jobs:
           [ -n "${GH_TOKEN:-}" ] || { echo "::error::GH_PAT_PLATFORM_RO is empty"; exit 1; }
           failures=0
           for repo in $(gh repo list zeroroot-ai --limit 200 --no-archived --json name --jq '.[].name'); do
-            [ "$repo" = ".github" ] && continue
+            # .github is NOT skipped. It was, and the one unpinned reference in
+            # the whole org — actions/upload-artifact@v7.0.1 inside
+            # actions/flake-quarantine/action.yml — lived here, in a composite
+            # action, reachable from every consumer through its release pin.
+            # It surfaced only when sha_pinning_required went on and setec's
+            # merge-queue run died at Set up job. pin-actions.py walks every
+            # *.y*ml in a checkout, so composite actions are covered as long as
+            # the repo that holds them is not exempt.
             rm -rf /tmp/r
             if ! gh repo clone "zeroroot-ai/$repo" /tmp/r -- --depth 1 --quiet 2>/dev/null; then
               echo "::warning::could not clone $repo"; continue
