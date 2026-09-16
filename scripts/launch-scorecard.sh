@@ -449,7 +449,7 @@ $(jq -r '(.signals // [])[] | select(.status != "PASS") | "| \(.n) | \(.name) (\
 
 $(passing_line "$j" signals signal)
 
-## Open-source readiness — every repo becomes public
+## Open-source readiness — the repos that will be published
 
 $(oss_summary "$j")
 
