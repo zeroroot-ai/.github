@@ -351,6 +351,14 @@ case "$got_blk" in
   *) FAIL=$((FAIL+1)); echo "  FAIL: collector did not block a BUSL repo, blocks='$got_blk'" ;;
 esac
 
+echo "== a missing classifier fails loudly, it does not guess =="
+# Falling back to "unknown" would mark every ELv2 repo as having no licence:
+# a board full of breaches nobody caused. Die instead.
+if NOT_DISTRIBUTED_FILE="$tmp/nd-empty.txt" SPDX_CLASSIFIER=/nonexistent/classifier.sh \
+   PATH="$bstub:$PATH" "$SCRIPT" oss >/dev/null 2>&1; then
+  FAIL=$((FAIL+1)); echo "  FAIL: a missing classifier did not fail the run"
+else PASS=$((PASS+1)); fi
+
 echo "== the license gate classes are the ones the ADR names =="
 # Offline shape check on the classifier's own case arms, so a class cannot be
 # added to the collector without a decision about whether it passes.

@@ -169,10 +169,24 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # docker/metadata-action reads the licence from the GitHub API, and the
+      # API answers NOASSERTION for anything it does not recognise as OSI.
+      # Elastic License 2.0 is not, so every ELv2 image we publish carried
+      # `org.opencontainers.image.licenses=NOASSERTION` — measured on
+      # ghcr.io/zeroroot-ai/gibson:latest, 2026-09-16. A scanner and a
+      # procurement filter both read that as "unlicensed", which is a worse
+      # answer than the truth and is not one anybody chose.
+      - id: license
+        uses: zeroroot-ai/.github/actions/spdx-from-license@main
+        with:
+          path: ${{ inputs.component_path }}
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ inputs.image_name }}
+          # Overrides the NOASSERTION the action would otherwise derive.
+          labels: |
+            org.opencontainers.image.licenses=${{ steps.license.outputs.spdx }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
