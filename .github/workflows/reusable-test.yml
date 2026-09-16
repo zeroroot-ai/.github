@@ -13,7 +13,7 @@ name: Reusable test
 #
 #     jobs:
 #       test:
-#         uses: zeroroot-ai/.github/.github/workflows/reusable-test.yml@main
+#         uses: zeroroot-ai/.github/.github/workflows/reusable-test.yml@<sha> # v0.2.0
 #         with:
 #           run-integration: true
 #           run-e2e: false

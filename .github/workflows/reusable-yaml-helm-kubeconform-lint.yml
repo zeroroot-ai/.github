@@ -26,7 +26,7 @@
 #
 # Called from per-repo `.github/workflows/yaml-helm-lint.yml`:
 #
-#     uses: zeroroot-ai/.github/.github/workflows/reusable-yaml-helm-kubeconform-lint.yml@main
+#     uses: zeroroot-ai/.github/.github/workflows/reusable-yaml-helm-kubeconform-lint.yml@<sha> # v0.2.0
 #     with:
 #       chart-paths: '["helm/gibson", "helm/gibson-crds"]'
 #

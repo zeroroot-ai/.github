@@ -15,7 +15,7 @@
 # consumer calls this workflow.
 #
 # Called by per-repo workflows via:
-#   uses: zeroroot-ai/.github/.github/workflows/brand-guard.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/brand-guard.yml@<sha> # v0.2.0
 #
 # Required check name: brand-guard
 #
@@ -48,6 +48,6 @@ jobs:
       # every call once the org goes private. The runner fetches an action's
       # repository itself.
       - name: Scan for retired brand strings
-        uses: zeroroot-ai/.github/actions/brand-guard@main
+        uses: zeroroot-ai/.github/actions/brand-guard@271a10c5de3fd796ef375da9658b569ab17d1ad5 # v0.2.0
         with:
           repo-root: ${{ github.workspace }}/caller

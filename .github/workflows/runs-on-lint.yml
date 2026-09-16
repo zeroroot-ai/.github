@@ -20,7 +20,7 @@
 # allowlist in a calling repo.
 #
 # Called by via:
-#   uses: zeroroot-ai/.github/.github/workflows/runs-on-lint.yml@main
+#   uses: zeroroot-ai/.github/.github/workflows/runs-on-lint.yml@<sha> # v0.2.0
 #
 # Required check name: runs-on-lint (declared in the calling workflow's job
 # id — see rulesets/org/tier-core.json / tier-opensource.json).
