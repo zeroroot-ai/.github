@@ -204,6 +204,26 @@ jobs:
             # as release-please pass the fresh release tag here because the
             # GITHUB_TOKEN tag push never re-triggers tag-pattern builds.
             type=raw,value=${{ inputs.version_tag }},enable=${{ inputs.version_tag != '' && github.event_name != 'pull_request' }}
+      # APT_CACHE_BUST is passed to EVERY build, always, so no caller has to
+      # remember and no new Dockerfile inherits the bug.
+      #
+      # A Dockerfile that runs `apt-get upgrade` (or `apk upgrade`) has its
+      # layer cached by `cache-from: type=gha` on instruction text plus base
+      # digest. Neither changes between builds, so the upgrade runs ONCE, on the
+      # day that layer was first built, and every build since replays it. The
+      # base being digest-pinned fixes where the build starts and says nothing
+      # about currency.
+      #
+      # Measured 2026-09-16 on gibson-executor, by accident: a broken step here
+      # briefly dropped cache-from/cache-to, and that single cache-less build
+      # produced perl-base 5.40.1-6+deb13u1, libc6 2.41-12+deb13u4 and gzip
+      # 1.13-1+deb13u1 — all patched. The next build, cache restored, put them
+      # straight back and Trivy went from 0 OS findings to 40.
+      #
+      # A Dockerfile opts in by declaring `ARG APT_CACHE_BUST` immediately
+      # before its apt/apk layer and referencing it in the RUN. One that does
+      # not declare it is unaffected: buildx warns about an unused build arg and
+      # builds exactly as before.
       - id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -218,6 +238,7 @@ jobs:
           build-args: |
             ${{ inputs.build_args }}
             ${{ inputs.go_toolchain_local && 'GOTOOLCHAIN=local' || '' }}
+            APT_CACHE_BUST=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

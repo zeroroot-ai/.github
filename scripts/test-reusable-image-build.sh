@@ -42,6 +42,13 @@ if build:
         fails.append("build-args no longer passes inputs.build_args")
     if "GOTOOLCHAIN" not in ba:
         fails.append("build-args no longer passes the GOTOOLCHAIN line")
+    # Without this, every apt/apk layer in the org silently reverts to the
+    # cached upgrade from the day it was first built. That is invisible until a
+    # CVE lands, and by then the image has shipped.
+    if "APT_CACHE_BUST" not in ba:
+        fails.append("build-args no longer passes APT_CACHE_BUST — apt/apk upgrades will be cached away")
+    if "APT_CACHE_BUST" in ba and "github.run_id" not in ba:
+        fails.append("APT_CACHE_BUST is passed but not from a per-run value, so it cannot bust anything")
     if w.get("cache-from") != "type=gha":
         fails.append(f"cache-from is {w.get('cache-from')!r}, expected 'type=gha'")
 
