@@ -115,6 +115,109 @@ measure_rows() {
   printf '%s' "$out"
 }
 
+# ------------------------------------------------------------- oss ready ----
+# Every repository in the org becomes public. This measures what blocks that,
+# per repo, and the renderer shows ONLY the repos that something blocks.
+#
+# Four gates. Each is a fact an API answers, never a judgement:
+#
+#   1. No open secret-scanning alert. A live credential in a public repo is the
+#      one finding that cannot wait for a review cycle.
+#   2. A license a reader can act on. GitHub reports a non-standard license as
+#      NOASSERTION, so the class is read from the license TEXT: `osi` grants
+#      rights; `source-available` (Elastic License 2.0) and `delayed-oss`
+#      (Business Source License) are deliberate choices and pass; `proprietary`
+#      ("All rights reserved") and `none` grant a reader nothing and fail.
+#   3. No open code-scanning alert at critical or high severity.
+#   4. No open Dependabot alert at critical or high severity.
+#
+# A gate whose API call answers nothing reads `?`, and the repo is listed as
+# "never scanned or unreadable". Both causes block publication and both look the
+# same from here: the feature was never enabled on that repo (404), or the token
+# cannot read it (403). A blank cell would read as zero, and a silently wrong
+# board is worse than no board. The token needs `security_events` for gates 1, 3
+# and 4 on a private repo.
+
+# alert_count <path> <jq filter> — open alerts matching the filter, or `?` when
+# the endpoint is unreadable (404 feature off, 403 token scope).
+alert_count() {
+  local path="$1" filter="$2" n
+  if ! n=$(gh api --paginate "$path" --jq "$filter" 2>/dev/null | wc -l); then
+    printf '?'; return
+  fi
+  printf '%s' "$n"
+}
+
+# license_class <repo> -> osi | source-available | delayed-oss | proprietary | none
+license_class() {
+  local repo="$1" spdx text
+  spdx=$(gh api "repos/${ORG}/${repo}" --jq '.license.spdx_id // ""' 2>/dev/null || true)
+  case "$spdx" in
+    NOASSERTION|"") ;;                 # non-standard, or none: read the text
+    *) printf 'osi'; return ;;
+  esac
+  # No `head` in this pipeline: head closing the pipe early kills base64 with
+  # SIGPIPE, pipefail turns that into a failure, and a real license would be
+  # misread as "none". Read it whole, cut it in bash.
+  text=$(gh api "repos/${ORG}/${repo}/license" --jq '.content' 2>/dev/null \
+           | tr -d '\n' | base64 -d 2>/dev/null || true)
+  text=${text:0:400}
+  case "$text" in
+    "")                                              printf 'none' ;;
+    *"Elastic License 2.0"*)                         printf 'source-available' ;;
+    *"Business Source License"*)                     printf 'delayed-oss' ;;
+    *"All rights reserved"*|*"All Rights Reserved"*) printf 'proprietary' ;;
+    *)                                               printf 'none' ;;
+  esac
+}
+
+# add <reason> — append one reason to $blocks in the caller's scope.
+add() { blocks="${blocks:+$blocks; }$1"; }
+
+oss_rows() {
+  local out="[]" name vis lic sec cs db blocks
+  while IFS=$'\t' read -r name vis; do
+    [ -z "$name" ] && continue
+    lic=$(license_class "$name")
+    sec=$(alert_count "repos/${ORG}/${name}/secret-scanning/alerts?state=open&per_page=100" \
+            '.[].number')
+    cs=$(alert_count "repos/${ORG}/${name}/code-scanning/alerts?state=open&per_page=100" \
+            '.[] | select(.rule.security_severity_level == "critical" or .rule.security_severity_level == "high") | .number')
+    db=$(alert_count "repos/${ORG}/${name}/dependabot/alerts?state=open&per_page=100" \
+            '.[] | select(.security_advisory.severity == "critical" or .security_advisory.severity == "high") | .number')
+
+    # Build the reason string with plain `if`. A `[ ... ] && assign` chain is an
+    # exit-status trap under `set -e`: the false case makes the list the last
+    # command, and the shell exits mid-table.
+    blocks=""
+    if [ "$sec" = "?" ] || [ "$cs" = "?" ] || [ "$db" = "?" ]; then add "never scanned or unreadable"; fi
+    if [ "$sec" != "?" ] && [ "$sec" -gt 0 ]; then add "live secret alert"; fi
+    case "$lic" in
+      proprietary) add "license grants a reader nothing" ;;
+      none)        add "no license" ;;
+    esac
+    if [ "$cs" != "?" ] && [ "$cs" -gt 0 ]; then add "${cs} crit/high code alert(s)"; fi
+    if [ "$db" != "?" ] && [ "$db" -gt 0 ]; then add "${db} crit/high dependency alert(s)"; fi
+
+    out=$(jq --argjson c "$out" --arg n "$name" --arg v "$vis" --arg l "$lic" \
+             --arg s "$sec" --arg cs "$cs" --arg db "$db" --arg b "$blocks" \
+      -n '$c + [{repo:$n,visibility:$v,license:$l,secret_alerts:$s,
+                 code_high:$cs,dependabot_high:$db,blocks:$b}]')
+  done < <(gh api "orgs/${ORG}/repos" --paginate \
+             --jq '.[] | select(.archived | not) | [.name, .visibility] | @tsv' 2>/dev/null | sort)
+  printf '%s' "$out"
+}
+
+# The org-wide Actions setting. A read-write default token means every workflow
+# that forgets its own `permissions:` block can write to the repo, and a public
+# repo shows that shape to everyone. One call, one fact.
+oss_org() {
+  gh api "orgs/${ORG}/actions/permissions/workflow" 2>/dev/null \
+    | jq -c '{default_token:.default_workflow_permissions,
+              actions_can_approve_prs:.can_approve_pull_request_reviews}' \
+    || printf '{"default_token":"?","actions_can_approve_prs":null}'
+}
+
 # ---------------------------------------------------------------- collect ----
 collect() {
   command -v gh >/dev/null || die "gh is not installed"
@@ -184,9 +287,15 @@ collect() {
     openprs=$(jq --argjson o "$openprs" --arg k "$r" --argjson v "${c:-0}" -n '$o + {($k):$v}')
   done
 
+  # --- Open-source readiness: every repo, measured ---------------------------
+  local oss_json oss_org_json
+  oss_json=$(oss_rows)
+  oss_org_json=$(oss_org)
+
   jq -n --arg gen "$since_iso" --arg since "$since" --argjson wd "$WINDOW_DAYS" \
         --argjson blockers "$blockers_json" --argjson green "$green" \
         --argjson signals "$signals_json" \
+        --argjson oss "$oss_json" --argjson ossorg "$oss_org_json" \
         --argjson filed "${filed:-0}" --argjson closed "${closed:-0}" \
         --argjson merged "${merged:-0}" --argjson hygiene "${hygiene:-0}" \
         --argjson rework "${rework:-0}" --argjson alerts "${alerts:-0}" \
@@ -194,9 +303,48 @@ collect() {
     '{generated_at:$gen, window_since:$since, window_days:$wd,
       blockers:$blockers, green:$green, total:($blockers|length),
       signals:$signals,
+      oss:{org:$ossorg, repos:$oss},
       process:{issues_filed:$filed, issues_closed:$closed, prs_merged:$merged,
                hygiene_prs:$hygiene, rework_prs:$rework,
                alert_issues_open:$alerts, open_prs:$openprs}}'
+}
+
+# ----------------------------------------------------------------- hide ----
+# The board shows what still needs work. A passing row is an answered question,
+# and printing it every day buries the three rows that are not answered. So the
+# tables carry only the rows that are NOT passing, and one line names what was
+# hidden, with the count. Nothing is lost: the heading still reads "N of M", and
+# the machine-readable JSON at the bottom still carries every row.
+#
+# passing_line <json> <key> <noun> — the one line that replaces the hidden rows.
+passing_line() {
+  local j="$1" key="$2" noun="$3" names n total
+  total=$(jq -r --arg k "$key" '(.[$k] // []) | length' <<<"$j")
+  n=$(jq -r --arg k "$key" '[(.[$k] // [])[] | select(.status == "PASS")] | length' <<<"$j")
+  names=$(jq -r --arg k "$key" '[(.[$k] // [])[] | select(.status == "PASS") | "\(.n) \(.name)"] | join(", ")' <<<"$j")
+  if [ "$n" -eq 0 ]; then
+    printf 'Nothing hidden: no %s passes yet.' "$noun"
+  elif [ "$n" -eq "$total" ]; then
+    printf 'Every %s passes, so the table above is empty on purpose. Hidden: %s.' "$noun" "$names"
+  else
+    printf 'Hidden because they pass: %s.' "$names"
+  fi
+}
+
+# oss_summary <json> — the counting line above the readiness table.
+oss_summary() {
+  local j="$1" total blocked ready
+  total=$(jq -r '((.oss.repos) // []) | length' <<<"$j")
+  blocked=$(jq -r '[((.oss.repos) // [])[] | select(.blocks != "")] | length' <<<"$j")
+  ready=$(( total - blocked ))
+  if [ "$total" -eq 0 ]; then
+    printf 'Not measured this run.'
+  elif [ "$blocked" -eq 0 ]; then
+    printf 'All %s repos pass every publication gate. The table below is empty on purpose.' "$total"
+  else
+    printf '%s of %s repos pass every publication gate and are not shown. %s are listed below.' \
+      "$ready" "$total" "$blocked"
+  fi
 }
 
 # ----------------------------------------------------------------- render ----
@@ -259,7 +407,9 @@ This board reports measured state. It gives no orders.
 
 | # | Blocker | Status | What it means | Proof it works (exit test) | Last run |
 |---|---|---|---|---|---|
-$(jq -r '.blockers[] | "| \(.n) | \(.name) (\(.root)) | **\(.status)** | \(.plain // "") | \(.exit_test) | \(if .url != "" then "[\(.last_run[0:10])](\(.url))" else "never" end) |"' <<<"$j")
+$(jq -r '.blockers[] | select(.status != "PASS") | "| \(.n) | \(.name) (\(.root)) | **\(.status)** | \(.plain // "") | \(.exit_test) | \(if .url != "" then "[\(.last_run[0:10])](\(.url))" else "never" end) |"' <<<"$j")
+
+$(passing_line "$j" blockers blocker)
 
 \`PASS\` means the named workflow's latest run on \`main\` succeeded. Nothing else
 is done: not merged, not closed, not "waiting on bringup".
@@ -271,7 +421,32 @@ Measured the same way; never counted in the verdict above.
 
 | # | Signal | Status | What it means | Proof it works (exit test) | Last run |
 |---|---|---|---|---|---|
-$(jq -r '(.signals // [])[] | "| \(.n) | \(.name) (\(.root)) | **\(.status)** | \(.plain // "") | \(.exit_test) | \(if .url != "" then "[\(.last_run[0:10])](\(.url))" else "never" end) |"' <<<"$j")
+$(jq -r '(.signals // [])[] | select(.status != "PASS") | "| \(.n) | \(.name) (\(.root)) | **\(.status)** | \(.plain // "") | \(.exit_test) | \(if .url != "" then "[\(.last_run[0:10])](\(.url))" else "never" end) |"' <<<"$j")
+
+$(passing_line "$j" signals signal)
+
+## Open-source readiness — every repo becomes public
+
+$(oss_summary "$j")
+
+| Repo | Visibility | License | Secret | Code crit/high | Deps crit/high | What blocks publication |
+|---|---|---|---|---|---|---|
+$(jq -r '((.oss.repos) // [])[] | select(.blocks != "") | "| \(.repo) | \(.visibility) | \(.license) | \(.secret_alerts) | \(.code_high) | \(.dependabot_high) | \(.blocks) |"' <<<"$j")
+
+A repo is listed only when a measured gate blocks it. \`source-available\` (Elastic
+License 2.0) and \`delayed-oss\` (BUSL) are deliberate choices and pass the license
+gate. \`proprietary\` and \`none\` fail it: a public repo under "All rights reserved"
+grants a reader nothing. \`?\` means the API answered nothing — the feature was
+never enabled on that repo, or the token cannot read it — so the row says so
+rather than reading clean.
+
+<!-- `false // "?"` is "?" in jq: the alternative operator treats false as absent.
+     The pull-request row therefore converts with tostring, never with //. -->
+
+| Org-wide Actions setting | Value | Want | |
+|---|---|---|---|
+| Default \`GITHUB_TOKEN\` | $(jq -r '.oss.org.default_token // "?"' <<<"$j") | read | $([ "$(jq -r '.oss.org.default_token // "?"' <<<"$j")" = "read" ] && echo "✅" || echo "❌") |
+| Actions may approve pull requests | $(jq -r '.oss.org.actions_can_approve_prs | if . == null then "?" else tostring end' <<<"$j") | false | $([ "$(jq -r '.oss.org.actions_can_approve_prs | if . == null then "?" else tostring end' <<<"$j")" = "false" ] && echo "✅" || echo "❌") |
 
 ## Behaviour — is the fleet spending effort on outcomes?
 
@@ -343,6 +518,7 @@ prev_body_file() {
 case "${1:-all}" in
   collect) collect ;;
   measure) measure_rows "${2:?usage: $0 measure <tsv>}" ;;
+  oss)     jq -n --argjson org "$(oss_org)" --argjson repos "$(oss_rows)" '{org:$org,repos:$repos}' ;;
   render)  render ;;
   publish) publish ;;
   all)
@@ -350,5 +526,5 @@ case "${1:-all}" in
     collect | render | publish
     rm -f "$PREV_BODY"
     ;;
-  *) die "usage: $0 {collect|measure <tsv>|render|publish|all}" ;;
+  *) die "usage: $0 {collect|measure <tsv>|oss|render|publish|all}" ;;
 esac
