@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/zeroroot-ai/.github/compare/v0.2.0...v0.3.0) (2026-09-16)
+
+
+### Features
+
+* **ci:** pin this repo's own actions to v0.2.0, not [@main](https://github.com/main) ([#88](https://github.com/zeroroot-ai/.github/issues/88)) ([3d1a2b1](https://github.com/zeroroot-ai/.github/commit/3d1a2b1266f47a68e410988bed7a63efa9dce12b))
+
 ## [0.2.0](https://github.com/zeroroot-ai/.github/compare/v0.1.0...v0.2.0) (2026-09-16)
 
 
