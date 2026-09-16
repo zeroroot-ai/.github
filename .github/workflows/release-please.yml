@@ -1,0 +1,65 @@
+name: release-please
+
+# Why this repo needs releases at all.
+#
+# Every repo in the org consumes this one's reusable workflows and composite
+# actions, pinned to a 40-character SHA (.github#66). That pin is correct: a
+# mutable ref means whoever moves the branch controls what runs everywhere.
+#
+# But a SHA on a repo with NO TAGS is a pin nothing can ever bump. Dependabot's
+# github-actions updater resolves a pinned SHA against the source repo's tags;
+# with none, there is no newer version to name, so it does nothing — silently.
+#
+# Measured 2026-09-16: 113 Dependabot pull requests across six consumer repos,
+# and ZERO of them ever touched a `zeroroot-ai/.github` ref. The same Dependabot
+# routinely bumps `github/codeql-action` in those repos, because that repo
+# publishes tags.
+#
+# The cost fell on people instead: four shared fixes that day each needed a
+# hand-written seven-repo fan-out, 28 mechanical pull requests, and two of them
+# shipped wrong — a guard merged while every pin still pointed at the commit
+# before it, and a broken workflow that seven repos had to be walked off.
+#
+# With tags here, a consumer pins `@<sha> # v1.2.3` and Dependabot does the
+# fan-out itself, the same way it already does for every third-party action.
+#
+# Never hand-tag. The release PR is pushed with a token minted from the
+# zeroday-sdk-fanout GitHub App, not GITHUB_TOKEN: a PR pushed by GITHUB_TOKEN
+# never runs its own CI (its runs sit at action_required), and its tag push
+# fires no workflow (adk#206 family). The org release-pipeline-health audit
+# flags exactly that (AGENTS.md §9b).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Mint App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.SDK_FANOUT_APP_ID }}
+          private-key: ${{ secrets.SDK_FANOUT_APP_PRIVATE_KEY }}
+          owner: zeroroot-ai
+          repositories: .github
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
