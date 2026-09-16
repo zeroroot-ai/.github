@@ -440,7 +440,7 @@ grants a reader nothing. \`?\` means the API answered nothing — the feature wa
 never enabled on that repo, or the token cannot read it — so the row says so
 rather than reading clean.
 
-<!-- `false // "?"` is "?" in jq: the alternative operator treats false as absent.
+<!-- \`false // "?"\` is "?" in jq: the alternative operator treats false as absent.
      The pull-request row therefore converts with tostring, never with //. -->
 
 | Org-wide Actions setting | Value | Want | |
