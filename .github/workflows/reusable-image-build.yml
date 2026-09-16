@@ -217,6 +217,9 @@ jobs:
           sbom: true
           build-args: |
             ${{ inputs.build_args }}
+            ${{ inputs.go_toolchain_local && 'GOTOOLCHAIN=local' || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # Apache-2.0 section 4(a) and MIT both require the notice to travel with a
       # distribution, and a published image is one. Measured 2026-09-16: 24
@@ -230,9 +233,6 @@ jobs:
         uses: zeroroot-ai/.github/actions/verify-image-license@main
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-            ${{ inputs.go_toolchain_local && 'GOTOOLCHAIN=local' || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         # Installer default cosign (v3.1.x). History: .github#223 pinned
