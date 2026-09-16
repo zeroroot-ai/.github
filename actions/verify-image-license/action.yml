@@ -1,0 +1,28 @@
+name: verify-image-license
+description: Fail unless a built image carries its license text at /licenses/LICENSE
+
+# Apache-2.0 section 4(a) requires giving every recipient of a distribution a
+# copy of the License. MIT requires the notice "in all copies or substantial
+# portions". A published container image is a distribution.
+#
+# Measured 2026-09-16: 24 first-party Dockerfiles, zero copies. This guard is
+# what stops that coming back. scripts/test-verify-image-license.sh is its
+# failing fixture — it builds one image with the file and one without, and
+# asserts both outcomes.
+
+inputs:
+  image:
+    description: "Image reference to check. Pulled when it is not already local."
+    required: true
+  path:
+    description: "Path the license must occupy inside the image."
+    required: false
+    default: "/licenses/LICENSE"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        bash "${{ github.action_path }}/verify-image-license.sh" \
+          "${{ inputs.image }}" "${{ inputs.path }}"

@@ -217,6 +217,19 @@ jobs:
           sbom: true
           build-args: |
             ${{ inputs.build_args }}
+
+      # Apache-2.0 section 4(a) and MIT both require the notice to travel with a
+      # distribution, and a published image is one. Measured 2026-09-16: 24
+      # first-party Dockerfiles, zero copies. This is what stops that coming
+      # back.
+      #
+      # Only on a real publish: a pull_request build sets push:false, so there
+      # is no pushed reference to inspect.
+      - name: The image carries its license text
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: zeroroot-ai/.github/actions/verify-image-license@main
+        with:
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
             ${{ inputs.go_toolchain_local && 'GOTOOLCHAIN=local' || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
