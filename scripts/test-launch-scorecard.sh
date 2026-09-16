@@ -257,6 +257,18 @@ jq 'del(.oss)' "$tmp/hide.json" > "$tmp/nooss.json"
 "$SCRIPT" render < "$tmp/nooss.json" > "$tmp/nooss.md"
 assert_has "$tmp/nooss.md" "Not measured this run."
 
+echo "== every backtick in the body survives the heredoc =="
+# The renderer body is an UNQUOTED heredoc, so a bare backtick runs as a command
+# and its output replaces the text. The jq note rendered as "<!--  is \"?\" in jq"
+# on 2026-09-16 because two backticks ran `false // "?"` instead of printing it.
+"$SCRIPT" render < "$tmp/hide.json" > "$tmp/ticks.md"
+assert_has "$tmp/ticks.md" '<!-- `false // "?"` is "?" in jq'
+# No rendered line may contain an empty inline-code pair, which is what a
+# swallowed backtick pair leaves behind.
+if grep -qF '\`\`' "$tmp/ticks.md"; then
+  FAIL=$((FAIL+1)); echo "  FAIL: an empty backtick pair rendered — a command substitution ate its content"
+else PASS=$((PASS+1)); fi
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ]
