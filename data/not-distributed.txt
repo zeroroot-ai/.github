@@ -1,0 +1,19 @@
+# Repositories that will never be published. One name per line.
+#
+# Owner decision, 2026-09-16: `hosted` is the SaaS estate and `billing` is the
+# closed seam. Neither is ever published. `testharness` and the two CodeQL query
+# packs joined the same row on 2026-09-06 (ADR-0089, third amendment).
+#
+# The open-source readiness section skips every repo named here. It has to: a
+# repo that is never published cannot pass a publication gate, and a rule that
+# cannot be satisfied gets ignored, taking the real signal with it. They keep an
+# explicit all-rights-reserved notice, which is the correct license for a repo
+# that is not distributed — so the license gate would fail them forever.
+#
+# Adding a name here is a decision, not a cleanup. It removes a repo from the
+# board's view.
+hosted
+billing
+testharness
+codeql-go-queries
+codeql-ts-queries
