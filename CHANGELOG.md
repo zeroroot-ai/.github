@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/zeroroot-ai/.github/compare/v0.5.0...v0.5.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **reusables:** pin the org actions at v0.5.0 ([#100](https://github.com/zeroroot-ai/.github/issues/100)) ([512a133](https://github.com/zeroroot-ai/.github/commit/512a1334430e32b7abe76299418eea17749fca1d))
+
 ## [0.5.0](https://github.com/zeroroot-ai/.github/compare/v0.4.1...v0.5.0) (2026-09-17)
 
 
