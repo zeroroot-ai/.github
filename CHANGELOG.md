@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/zeroroot-ai/.github/compare/v0.4.1...v0.5.0) (2026-09-17)
+
+
+### Features
+
+* **link-check:** fail what a public reader cannot follow ([#98](https://github.com/zeroroot-ai/.github/issues/98)) ([570f805](https://github.com/zeroroot-ai/.github/commit/570f805058a0870a5f9d20025c2fe6bb96f2e568))
+
 ## [0.4.1](https://github.com/zeroroot-ai/.github/compare/v0.4.0...v0.4.1) (2026-09-17)
 
 
