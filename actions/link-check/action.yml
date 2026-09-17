@@ -140,10 +140,12 @@ runs:
         CALLER_REPO: ${{ github.repository }}
         CALLER_VISIBILITY: ${{ inputs.visibility }}
         GH_TOKEN: ${{ github.token }}
+      # The composite shell runs with -e, so the exit code is captured on the
+      # same line and the step itself never fails: the combining step decides.
       run: |
-        set -uo pipefail
-        "${{ github.action_path }}/check-org-refs.sh"
-        echo "exit_code=$?" >>"$GITHUB_OUTPUT"
+        rc=0
+        "${{ github.action_path }}/check-org-refs.sh" || rc=$?
+        echo "exit_code=${rc}" >>"$GITHUB_OUTPUT"
 
     - name: American spelling in prose
       id: spelling
@@ -151,10 +153,12 @@ runs:
       env:
         REPO_ROOT: ${{ inputs.repo-root }}
         PATHS: ${{ inputs.paths }}
+      # The composite shell runs with -e, so the exit code is captured on the
+      # same line and the step itself never fails: the combining step decides.
       run: |
-        set -uo pipefail
-        "${{ github.action_path }}/check-spelling.sh"
-        echo "exit_code=$?" >>"$GITHUB_OUTPUT"
+        rc=0
+        "${{ github.action_path }}/check-spelling.sh" || rc=$?
+        echo "exit_code=${rc}" >>"$GITHUB_OUTPUT"
 
     - name: Combine the results
       id: result
