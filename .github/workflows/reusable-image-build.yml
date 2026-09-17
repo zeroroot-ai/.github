@@ -317,17 +317,20 @@ jobs:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
       - if: github.event_name != 'pull_request'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-        # Installer default cosign (v3.1.x). History: .github#223 pinned
-        # cosign-release: v2.4.1 here because the attest step needed
-        # `--tlog-upload=false` (large-SBOM images — mcp-bridge-runner's
-        # 26 MB SBOM — exceeded rekor's entry-size limit) and v3 rejects
-        # that flag. Unpinned by .github#229: the attest step now skips the
-        # tlog the v3-idiomatic way (rekor-stripped --signing-config +
-        # --new-bundle-format, below). Follow-up tracked in #229: cosign
-        # v3.1.1+ logs DSSE attestations to Rekor v2 as hashed entries,
-        # which likely removes the size limit entirely — once a >26 MB
-        # attestation is confirmed to upload, delete the tlog-skipping
-        # altogether.
+        with:
+          # The release reusable-verify-release.yml verifies with, and the
+          # test there asserts the two agree. The installer default (v3.0.6)
+          # labels the SBOM attestation referrer as a plain signature
+          # (dev.sigstore.bundle.predicateType = cosign/sign/v1), so
+          # `verify-attestation --type spdxjson` cannot find it. v3.1.3
+          # labels it with the predicate type.
+          #
+          # History: .github#223 pinned v2.4.1 because the attest step needed
+          # `--tlog-upload=false` (mcp-bridge-runner's 26 MB SBOM exceeded
+          # rekor's entry-size limit) and v3 rejects that flag. The attest
+          # step now skips the tlog the v3 way: rekor-stripped
+          # --signing-config + --new-bundle-format, below.
+          cosign-release: v3.1.3
       - if: github.event_name != 'pull_request'
         name: Cosign sign image
         run: |

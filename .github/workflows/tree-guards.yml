@@ -129,3 +129,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/test-reusable-image-build.sh
+
+  # The release policy must verify what the shared build signs. Its first
+  # version matched the caller repo against a certificate that names the
+  # shared workflow, so it could never pass, and no repo ever called it.
+  # tests/fixtures/verify-release-caller-identity.yml is that version; the
+  # test must reject it and must accept the shipped policy.
+  verify-release-policy:
+    name: reusable-verify-release policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: bash scripts/test-reusable-verify-release.sh
