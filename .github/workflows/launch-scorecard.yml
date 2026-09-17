@@ -9,7 +9,7 @@ name: launch-scorecard
 #   1. Outcomes — the latest conclusion of each blocker's exit-test workflow.
 #      A blocker is done when its workflow is green. Merged is not done. Closed is
 #      not done.
-#   2. Behaviour — issues filed, PRs merged, hygiene share, rework share, open
+#   2. Behavior — issues filed, PRs merged, hygiene share, rework share, open
 #      PR load. These detect the failure mode of 2026-08-13..17, when ~570
 #      commits and 425 closed issues fixed zero launch blockers.
 #

@@ -140,7 +140,7 @@ jobs:
       # the SBOM attest with `no space left on device` (.github#187). This step
       # is purely additive — it removes preinstalled toolchains we never use
       # (Android SDK, .NET, GHC, CodeQL bundles) and frees ~20-30 GB without
-      # touching build/push/sign/SBOM semantics. Behaviour-preserving for every
+      # touching build/push/sign/SBOM semantics. Behavior-preserving for every
       # consuming repo; small images simply gain headroom they don't need.
       # swap-storage is intentionally kept (removing it risks OOM on heavy
       # buildx graphs); tool-cache is kept to avoid a slow wipe of caches the
