@@ -1,3 +1,4 @@
+<!-- link-check: fixture -->
 # Fixture: broken links
 
 This file is the failing fixture for the org link checker. It is deliberately

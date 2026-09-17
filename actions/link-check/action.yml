@@ -1,5 +1,5 @@
 name: link-check
-description: Check every link in a repository's Markdown with lychee
+description: Check a repository's Markdown for what a public reader cannot follow
 
 # WHY THIS IS AN ACTION AND NOT A STEP IN THE REUSABLE WORKFLOW
 #
@@ -10,6 +10,15 @@ description: Check every link in a repository's Markdown with lychee
 #
 # The action also carries the org policy file, lychee.toml, so a caller repo
 # needs no configuration of its own.
+#
+# THREE CHECKS, ONE ACTION
+#
+# lychee checks links. Two scripts beside it check what lychee cannot see:
+# check-org-refs.sh fails a PUBLIC repository whose Markdown links or refers
+# into a private or deleted repository, or cites an issue number from before
+# the 2026-09-05 history reset; check-spelling.sh fails British spelling in
+# prose (AGENTS.md § 12). Both prove they can fail before every scan, and the
+# fixture job in tree-guards.yml proves each one on a fixture file.
 
 inputs:
   repo-root:
@@ -31,19 +40,37 @@ inputs:
     default: ".lychee.toml"
   fail:
     description: >-
-      Fail the step when lychee reports a broken link. The fixture job sets
+      Fail the action when any check reports a problem. The fixture job sets
       this to false and asserts on exit_code instead.
     required: false
     default: "true"
+  visibility:
+    description: >-
+      The calling repository's visibility for check-org-refs.sh: public,
+      private or auto. Auto asks the API. The fixture job sets public so the
+      fixtures fail the way a public repository would.
+    required: false
+    default: "auto"
 
 outputs:
   exit_code:
-    description: "The exit code lychee returned. 0 means every link resolved."
-    value: ${{ steps.lychee.outputs.exit_code }}
+    description: >-
+      0 when every check passed. Otherwise the first non-zero exit code, in
+      the order lychee, org-refs, spelling.
+    value: ${{ steps.result.outputs.exit_code }}
 
 runs:
   using: composite
   steps:
+    - name: Prove the guards can fail
+      shell: bash
+      run: |
+        set -euo pipefail
+        chmod +x "${{ github.action_path }}"/check-org-refs.sh "${{ github.action_path }}"/check-spelling.sh
+        "${{ github.action_path }}/check-org-refs.sh" --selftest
+        "${{ github.action_path }}/check-org-refs.sh" --check-policy
+        "${{ github.action_path }}/check-spelling.sh" --selftest
+
     - name: Build the lychee arguments
       id: args
       shell: bash
@@ -92,7 +119,9 @@ runs:
       with:
         workingDirectory: ${{ inputs.repo-root }}
         args: ${{ steps.args.outputs.args }}
-        fail: ${{ inputs.fail }}
+        # The action decides below whether to fail, so every check gets to
+        # run and report before the step goes red.
+        fail: false
         # A glob that matches no Markdown at all is a configuration error, not
         # a clean repository.
         failIfEmpty: true
@@ -101,3 +130,49 @@ runs:
         # lychee resolves github.com links through the API when a token is
         # present, which is what keeps the anonymous rate limit out of CI.
         token: ${{ github.token }}
+
+    - name: References a public reader cannot follow
+      id: org_refs
+      shell: bash
+      env:
+        REPO_ROOT: ${{ inputs.repo-root }}
+        PATHS: ${{ inputs.paths }}
+        CALLER_REPO: ${{ github.repository }}
+        CALLER_VISIBILITY: ${{ inputs.visibility }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -uo pipefail
+        "${{ github.action_path }}/check-org-refs.sh"
+        echo "exit_code=$?" >>"$GITHUB_OUTPUT"
+
+    - name: American spelling in prose
+      id: spelling
+      shell: bash
+      env:
+        REPO_ROOT: ${{ inputs.repo-root }}
+        PATHS: ${{ inputs.paths }}
+      run: |
+        set -uo pipefail
+        "${{ github.action_path }}/check-spelling.sh"
+        echo "exit_code=$?" >>"$GITHUB_OUTPUT"
+
+    - name: Combine the results
+      id: result
+      shell: bash
+      env:
+        LYCHEE: ${{ steps.lychee.outputs.exit_code }}
+        ORG_REFS: ${{ steps.org_refs.outputs.exit_code }}
+        SPELLING: ${{ steps.spelling.outputs.exit_code }}
+        FAIL: ${{ inputs.fail }}
+      run: |
+        set -euo pipefail
+        code=0
+        for c in "${LYCHEE:-0}" "${ORG_REFS:-0}" "${SPELLING:-0}"; do
+          if [ "$c" != "0" ]; then code="$c"; break; fi
+        done
+        echo "exit_code=${code}" >>"$GITHUB_OUTPUT"
+        echo "lychee=${LYCHEE:-0} org-refs=${ORG_REFS:-0} spelling=${SPELLING:-0}"
+        if [ "$FAIL" = "true" ] && [ "$code" != "0" ]; then
+          echo "::error::link-check: a check failed, read the step output above"
+          exit "$code"
+        fi

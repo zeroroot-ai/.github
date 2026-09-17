@@ -1,3 +1,4 @@
+<!-- link-check: fixture -->
 # Fixture ok
 
 This file is the passing fixture for the org link checker.

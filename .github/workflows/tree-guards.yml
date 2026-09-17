@@ -15,8 +15,10 @@
 # proves it can fail on every pull request here and in every consumer.
 #
 # The link checker needs a job of its own for that, because its fixtures are
-# files rather than synthesised trees: link-check-fixtures runs the same action
-# against one broken file and one clean file and asserts both exit codes.
+# files rather than synthesized trees: link-check-fixtures runs the same action
+# against one clean file and four broken ones (a dead link, a link into a
+# private repository, a pre-reset issue number, British spelling) and asserts
+# every exit code.
 
 name: tree-guards
 
@@ -106,6 +108,57 @@ jobs:
             exit 1
           fi
           echo "PASS: the clean fixture was accepted"
+
+      # The three checks lychee cannot make, one fixture each. `visibility:
+      # public` because this job must fail the way a public repository would,
+      # whatever this repository's own visibility is.
+      - name: Check the private-repository fixture
+        id: private_repo
+        uses: ./actions/link-check
+        with:
+          repo-root: ${{ github.workspace }}
+          paths: tests/link-check/fixture-private-repo.md
+          config: ""
+          fail: "false"
+          visibility: public
+
+      - name: Check the pre-reset-number fixture
+        id: dead_ref
+        uses: ./actions/link-check
+        with:
+          repo-root: ${{ github.workspace }}
+          paths: tests/link-check/fixture-dead-ref.md
+          config: ""
+          fail: "false"
+          visibility: public
+
+      - name: Check the spelling fixture
+        id: spelling
+        uses: ./actions/link-check
+        with:
+          repo-root: ${{ github.workspace }}
+          paths: tests/link-check/fixture-spelling.md
+          config: ""
+          fail: "false"
+          visibility: public
+
+      - name: Each of the three fixtures must fail its check
+        env:
+          PRIVATE_REPO: ${{ steps.private_repo.outputs.exit_code }}
+          DEAD_REF: ${{ steps.dead_ref.outputs.exit_code }}
+          SPELLING: ${{ steps.spelling.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          rc=0
+          for pair in "fixture-private-repo.md=${PRIVATE_REPO}" "fixture-dead-ref.md=${DEAD_REF}" "fixture-spelling.md=${SPELLING}"; do
+            if [ "${pair#*=}" = "0" ]; then
+              echo "::error::the link checker accepted tests/link-check/${pair%%=*}"
+              rc=1
+            else
+              echo "PASS: tests/link-check/${pair%%=*} was rejected (exit ${pair#*=})"
+            fi
+          done
+          exit "$rc"
 
   # The image-license guard proves it can fail here, the same way the link
   # checker does. It builds three scratch images — one carrying the licence,
