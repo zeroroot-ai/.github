@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/zeroroot-ai/.github/compare/v0.4.0...v0.4.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **guard:** stop exempting .github from its own unpinned-actions check ([#93](https://github.com/zeroroot-ai/.github/issues/93)) ([4d00166](https://github.com/zeroroot-ai/.github/commit/4d00166dc6022754e1edcd47389b8d623a076140))
+* **scorecard:** blocker 5 exit test lives in hosted ([#94](https://github.com/zeroroot-ai/.github/issues/94)) ([2f3fec1](https://github.com/zeroroot-ai/.github/commit/2f3fec1b6449b272c2d7718a671b83c1d65565c2))
+* **verify-release:** verify the identity the shared build signs with ([#96](https://github.com/zeroroot-ai/.github/issues/96)) ([03f9b3c](https://github.com/zeroroot-ai/.github/commit/03f9b3c86dd2f7d29965c15f7319534fdbd569fb))
+
 ## [0.4.0](https://github.com/zeroroot-ai/.github/compare/v0.3.0...v0.4.0) (2026-09-16)
 
 
