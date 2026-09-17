@@ -60,10 +60,14 @@ that proves it. This page is the overview.
 ```bash
 go install github.com/zeroroot-ai/adk/gibson/cmd/gibson@latest
 
-gibson init --gibson-url https://api.zeroroot.ai
+gibson init --gibson-url https://<your-gibson-host>
 gibson component init slo-checker --kind tool
 cd slo-checker && claude
 ```
+
+The Gibson host is the runtime you or your operator installed from
+[`charts`](https://github.com/zeroroot-ai/charts). The hosted endpoint opens at
+launch.
 
 The scaffold contains the contract your AI coding agent needs: `AGENTS.md`, the
 proto layout, the graph wiring, and step-by-step recipes. You describe what you
@@ -184,7 +188,3 @@ obligation back to us. Gibson Runtime and Gibson Console are Elastic License
 **[Read the security docs →](https://docs.zeroroot.ai/docs/security)** · **[Get the ADK →](https://github.com/zeroroot-ai/adk)** · **[Join Discord](https://discord.gg/mkqd6mU3)**
 
 </div>
-
----
-
-Issue and pull request numbers cited in comments and documents dated before 2026-09-05 refer to the tracker before the history reset, archived offline. They do not resolve on GitHub.

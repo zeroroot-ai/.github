@@ -20,7 +20,7 @@ The scorecard is the missing signal. It measures **outcomes**, and it measures
 | Outcome per blocker | **Workflow runs** with a fixed file name per blocker | A green run is objective. Self-reported status is not. `gh run list --workflow` returns the conclusion in one call |
 | The board itself | **A pinned Issue** in `zeroroot-ai/.github` | An agent reads the whole board in ONE cheap command. The human sees it at the top of the tracker. Edit history preserves every past version |
 | The writer | **A scheduled Action** (`launch-scorecard.yml`) | Runs daily at 06:00 UTC and on demand. Nobody has to remember |
-| Behaviour metrics | **Search API `total_count`** | One call per metric, org-wide, counts private repos when the token can see them |
+| Behavior metrics | **Search API `total_count`** | One call per metric, org-wide, counts private repos when the token can see them |
 | Trend | **A history block inside the issue body** | No external store. Survives a rewrite. Shows whether the green count moves day to day |
 
 ### Rejected, and why
@@ -46,7 +46,7 @@ The body reports measured state and gives no orders:
 
 - **Outcomes** — the latest run of each blocker's exit-test workflow, with a
   plain-English line for what the blocker means.
-- **Behaviour** — issues filed, PRs merged, hygiene share, rework share, alert
+- **Behavior** — issues filed, PRs merged, hygiene share, rework share, alert
   issues, open-PR load. Each is shown against a reference limit with a ❌ or ✅
   marker. The marker is an observation, not an instruction.
 
@@ -81,8 +81,8 @@ Edit `data/launch-blockers.tsv`. One tab-separated row per blocker.
 
 Outcomes that gate a launch surface but are not one of the six blockers live in
 `data/launch-signals.tsv` (same columns) and render under **Other launch
-signals**. They are measured the same way and never counted in the verdict
-(.github#301: the self-hosted vanilla install, the Edge WAF).
+signals**. They are measured the same way and never counted in the verdict.
+Today those are the self-hosted vanilla install and the Edge WAF.
 
 One tab-separated row per blocker:
 

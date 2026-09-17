@@ -117,7 +117,7 @@ The shared build signs with its own identity, not yours. The policy binds your
 repo and commit through the certificate's workflow-repository and workflow-SHA
 extensions. It then checks the buildx provenance inside the signed index, and
 verifies the SBOM attestation by its RFC 3161 timestamp, because the build
-writes no Rekor entry for it (`.github#223`).
+writes no Rekor entry for it.
 
 ### Why this is spelled out
 
