@@ -6,6 +6,9 @@ This file is the failing fixture for the pre-reset check in
 repository from 1, so a number above the newest issue or pull request cannot
 resolve. The fixture job requires a non-zero exit code on this file.
 
+lychee needs one link to find, or it reports a configuration error instead
+of a clean file: [the clean fixture](fixture-ok.md).
+
 Two shapes, one each:
 
 - A cross-repository number: gibson#99999

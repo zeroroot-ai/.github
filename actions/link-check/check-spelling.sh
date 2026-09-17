@@ -23,8 +23,9 @@
 #
 #   1. The marker `spelling-guard-exempt:` on the same line as the word, for a
 #      quotation that must stay verbatim.
-#   2. Always-exempt paths: the changelog, which release-please owns, and
-#      docs/code-scanning-dismissals.md, which quotes alert text verbatim.
+#   2. Always-exempt paths: the changelog, which release-please owns;
+#      docs/code-scanning-dismissals.md, which quotes alert text verbatim; and
+#      docs/adr/, because an accepted ADR is a record and is not edited.
 #   3. A walked file carrying `<!-- link-check: fixture -->`, so the fixture
 #      stays out of the repository-wide run while the fixture job names it.
 #
@@ -135,7 +136,7 @@ collect_files() {
         | sed -E "s#^${root}/##; s#^\./##" | sort \
         | while IFS= read -r f; do
             case "$f" in
-              CHANGELOG.md|*/CHANGELOG.md|docs/code-scanning-dismissals.md) continue ;;
+              CHANGELOG.md|*/CHANGELOG.md|docs/code-scanning-dismissals.md|docs/adr/*|*/docs/adr/*) continue ;;
             esac
             grep -qF "$FIXTURE_MARKER" "${root}/${f}" && continue
             echo "$f"
@@ -193,13 +194,18 @@ EOF
   if [ "$rc" -ne 0 ]; then
     echo "selftest FAILED: clean.md should be clean:"; echo "$out"; failures=$((failures + 1))
   fi
+  mkdir -p "$tmp/docs/adr"; printf '# ADR\nthe old behaviour\n' >"$tmp/docs/adr/0001-x.md"
+  printf '# Log\nthe old behaviour\n' >"$tmp/CHANGELOG.md"
+  if [ "$(collect_files "$tmp" .)" != "$(printf 'clean.md\ndirty.md')" ]; then
+    echo "selftest FAILED: the walk should skip docs/adr/ and the changelog"; failures=$((failures + 1))
+  fi
   if [ "$(american_for "Organisation")" != "organization" ] || [ "$(american_for "analysed")" != "analyzed" ]; then
     echo "selftest FAILED: american_for mapping"; failures=$((failures + 1))
   fi
   if [ "$failures" -ne 0 ]; then
     echo "::error::${GUARD_NAME}: selftest FAILED (${failures})" >&2; exit 1
   fi
-  echo "PASS: ${GUARD_NAME} selftest (3 cases, ${#SPELLINGS[@]} stems)"
+  echo "PASS: ${GUARD_NAME} selftest (4 cases, ${#SPELLINGS[@]} stems)"
 }
 
 main() {
