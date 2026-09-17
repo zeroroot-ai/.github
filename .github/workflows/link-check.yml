@@ -46,7 +46,7 @@ jobs:
           path: caller
 
       - name: Check every link
-        uses: zeroroot-ai/.github/actions/link-check@271a10c5de3fd796ef375da9658b569ab17d1ad5 # v0.2.0
+        uses: zeroroot-ai/.github/actions/link-check@e9a1f3a2fc975b386dc7604f4261ce0186d51320 # v0.5.0
         with:
           repo-root: ${{ github.workspace }}/caller
           paths: ${{ inputs.paths }}
