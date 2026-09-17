@@ -2,7 +2,7 @@
 # Security Policy
 
 This is the default security policy for every repository in the
-[`zeroroot-ai`](https://github.com/zeroroot-ai) organisation. GitHub shows it on
+[`zeroroot-ai`](https://github.com/zeroroot-ai) organization. GitHub shows it on
 the `Security` tab of any repository that does not carry its own `SECURITY.md`.
 A repository MAY publish a more specific policy — `zeroroot-ai/setec` does,
 because it makes microVM isolation claims that need their own threat model. When
@@ -21,7 +21,7 @@ problem.** Use one of the private channels below.
 
 1. **GitHub private vulnerability reporting — preferred.** Open the affected
    repository's `Security` tab and select **Report a vulnerability**. This is
-   enabled on every public repository in the organisation. It creates a draft
+   enabled on every public repository in the organization. It creates a draft
    advisory visible only to the maintainers and to anyone you invite, and it is
    the fastest route to a maintainer.
 2. **Email:** `security@zeroroot.ai`. Use this if the report spans more than one
@@ -60,7 +60,7 @@ they ask us not to.
 
 ## Scope
 
-**In scope** — the source in this organisation, the container images we publish
+**In scope** — the source in this organization, the container images we publish
 to `ghcr.io/zeroroot-ai/*`, the Helm charts we publish, and the hosted ZeroRoot
 Cloud service.
 
@@ -70,7 +70,7 @@ Findings we particularly want:
   results.
 - Escape from a setec microVM, or any path that reaches the host or another
   guest from inside one.
-- Authentication or authorisation bypass, including anything that gets a caller
+- Authentication or authorization bypass, including anything that gets a caller
   past the ext-authz chain or produces a capability grant it should not have.
 - Disclosure of secrets — tenant KEKs, provider API keys, bootstrap tokens,
   SPIFFE material.
@@ -93,7 +93,7 @@ reachable — reachability is the part we cannot always determine ourselves.
 
 If you make a good-faith effort to follow this policy, we will not pursue or
 support legal action against you for your research, and we will treat your
-report as authorised access. Good faith means:
+report as authorized access. Good faith means:
 
 - Test only against your own accounts, tenants, and resources — never another
   customer's.
@@ -104,11 +104,11 @@ report as authorised access. Good faith means:
 - Give us the disclosure window above before going public.
 
 If a third party brings an action against you for research that followed this
-policy, we will say publicly that it was authorised.
+policy, we will say publicly that it was authorized.
 
 ## Supported versions
 
-Every repository in the organisation is pre-1.0 and releases from `main`.
+Every repository in the organization is pre-1.0 and releases from `main`.
 Security fixes land on the most recent minor release line only; we do not
 backport to older lines. Track the latest release of the component you run. When
 a repository adopts a longer maintenance window, it will say so in its own
@@ -119,7 +119,7 @@ a repository adopts a longer maintenance window, it will say so in its own
 So you know what to expect from the code you are looking at:
 
 - Secret scanning with push protection, Dependabot security updates, CodeQL, and
-  container scanning run on every repository in the organisation.
+  container scanning run on every repository in the organization.
 - Private vulnerability reporting is enabled on every public repository.
 - Every published image is built in CI from a pinned base and scanned before
   release; findings are tracked publicly as issues rather than suppressed.

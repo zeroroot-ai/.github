@@ -11,9 +11,9 @@ top and the live edit is gone. A live-only change is not "already applied". It
 is **pending deletion**.
 
 That is not hypothetical: `gibson-executor`'s `Lint (golangci-lint)` required
-check was applied out of band, gibson-executor#369 was closed against it, and
-it survived only because nobody happened to edit another repo's ruleset first
-(.github#264).
+check was applied out of band, the issue that asked for it was closed against
+it, and it survived only because nobody happened to edit another repo's ruleset
+first.
 
 ## Rules of engagement
 
@@ -44,7 +44,7 @@ three months. No repo in that tier has ever produced it: `setec`, `adk` and
 `gibson-executor` name the job `Analyze Go` (single-language CodeQL), while
 `zerocool-plugins` and `sdk-ts` have no `codeql.yml` at all. The parenthesised
 form comes from a *matrix* CodeQL job (`Analyze (${{ matrix.language }})`, as
-in `sdk`). It was dead weight that misrepresented what was enforced (.github#261).
+in `sdk`). It was dead weight that misrepresented what was enforced.
 
 It was removed rather than corrected, because no single context name can work
 for a tier spanning Go and TypeScript repos. **CodeQL is gated per-repo
@@ -53,7 +53,7 @@ instead**, inside that repo's `ci-required` aggregator.
 **Trap 2 — a paths-filtered workflow.** A `paths:` filter on a workflow's
 `pull_request` trigger produces **zero** check runs on a non-matching PR. The
 required context is then *absent* rather than green, and merge-queue entry
-freezes for that PR (.github#202, deploy#1509, deploy#1512, deploy#1521). A
+freezes for that PR. This froze the queue four times before the rule existed. A
 job-level `if:` is fine — that reports a *skipped* check run, which satisfies
 rulesets. The defect is specifically the trigger-level filter, which suppresses
 the run entirely. Do cost control with an in-workflow `changes` job, never with
@@ -63,8 +63,9 @@ a trigger filter, on any workflow feeding a required context.
 
 The historical failure mode here was under-specified required sets: a repo runs
 fourteen gates and requires three of them, so a gate can exist, run, correctly
-report red, and the PR merges anyway (deploy#1526 merged with its own
-`validate` job red; gibson-executor#341; gibson-executor#369).
+report red, and the PR merges anyway. One PR in the deleted `deploy` repo
+merged with its own `validate` job red, and `gibson-executor` did the same
+twice.
 
 The fix is not a longer list — a list drifts the moment someone adds a gate and
 forgets the ruleset, and it can only ever be maintained from a different repo
@@ -80,7 +81,7 @@ Aggregator semantics that must hold (see any repo's `ci-required` job):
 - `skipped` and `success` count as pass; `failure` and `cancelled` count as
   fail. Skipped-for-paths is a legitimate pass; skipped-because-upstream-broke
   is not, and that is why upstream `changes`-style jobs must never be
-  lane-restricted (gibson#1368).
+  lane-restricted.
 - It must enumerate `needs.<job>.result` **explicitly**. `always()` plus no
   evaluation is a job that passes whenever it runs, i.e. a guard that cannot
   fail.
