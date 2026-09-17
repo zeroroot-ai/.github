@@ -284,7 +284,7 @@ collect() {
   local signals_json="[]"
   [ -f "$SIGNALS_FILE" ] && signals_json=$(measure_rows "$SIGNALS_FILE")
 
-  # --- Behaviour: what the fleet actually did in the window ------------------
+  # --- Behavior: what the fleet actually did in the window ------------------
   local filed closed merged rework alerts hygiene=0 q
   filed=$(search_count "org:${ORG} is:issue created:>=${since}")
   closed=$(search_count "org:${ORG} is:issue closed:>=${since}")
@@ -499,7 +499,7 @@ than reading clean.
 | Default \`GITHUB_TOKEN\` | $(jq -r '.oss.org.default_token // "?"' <<<"$j") | read | $([ "$(jq -r '.oss.org.default_token // "?"' <<<"$j")" = "read" ] && echo "✅" || echo "❌") |
 | Actions may approve pull requests | $(jq -r '.oss.org.actions_can_approve_prs | if . == null then "?" else tostring end' <<<"$j") | false | $([ "$(jq -r '.oss.org.actions_can_approve_prs | if . == null then "?" else tostring end' <<<"$j")" = "false" ] && echo "✅" || echo "❌") |
 
-## Behaviour — is the fleet spending effort on outcomes?
+## Behavior — is the fleet spending effort on outcomes?
 
 | Metric | Value | Limit | |
 |---|---|---|---|
