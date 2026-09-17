@@ -1,32 +1,60 @@
 name: Reusable verify-release
 
-# Slice 1.7 of the production-readiness epic (gibson#171 → board #16).
-# End-to-end verification of a released image tag. Pulls the image,
-# validates cosign signature against the OIDC issuer, validates SLSA
-# provenance attestation, extracts SBOM via cosign download, runs trivy.
+# The org release policy for a container image. A repo calls this after a
+# build, or on a release tag, with the image it wants to trust, its own repo
+# and the commit the image must come from. The job fails when any of these
+# is not true:
 #
-# Called on release-tag events; failure halts the release.
+#   1. The image is signed, keyless, by this org's shared build workflow
+#      (.github/workflows/reusable-image-build.yml), and the signing
+#      certificate names the caller repo and commit. A reusable workflow
+#      signs with ITS OWN identity: the certificate SAN is the reusable
+#      workflow's path, never the caller's. So the policy binds the caller
+#      through the certificate's GitHub Workflow Repository and Workflow SHA
+#      extensions. The first version of this policy matched the SAN against
+#      the caller repo, so it could never pass for any image the shared build
+#      produces, and no repo ever called it.
+#   2. The build provenance inside the signed image index (docker buildx
+#      `provenance: true`) names the caller repo and commit as its source.
+#      buildx stores that provenance as an attestation manifest IN the index,
+#      not as a cosign attestation, so `cosign verify-attestation --type
+#      slsaprovenance` finds nothing. The signature in (1) covers the index
+#      digest, and the index covers the provenance manifest.
+#   3. The SBOM attestation (syft SPDX, `cosign attest --type spdxjson`)
+#      verifies under the same identity. The build attests WITHOUT a Rekor
+#      entry on purpose (.github#223: a 26 MB SBOM exceeds the log's entry
+#      size). This check trusts the RFC 3161 timestamp instead of the log:
+#      `--insecure-ignore-tlog` is the flag name, and `--use-signed-timestamps`
+#      makes the timestamp authority stand in for the log.
+#   4. Trivy finds no fixable HIGH or CRITICAL vulnerability.
+#
+# cosign is pinned to the release the build signs with. The installer default
+# (v3.0.6) labels the SBOM attestation referrer as a plain signature, so
+# verify-attestation cannot find it. v3.1.3 labels it with the predicate type.
+#
+# scripts/test-reusable-verify-release.sh holds the assertions and the
+# failing fixtures. It extracts the shell blocks between the BEGIN-*/END-*
+# markers below and drives them offline.
 
 on:
   workflow_call:
     inputs:
       image_ref:
-        description: "Tagged image ref (e.g. ghcr.io/zeroroot-ai/gibson:v1.2.3)"
+        description: "Image to verify: a tag (ghcr.io/zeroroot-ai/x:v1.2.3) or a digest ref (ghcr.io/zeroroot-ai/x@sha256:...)"
         type: string
         required: true
       expected_subject_repo:
-        description: "Expected repo in SLSA provenance subject (e.g. zeroroot-ai/gibson)"
+        description: "The repo whose workflow built the image (e.g. zeroroot-ai/gibson)"
         type: string
         required: true
       expected_commit_sha:
-        description: "Expected commit SHA in SLSA provenance subject"
+        description: "The commit the image must be built from (40 hex)"
         type: string
         required: true
 
 permissions:
   contents: read
   packages: read
-  id-token: write
 
 jobs:
   verify:
@@ -41,58 +69,108 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
 
       - name: Resolve image digest
         id: digest
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
         run: |
           set -euo pipefail
-          # Resolve tag → digest so subsequent checks are stable.
-          DIGEST=$(docker buildx imagetools inspect ${{ inputs.image_ref }} --format '{{json .}}' | jq -r '.manifest.digest')
-          IMAGE_BASE="${{ inputs.image_ref }}"
-          IMAGE_BASE="${IMAGE_BASE%:*}"
-          REF="${IMAGE_BASE}@${DIGEST}"
+          # BEGIN-RESOLVE-DIGEST (extracted by scripts/test-reusable-verify-release.sh)
+          resolve_digest_ref() { # <tag or digest ref> -> <repo>@sha256:<hex>
+            local ref="$1" digest
+            case "$ref" in
+              *@sha256:*) printf '%s\n' "$ref" ;;
+              *)
+                digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r '.digest')
+                printf '%s@%s\n' "${ref%:*}" "$digest" ;;
+            esac
+          }
+          # END-RESOLVE-DIGEST
+          REF=$(resolve_digest_ref "$IMAGE_REF")
           echo "digest_ref=${REF}" >> "$GITHUB_OUTPUT"
-          echo "::notice::resolved to ${REF}"
+          echo "::notice::verifying ${REF}"
 
-      - name: Verify cosign signature
+      - name: The signature names the shared build, the caller repo and the commit
+        env:
+          IMAGE: ${{ steps.digest.outputs.digest_ref }}
+          REPO: ${{ inputs.expected_subject_repo }}
+          SHA: ${{ inputs.expected_commit_sha }}
         run: |
           set -euo pipefail
           cosign verify \
-            --certificate-identity-regexp "https://github.com/${{ inputs.expected_subject_repo }}/.+" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            ${{ steps.digest.outputs.digest_ref }}
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp '^https://github\.com/zeroroot-ai/\.github/\.github/workflows/reusable-image-build\.yml@' \
+            --certificate-github-workflow-repository "$REPO" \
+            --certificate-github-workflow-sha "$SHA" \
+            "$IMAGE" > /dev/null
+          echo "::notice::signed by the shared build for ${REPO}@${SHA}"
 
-      - name: Verify SLSA provenance attestation
+      - name: The build provenance names the caller repo and the commit
+        env:
+          IMAGE: ${{ steps.digest.outputs.digest_ref }}
+          REPO: ${{ inputs.expected_subject_repo }}
+          SHA: ${{ inputs.expected_commit_sha }}
         run: |
           set -euo pipefail
-          cosign verify-attestation \
-            --type slsaprovenance \
-            --certificate-identity-regexp "https://github.com/${{ inputs.expected_subject_repo }}/.+" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            ${{ steps.digest.outputs.digest_ref }} | tee /tmp/attestation.json
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .Provenance}}' > /tmp/provenance.json
+          # BEGIN-PROVENANCE-CHECK (extracted by scripts/test-reusable-verify-release.sh)
+          check_provenance() { # <provenance.json from buildx imagetools inspect> <owner/repo> <sha>
+            local file="$1" want_repo="https://github.com/${2%.git}" want_sha="$3"
+            # One entry per platform. Every entry must name the caller repo as
+            # its VCS source and the commit as its revision, and nothing else.
+            jq -e -r --arg repo "$want_repo" --arg sha "$want_sha" '
+              def vals(k): [.. | objects | .[k]? | strings] | unique;
+              if type != "object" or length == 0 then
+                error("no build provenance in the image index (built without provenance: true?)")
+              else . end
+              | to_entries
+              | map(.key as $platform | .value
+                    | (vals("vcs:source") | map(sub("\\.git$"; ""))) as $src
+                    | vals("vcs:revision") as $rev
+                    | if $src != [$repo] then error("\($platform): provenance source \($src) is not \($repo)")
+                      elif $rev != [$sha] then error("\($platform): provenance revision \($rev) is not \($sha)")
+                      else $platform end)
+              | "provenance binds \(join(", ")) to \($repo)@\($sha)"' "$file"
+          }
+          # END-PROVENANCE-CHECK
+          check_provenance /tmp/provenance.json "$REPO" "$SHA"
 
-          # Confirm the attestation subject matches expected repo + commit
-          SUBJECT_NAME=$(jq -r '.payload' /tmp/attestation.json | base64 -d | jq -r '.subject[0].name')
-          BUILDER_REPO=$(jq -r '.payload' /tmp/attestation.json | base64 -d | jq -r '.predicate.builder.id')
-          echo "::notice::SLSA subject: ${SUBJECT_NAME}, builder: ${BUILDER_REPO}"
-
-      - name: Extract SBOM attestation
+      - name: The SBOM attestation verifies under the same identity
+        env:
+          IMAGE: ${{ steps.digest.outputs.digest_ref }}
+          REPO: ${{ inputs.expected_subject_repo }}
+          SHA: ${{ inputs.expected_commit_sha }}
         run: |
           set -euo pipefail
+          # No Rekor entry by design (.github#223). The RFC 3161 timestamp in
+          # the bundle is the time source, so the log is not consulted.
           cosign verify-attestation \
             --type spdxjson \
-            --certificate-identity-regexp "https://github.com/${{ inputs.expected_subject_repo }}/.+" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            ${{ steps.digest.outputs.digest_ref }} | tee /tmp/sbom-attestation.json
-
-          # Decode the SBOM and confirm it parses as SPDX
-          jq -r '.payload' /tmp/sbom-attestation.json | base64 -d > /tmp/sbom.spdx.json
-          SPDX_VER=$(jq -r '.spdxVersion // empty' /tmp/sbom.spdx.json)
-          if [ -z "$SPDX_VER" ]; then
-            echo "::error::SBOM attestation did not decode to valid SPDX"
-            exit 1
-          fi
-          echo "::notice::SBOM is SPDX-${SPDX_VER}"
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp '^https://github\.com/zeroroot-ai/\.github/\.github/workflows/reusable-image-build\.yml@' \
+            --certificate-github-workflow-repository "$REPO" \
+            --certificate-github-workflow-sha "$SHA" \
+            --use-signed-timestamps \
+            --insecure-ignore-tlog \
+            "$IMAGE" > /tmp/sbom-attestation.json
+          # BEGIN-SBOM-CHECK (extracted by scripts/test-reusable-verify-release.sh)
+          check_sbom() { # <verify-attestation stdout: one DSSE envelope per line>
+            # The envelope payload is an in-toto statement. The SBOM is its predicate.
+            jq -e -r -s '
+              if length == 0 then error("verify-attestation returned no attestation") else . end
+              | map(.payload | @base64d | fromjson
+                    | if .predicateType != "https://spdx.dev/Document" then
+                        error("attestation predicate is \(.predicateType), not an SPDX document")
+                      elif (.predicate.spdxVersion // "") == "" then
+                        error("SBOM attestation did not decode to SPDX")
+                      else "SBOM is \(.predicate.spdxVersion), \(.predicate.packages // [] | length) packages" end)
+              | join("\n")' "$1"
+          }
+          # END-SBOM-CHECK
+          check_sbom /tmp/sbom-attestation.json
 
       - name: Trivy scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0

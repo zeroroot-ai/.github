@@ -98,6 +98,27 @@ This repo publishes tags through
 titles here become releases, and releases become Dependabot pull requests in
 every consumer.
 
+### Verifying a release
+
+`reusable-verify-release.yml` is the release policy. Call it after the build
+with the image, your own repo and the commit:
+
+```yaml
+verify:
+  needs: image
+  uses: zeroroot-ai/.github/.github/workflows/reusable-verify-release.yml@<sha> # vX.Y.Z
+  with:
+    image_ref: ghcr.io/zeroroot-ai/<name>@${{ needs.image.outputs.digest }}
+    expected_subject_repo: ${{ github.repository }}
+    expected_commit_sha: ${{ github.sha }}
+```
+
+The shared build signs with its own identity, not yours. The policy binds your
+repo and commit through the certificate's workflow-repository and workflow-SHA
+extensions. It then checks the buildx provenance inside the signed index, and
+verifies the SBOM attestation by its RFC 3161 timestamp, because the build
+writes no Rekor entry for it (`.github#223`).
+
 ### Why this is spelled out
 
 Until 2026-09-16 this repo had **no tags at all**. The pins were correct and
