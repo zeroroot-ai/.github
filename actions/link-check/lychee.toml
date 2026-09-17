@@ -30,8 +30,11 @@ exclude = [
   "\\.local(?:[:/]|$)",
   # Private repositories in this org. GITHUB_TOKEN is scoped to the calling
   # repository, so the API returns 404 for every one of these and the link
-  # would fail for a reason that has nothing to do with the link.
-  "github\\.com/zeroroot-ai/(?:hosted|billing|testharness|codeql-go-queries|codeql-ts-queries)",
+  # would fail for a reason that has nothing to do with the link. A PUBLIC
+  # repository must still not link to them: check-org-refs.sh fails that
+  # case. This alternation must name exactly the repositories in
+  # data/not-distributed.txt; `check-org-refs.sh --check-policy` asserts it.
+  "github\\.com/zeroroot-ai/(?:hosted|billing|www|testharness|codeql-go-queries|codeql-ts-queries)",
 ]
 
 exclude_path = [
