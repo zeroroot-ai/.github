@@ -483,7 +483,7 @@ jobs:
       # mismatch (failure mode 1) also 403s — the summary above is canonical.
       - if: always()
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@9e0d7b8d25671d64c341c19c0152d693099fb5ba # v4.35.5
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: trivy-${{ inputs.component_name }}.sarif
           category: trivy-${{ inputs.trivy_category != '' && inputs.trivy_category || inputs.component_name }}
