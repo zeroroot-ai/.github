@@ -15,7 +15,7 @@
 #   n  name  repo  workflow  root_issue  plain  exit_test
 #
 1	Terraform	hosted	exit-test-terraform.yml	—	The script that builds your AWS environment now runs clean. Keeping it that way: a plan that grows a dependency cycle, or wants to delete the audit-log or backup buckets, fails this test.	terraform plan on bootstrap/eks/gibson exits 0 with no S3 bucket in the replace set
-2	Signup	hosted	exit-test-signup.yml	—	A new customer never receives the verification email, so nobody can sign up.	an address receives the verification mail and the account reaches a Ready workspace with no manual DB touch
+2	Signup	hosted	exit-test-signup.yml	hosted#122	A new customer never receives the verification email, so nobody can sign up.	an address receives the verification mail and the account reaches a Ready workspace with no manual DB touch
 3	Backups	hosted	exit-test-backup-restore.yml	—	A restore has now been rehearsed end to end, and it runs again every day. It is what stands between a dead disk and losing every tenant's encryption keys.	an OpenBao snapshot lands in S3 and a restore into a clean cluster reads a tenant key back
 4	Rate limits	hosted	exit-test-rate-limit.yml	—	You cannot rate-limit one customer. The load balancer hides who is calling, so one client can hammer the API for everyone.	one client hits the rate limit while a second client keeps working
 5	Chart signing	hosted	exit-test-chart-signing.yml	hosted#116	What you deploy to production is not provably what you tested. The chart is signed, but nothing checked that prod runs the same chart staging tested.	prod runs the chart digest staging tested and promote-verify blocks a mismatch
