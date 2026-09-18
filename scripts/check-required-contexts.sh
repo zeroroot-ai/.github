@@ -119,6 +119,8 @@ required_contexts() {
 verified=0
 failures=0
 
+# dotglob: rulesets/repo/.github.json is a dotfile, and a bare `*` skips it.
+shopt -s dotglob
 for file in "$ROOT"/rulesets/org/*.json "$ROOT"/rulesets/repo/*.json; do
   [ -e "$file" ] || continue
   rel="${file#"$ROOT"/}"

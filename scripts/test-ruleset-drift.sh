@@ -224,6 +224,19 @@ else
 fi
 rm -rf "$EMPTY"
 
+# ---------------------------------------------------------------------------
+# MUTATION 10 — a repo ruleset file whose name starts with a dot. That is
+# rulesets/repo/.github.json, the ruleset for the repository that holds the
+# org-admin PAT. A bare `*.json` glob never matches it, so the file would be
+# committed, never applied, and never reported. Here its live counterpart is
+# absent, so a guard that reads the file must fail.
+# ---------------------------------------------------------------------------
+live_from '.'
+jq '.name = "dot-repo-required-checks"' "${WORK}/rulesets/repo/fixture-repo.json" \
+  > "${WORK}/rulesets/repo/.dot-repo.json"
+assert "MUTATION a dotfile ruleset with no live counterpart" fail
+rm -f "${WORK}/rulesets/repo/.dot-repo.json"
+
 echo
 echo "passed: ${PASS}  failed: ${FAIL}"
 [ "$FAIL" -eq 0 ]
