@@ -252,6 +252,18 @@ def apply_consumer(dest: str, c: dict, value: str, gw) -> str:
     return f"{c['file']}:{c['key']} = {value}"
 
 
+# The fan-out's own credentials. A consumer's `regenerate` command is that
+# consumer's code (`./scripts/golden.sh`, `./bigbang/images/generate-image-list.py`),
+# so write access to one consumer must not turn into the App token that can
+# push branches and open PRs on every consumer in the link.
+FANOUT_TOKENS = ("GH_TOKEN", "GITHUB_TOKEN", "GHCR_TOKEN", "GH_ENTERPRISE_TOKEN")
+
+
+def regenerate_env() -> dict[str, str]:
+    """The environment a consumer's `regenerate` command runs in: ours, minus every token."""
+    return {k: v for k, v in os.environ.items() if k not in FANOUT_TOKENS}
+
+
 def regenerate(dest: str, repo: str, consumers: list[dict]) -> list[str]:
     """Run the consumer repo's declared `regenerate` commands after the rewrite.
 
@@ -269,9 +281,10 @@ def regenerate(dest: str, repo: str, consumers: list[dict]) -> list[str]:
                 cmds.append(cmd)
     if not cmds:
         return []
+    env = regenerate_env()
     for cmd in cmds:
         print(f"{repo}: regenerate: {cmd}")
-        r = subprocess.run(["sh", "-c", cmd], cwd=dest, capture_output=True, text=True)
+        r = subprocess.run(["sh", "-c", cmd], cwd=dest, env=env, capture_output=True, text=True)
         if r.returncode != 0:
             raise FanoutError(f"regenerate `{cmd}` failed ({r.returncode}): {(r.stderr or r.stdout).strip()[-800:]}")
     untracked = [ln[3:] for ln in sh("git", "status", "--porcelain", cwd=dest).splitlines() if ln.startswith("??")]
@@ -473,6 +486,26 @@ def selftest() -> int:
         check(open(os.path.join(w, "o__charts", "derived/lines.txt")).read().strip() != "stale", "the regenerate command actually ran")
         body = [c[4] for c in gw.calls if c[0] == "create" and c[1] == "o/charts"][0]
         check("derived/lines.txt (regenerated)" in body, "PR body names the regenerated file")
+    # 8b. a regenerate command never sees the fan-out's tokens. The command is
+    #     the consumer's own code, and the token can push to every consumer.
+    with tempfile.TemporaryDirectory() as w:
+        m = json.loads(json.dumps(MANIFEST))
+        m["links"][0]["consumers"][0]["regenerate"] = ["env | sort > derived/env.txt"]
+        f2 = dict(files); f2[("o/charts", "derived/env.txt")] = "stale\n"
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.17.3"): DIG})
+        saved = {k: os.environ.get(k) for k in FANOUT_TOKENS}
+        os.environ.update(GH_TOKEN="fixture-app-token", GITHUB_TOKEN="fixture-github-token", GHCR_TOKEN="fixture-ghcr-token")
+        try:
+            rc = fanout(m, "zitadel", gw, None, "main", False, w)
+        finally:
+            for k, v in saved.items():
+                if v is None: os.environ.pop(k, None)
+                else: os.environ[k] = v
+        seen = open(os.path.join(w, "o__charts", "derived/env.txt")).read()
+        check(rc == 0 and "PATH=" in seen, "the regenerate command ran with an environment")
+        check("fixture-app-token" not in seen and "fixture-github-token" not in seen and "fixture-ghcr-token" not in seen
+              and not any(ln.split("=", 1)[0] in FANOUT_TOKENS for ln in seen.splitlines()),
+              "no fan-out token is visible to the regenerate command")
     # 9. regenerate that leaves untracked output, or fails, is loud and opens nothing for that repo
     with tempfile.TemporaryDirectory() as w:
         m = json.loads(json.dumps(MANIFEST))
