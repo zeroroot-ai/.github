@@ -8,6 +8,11 @@
 # repo-admin perms across all 12 zeroroot-ai/* repos. The default
 # GITHUB_TOKEN cannot manage org-level rulesets or cross-repo rulesets.
 #
+# This repository protects itself through rulesets/repo/.github.json. Every
+# repo in the org runs this repo's reusable workflows, and this workflow
+# holds the org-admin PAT, so a direct push to main here was the widest
+# unguarded write in the org.
+#
 # Plan requirement: GitHub Team for org rulesets, GitHub Pro for branch
 # rulesets on private repos. Public repos work on Free plan.
 #
@@ -117,7 +122,9 @@ jobs:
           GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
         run: |
           set -uo pipefail
-          shopt -s nullglob
+          # dotglob: rulesets/repo/.github.json protects this repository, and
+          # a bare `*` never matches a name that starts with a dot.
+          shopt -s nullglob dotglob
           failures=0
           for f in rulesets/repo/*.json; do
             repo=$(basename "$f" .json)

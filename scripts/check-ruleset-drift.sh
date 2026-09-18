@@ -190,7 +190,10 @@ check_one() {
   drifted=$((drifted + 1))
 }
 
-shopt -s nullglob
+# dotglob: rulesets/repo/.github.json is this repository's own ruleset, and a
+# bare `*` never matches a name that starts with a dot. Without it the file is
+# committed, applied by nothing, and reported by nothing.
+shopt -s nullglob dotglob
 for f in "${DIR}"/org/*.json;  do check_one org  "$f"; done
 for f in "${DIR}"/repo/*.json; do check_one repo "$f"; done
 

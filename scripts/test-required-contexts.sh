@@ -132,5 +132,16 @@ jq -n '{name:"u",target:"branch",enforcement:"evaluate",
   > "$d/rulesets/repo/alpha.json"
 assert "rule-less ruleset is skipped, repo one still checked" pass "$d" "$TMP/base.sh"
 
+# ---- 7. a dotfile repo ruleset is read: phantom context there -> must fail --
+# rulesets/repo/.github.json is a dotfile, and a bare `*.json` glob skips it.
+# A skipped file is a ruleset nobody verifies.
+d="$TMP/dotfile"; make_tree "$d" "pr-title-lint"
+jq -n '{name:"dot",target:"branch",enforcement:"active",
+        conditions:{ref_name:{include:["~DEFAULT_BRANCH"],exclude:[]}},
+        rules:[{type:"required_status_checks",
+                parameters:{required_status_checks:[{context:"release-please"}]}}]}' \
+  > "$d/rulesets/repo/.alpha.json"
+assert "a phantom context in a dotfile ruleset fails" fail "$d" "$TMP/base.sh"
+
 echo
 echo "OK: $pass assertions, guard proven capable of failing on all three real shapes."
