@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.2](https://github.com/zeroroot-ai/.github/compare/v0.5.1...v0.5.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **coverage-gate:** fetch the comparator script at the pinned workflow SHA ([#105](https://github.com/zeroroot-ai/.github/issues/105)) ([5e4aff4](https://github.com/zeroroot-ai/.github/commit/5e4aff4559731b4933a62d3b68e08c5cd7579ffa))
+* **rulesets:** protect the .github repository with its own ruleset ([#106](https://github.com/zeroroot-ai/.github/issues/106)) ([bad7108](https://github.com/zeroroot-ai/.github/commit/bad7108dca8dcf76d714951e77b0c652a728980e))
+* **scorecard:** blocker 2 has a root issue again ([#103](https://github.com/zeroroot-ai/.github/issues/103)) ([0a27cb3](https://github.com/zeroroot-ai/.github/commit/0a27cb3ce7e71d4f3c7b4a6346751758f7e3b815))
+* **version-fanout:** run regenerate commands without the fan-out tokens ([#108](https://github.com/zeroroot-ai/.github/issues/108)) ([e4e1c02](https://github.com/zeroroot-ai/.github/commit/e4e1c028953040246b14236b31924fb0c9a8f2ef))
+
 ## [0.5.1](https://github.com/zeroroot-ai/.github/compare/v0.5.0...v0.5.1) (2026-09-17)
 
 
