@@ -154,7 +154,7 @@ mistake your additions for defaults. Model `Vendor`, `Incident`, `Control`, or
 |---|---|---|
 | **[`adk`](https://github.com/zeroroot-ai/adk)** | The `gibson` CLI and the component scaffold. Scaffold, build, validate, check in, submit missions | Apache-2.0 |
 | **[`setec`](https://github.com/zeroroot-ai/setec)** | Standalone microVM operator. Kata/Firecracker sandboxes — the untrusted-code execution boundary. Useful on its own, with or without Gibson | Apache-2.0 |
-| **[`charts`](https://github.com/zeroroot-ai/charts)** | The install chart. One versioned OCI umbrella: CRDs, operators, workloads. The chart is open; the images it pulls need a registry credential | Apache-2.0 |
+| **[`charts`](https://github.com/zeroroot-ai/charts)** | The install chart. One versioned OCI umbrella: CRDs, operators, workloads. The chart and every image it pulls are public | Apache-2.0 |
 | **[`gibson`](https://github.com/zeroroot-ai/gibson)** | The platform. Daemon, ext-authz, both operators, the SPIFFE/JWKS sidecar, the graph and the brain | Elastic v2 |
 | **[`dashboard`](https://github.com/zeroroot-ai/dashboard)** | The console. Next.js, Server-Action auth, ConnectRPC over Envoy and SPIFFE mTLS | Elastic v2 |
 | **[`gibson-executor`](https://github.com/zeroroot-ai/gibson-executor)** | The in-guest execution agent. Runs security tooling and the MCP bridge inside a Setec microVM | Elastic v2 |
