@@ -100,6 +100,17 @@ gh pr merge <number> --squash --delete-branch
 Some repositories run a merge queue. There, enable auto-merge and let the queue
 land the change.
 
+**CI is the only merge gate.** No ruleset requires an approving review. Every
+`pull_request` rule in `rulesets/` sets `required_approving_review_count` to 0,
+and that is a recorded owner decision, not an oversight. Agents merge their own
+pull requests when the required checks are green. The checks are the review:
+formatting, lint, unit tests, render guards, secret and registry guards, CodeQL
+and govulncheck all run before a merge. A required review count of 1 would stop
+every agent at a step that no human is present to take, and it would move the
+gate from a measured check to a click. The `ruleset-drift` and
+`required-contexts` jobs in `zeroroot-ai/.github` verify daily that the gate is
+live and that every required context is produced.
+
 ## 5. CI failures
 
 Root-cause a failure. Never rerun a failed job blind, and never silence a check.
