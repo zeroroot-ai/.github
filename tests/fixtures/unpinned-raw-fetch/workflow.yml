@@ -1,0 +1,23 @@
+# Fixture for the unpinned-actions guard self-test. Lives outside .github/ so
+# GitHub never parses it as a workflow.
+#
+# Every `uses:` here is SHA-pinned. The ONLY thing that can fail this fixture
+# is the first-party raw fetch at `main`. That is the reusable-coverage-gate
+# shape: a caller pins the workflow by SHA, and the workflow then curls a
+# script from a branch, so the pin binds nothing that runs. A raw fetch at a
+# commit, or at `${{ github.job_workflow_sha }}`, must pass.
+jobs:
+  pinned:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: fetch by the commit the caller pinned (accepted)
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/zeroroot-ai/.github/${{ github.job_workflow_sha }}/scripts/coverage-compare.sh" -o /tmp/a.sh
+          curl -fsSL https://raw.githubusercontent.com/zeroroot-ai/.github/3d3c42e5aac5ba805825da76410c181273ba90b1/scripts/coverage-compare.sh -o /tmp/b.sh
+  unpinned-raw-fetch:
+    steps:
+      - name: fetch from a branch (rejected)
+        run: |
+          curl -fsSL --retry 5 \
+            https://raw.githubusercontent.com/zeroroot-ai/.github/main/scripts/coverage-compare.sh \
+            -o /tmp/coverage-compare.sh

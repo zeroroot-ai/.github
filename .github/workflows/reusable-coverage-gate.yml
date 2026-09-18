@@ -43,12 +43,18 @@ jobs:
           go test -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Fetch comparator script
+        # The script is fetched at `github.job_workflow_sha`, the commit of
+        # THIS reusable workflow file, which is the SHA the caller pinned. It
+        # used to be fetched from `main`, so a caller's SHA pin bound the
+        # workflow and not the script it ran: whoever moved `main` here ran
+        # code in every caller's required check. The unpinned-actions guard
+        # rejects a first-party raw fetch at a branch or tag.
         run: |
           set -euo pipefail
           # Retry the fetch: a bare curl reds this required check on any CDN blip
           # (.github#12, same class as the kubeconform install).
           curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
-            https://raw.githubusercontent.com/zeroroot-ai/.github/main/scripts/coverage-compare.sh \
+            "https://raw.githubusercontent.com/zeroroot-ai/.github/${{ github.job_workflow_sha }}/scripts/coverage-compare.sh" \
             -o /tmp/coverage-compare.sh
           chmod +x /tmp/coverage-compare.sh
 

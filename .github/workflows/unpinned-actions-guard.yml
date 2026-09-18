@@ -16,6 +16,7 @@
 #   tests/fixtures/unpinned-actions      one unpinned third-party action
 #   tests/fixtures/unpinned-firstparty   third-party pinned, first-party @main
 #   tests/fixtures/unpinned-composite    a composite action whose own step is unpinned
+#   tests/fixtures/unpinned-raw-fetch    every `uses:` pinned, one first-party raw fetch at `main`
 # and .github's own tree must pass.
 name: unpinned-actions-guard
 on:
@@ -29,6 +30,7 @@ on:
       - "tests/fixtures/unpinned-actions/**"
       - "tests/fixtures/unpinned-firstparty/**"
       - "tests/fixtures/unpinned-composite/**"
+      - "tests/fixtures/unpinned-raw-fetch/**"
 permissions:
   contents: read
 jobs:
@@ -62,6 +64,17 @@ jobs:
             echo "::error::guard accepted an unpinned dependency inside a composite action"; exit 1
           fi
           echo "PASS: unpinned composite-action fixture rejected"
+      - name: the fixture with a FIRST-PARTY RAW FETCH at a branch must fail
+        # reusable-coverage-gate.yml curled scripts/coverage-compare.sh from
+        # `main`, so a caller's SHA pin bound the workflow and not the script
+        # it ran. A `uses:` scanner cannot see a curl, so the guard reads raw
+        # URLs too.
+        run: |
+          set -uo pipefail
+          if python3 scripts/pin-actions.py tests/fixtures/unpinned-raw-fetch --check; then
+            echo "::error::guard accepted a first-party raw fetch at a branch"; exit 1
+          fi
+          echo "PASS: unpinned raw-fetch fixture rejected"
       - name: this repository must pass
         run: python3 scripts/pin-actions.py . --check
   org:

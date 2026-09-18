@@ -6,8 +6,21 @@ Usage: pin-actions.py <repo-dir> [--check]
   - already-SHA-pinned lines are left alone
   - `uses: ./local` and `uses: docker://` are skipped
   - --check exits 1 if any unpinned reference remains (the guard)
+  - a first-party raw fetch (`raw.githubusercontent.com/zeroroot-ai/...`) at
+    a branch or tag is an unpinned reference too, in either mode
 The tag is resolved with the GitHub API (annotated tags are dereferenced).
 attic#24.
+
+RAW FETCHES COUNT. A `uses:` pin is not the only way a workflow loads code
+from this organization: reusable-coverage-gate.yml curled
+`scripts/coverage-compare.sh` from `raw.githubusercontent.com/zeroroot-ai/
+.github/main/`, so a caller that pinned the workflow by SHA still ran
+whatever was on `main` at run time. The pin bought nothing. A first-party
+raw URL must name a 40-hex commit or a `${{ github.*sha }}` expression
+(`github.job_workflow_sha` is the commit the caller pinned). Only
+`zeroroot-ai/*` URLs are checked here: a third-party raw fetch at a moving
+ref is the same hazard, but the org still installs helm that way in three
+places, and that is a separate root cause.
 
 FIRST-PARTY REFERENCES COUNT TOO (.github#66). This used to skip
 `zeroroot-ai/*` on the grounds that those were "re-pinned by
@@ -37,6 +50,21 @@ import json, pathlib, re, subprocess, sys
 
 USES = re.compile(r'^(\s*(?:-\s+)?uses:\s*)([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)((?:/[A-Za-z0-9_./-]+)?)@([^\s#]+)(\s*#.*)?$')
 SHA = re.compile(r'^[0-9a-f]{40}$')
+# A first-party raw fetch: owner, repo, then the ref segment. The ref is either
+# a plain path segment or one `${{ ... }}` expression.
+RAW = re.compile(r'raw\.githubusercontent\.com/(zeroroot-ai)/([A-Za-z0-9_.-]+)/(\$\{\{[^}]*\}\}|[^/\s"\'`]+)/')
+# The only expressions that name a commit: github.sha, github.job_workflow_sha.
+SHA_EXPR = re.compile(r'^\$\{\{\s*github\.[a-z_]*sha\s*\}\}$')
+
+
+def raw_unpinned(line):
+    """Every first-party raw fetch on the line whose ref can move."""
+    out = []
+    for m in RAW.finditer(line):
+        ref = m.group(3)
+        if SHA.match(ref) or SHA_EXPR.match(ref): continue
+        out.append(f'{m.group(1)}/{m.group(2)}@{ref} (raw fetch)')
+    return out
 cache = {}
 
 def resolve(owner_repo, ref):
@@ -88,6 +116,10 @@ def main():
         if not re.search(r'\.ya?ml$', rel): continue
         p = repo / rel; lines = p.read_text().splitlines(keepends=True); new = []
         for ln in lines:
+            # A raw fetch is reported in both modes. Nothing rewrites it: the
+            # right ref is a decision (github.job_workflow_sha for a script
+            # that must match the workflow), not a lookup.
+            unpinned += [f'{rel}: {u}' for u in raw_unpinned(ln)]
             m = USES.match(ln)
             # A self-reference is skipped, not blessed — see the module docstring.
             if not m or SHA.match(m.group(4)) or m.group(2).startswith('.') or m.group(2) == mine:
