@@ -87,6 +87,57 @@ links:
       file: helm/gibson/Chart.yaml
       name: zitadel
 
+  # ---- gibson -> charts: the Neo4j APOC provisioning contract (gibson#28) --
+  # pkg/platform/dataplane/apoc.go in gibson is the contract every Neo4j the
+  # daemon writes to must be provisioned to. The tenant-operator and
+  # gibson-migrate read the Go constants; the umbrella chart's own Neo4j
+  # copies them as literals in helm/gibson/values.yaml. gibson renders the
+  # constants to apoc.env (`make apoc-contract`, drift-tested), and these
+  # links keep the chart's copies equal to it. The jar glob and the plugins
+  # dir live inside an init-container command string, which no key can
+  # address; the daemon's readiness probe `neo4j_apoc_contract` covers those
+  # on the live server. A `\.` in a consumer key is a literal dot: the
+  # Neo4j settings are dotted names inside the values map.
+  - name: neo4j-apoc-allowlist
+    source:
+      repo: zeroroot-ai/gibson
+      file: pkg/platform/dataplane/apoc.env
+      key: NEO4J_PROCEDURE_ALLOWLIST
+      format: env
+    consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: neo4j.config.dbms\.security\.procedures\.allowlist
+        format: yaml
+        regenerate:
+          - ./scripts/golden.sh update
+  - name: neo4j-apoc-export-file
+    source:
+      repo: zeroroot-ai/gibson
+      file: pkg/platform/dataplane/apoc.env
+      key: NEO4J_APOC_EXPORT_FILE_ENABLED
+      format: env
+    consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: neo4j.apoc_config.apoc\.export\.file\.enabled
+        format: yaml
+        regenerate:
+          - ./scripts/golden.sh update
+  - name: neo4j-apoc-import-file
+    source:
+      repo: zeroroot-ai/gibson
+      file: pkg/platform/dataplane/apoc.env
+      key: NEO4J_APOC_IMPORT_FILE_ENABLED
+      format: env
+    consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: neo4j.apoc_config.apoc\.import\.file\.enabled
+        format: yaml
+        regenerate:
+          - ./scripts/golden.sh update
+
   # ---- charts: hand-overridden subchart image tags (charts#14) -------------
   # Each entry below is an image tag in the umbrella values that overrides a
   # subchart's own image. The override in charts IS the source: nothing else
