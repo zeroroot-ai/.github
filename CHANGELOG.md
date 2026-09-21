@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/zeroroot-ai/.github/compare/v0.5.2...v0.6.0) (2026-09-21)
+
+
+### Features
+
+* **version-links:** bind the chart's Neo4j APOC copies to gibson's contract ([#115](https://github.com/zeroroot-ai/.github/issues/115)) ([5fffa80](https://github.com/zeroroot-ai/.github/commit/5fffa801422b512d83533f00d431b60aaf1afea0))
+
+
+### Bug Fixes
+
+* **version-drift:** a digest-pinned reference is compared on its tag ([#112](https://github.com/zeroroot-ai/.github/issues/112)) ([57edcee](https://github.com/zeroroot-ai/.github/commit/57edcee746c852578f158779218366da936f283f)), closes [#111](https://github.com/zeroroot-ai/.github/issues/111)
+
 ## [0.5.2](https://github.com/zeroroot-ai/.github/compare/v0.5.1...v0.5.2) (2026-09-18)
 
 
