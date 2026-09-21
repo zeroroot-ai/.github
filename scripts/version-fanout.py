@@ -84,9 +84,16 @@ def set_env_key(text: str, key: str, value: str) -> str:
     return "".join(out)
 
 
+def split_key(dotted: str) -> list[str]:
+    """Split a yaml key path on dots. `\\.` is a literal dot inside one key,
+    for a map whose keys are dotted themselves (Neo4j settings such as
+    `dbms.security.procedures.allowlist`, gibson#28). Mirrors version-drift.py."""
+    return [p.replace("\\.", ".") for p in re.split(r"(?<!\\)\.", dotted)]
+
+
 def set_yaml_scalar(text: str, dotted: str, value: str) -> str:
     """Rewrite the scalar at a dotted key path, tracking the path by indentation."""
-    target = dotted.split(".")
+    target = split_key(dotted)
     stack: list[tuple[int, str]] = []
     out, hit = [], False
     for line in text.splitlines(keepends=True):
@@ -206,7 +213,7 @@ def read_key(text: str, fmt: str, key: str) -> str:
                 return s.split("=", 1)[1].strip().strip('"').strip("'")
         raise FanoutError(f"env key {key} not found")
     node = yaml_to_json(text)
-    for part in key.split("."):
+    for part in split_key(key):
         if not isinstance(node, dict) or part not in node:
             raise FanoutError(f"yaml key {key} not found")
         node = node[part]
@@ -420,6 +427,9 @@ def selftest() -> int:
     check('    tag: "v4.17.3"  # pinned, see note' in t, "yaml rewrite keeps quotes, indent and the trailing comment")
     check(t.count("v9.9.9") == 1 and "sha-f41ce75" in t, "yaml rewrite touches no other tag line")
     check(sum(1 for a, b in zip(VALUES.splitlines(), t.splitlines()) if a != b) == 1, "yaml rewrite changes exactly one line")
+    dotted = 'neo4j:\n  config:\n    dbms.security.procedures.allowlist: "apoc.merge.node"\n'
+    t2 = set_yaml_scalar(dotted, "neo4j.config.dbms\\.security\\.procedures\\.allowlist", "apoc.merge.node,apoc.merge.relationship")
+    check('dbms.security.procedures.allowlist: "apoc.merge.node,apoc.merge.relationship"' in t2, "an escaped dot rewrites a dotted yaml key")
     try:
         set_yaml_scalar(VALUES, "zitadel.nope.tag", "x"); check(False, "missing yaml key raises")
     except FanoutError:

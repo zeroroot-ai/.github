@@ -118,6 +118,13 @@ def yaml_to_json(text: str) -> dict:
     return json.loads(r.stdout or "{}")
 
 
+def split_key(dotted: str) -> list[str]:
+    """Split a yaml key path on dots. `\\.` is a literal dot inside one key,
+    for a map whose keys are dotted themselves (Neo4j settings such as
+    `dbms.security.procedures.allowlist`, gibson#28)."""
+    return [p.replace("\\.", ".") for p in re.split(r"(?<!\\)\.", dotted)]
+
+
 def read_key(text: str, fmt: str, key: str) -> str:
     if fmt == "env":
         for line in text.splitlines():
@@ -130,7 +137,7 @@ def read_key(text: str, fmt: str, key: str) -> str:
         raise FetchError(f"key {key} not found (env)")
     if fmt == "yaml":
         node = yaml_to_json(text)
-        for part in key.split("."):
+        for part in split_key(key):
             if isinstance(node, list) and part.isdigit() and int(part) < len(node):
                 node = node[int(part)]
             elif isinstance(node, dict) and part in node:
@@ -401,6 +408,15 @@ def selftest() -> int:
     gw = FixtureGateway(files_ok, {"up/zitadel": REL_SAME})
     rows = evaluate(MANIFEST_FIXTURE, gw)
     check(all(r["state"] == OK for r in rows), "pin `v4.17.3@sha256:...` equals source v4.17.3; all OK")
+
+    # 3b. an escaped dot addresses a key that is itself dotted (gibson#28)
+    dotted_yaml = 'neo4j:\n  config:\n    dbms.security.procedures.allowlist: "apoc.merge.node,apoc.merge.relationship"\n'
+    check(read_key(dotted_yaml, "yaml", "neo4j.config.dbms\\.security\\.procedures\\.allowlist") == "apoc.merge.node,apoc.merge.relationship",
+          "an escaped dot reads a dotted yaml key")
+    try:
+        read_key(dotted_yaml, "yaml", "neo4j.config.dbms.security.procedures.allowlist"); check(False, "an unescaped dotted key is not found")
+    except FetchError:
+        check(True, "an unescaped dotted key is not found")
 
     # 4. all in sync with an open tracker -> closed with a dated comment, no create
     gw = FixtureGateway(files_ok, {"up/zitadel": REL_SAME}, existing=9)
