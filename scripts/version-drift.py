@@ -20,8 +20,9 @@ gates the scheduled job in .github/workflows/version-drift.yml):
   * A `subchart` block adds one informational row: the appVersion the pinned
     Helm dependency ships, read from the chart repository's index.yaml. It
     is never drift; it says how far the override sits from the tested app.
-  * A consumer with `after` compares the part of the value after the last
-    occurrence of that string (inline `registry/name:tag` references).
+  * A consumer with `after` compares the part of the value after the first
+    occurrence of that string in the last path segment (inline
+    `registry/name:tag` and `registry/name:tag@sha256:...` references).
 
 Reads YAML through `yq -o=json` (present on the GitHub runners and on the
 workstation) so the script needs nothing beyond the Python standard library.
@@ -143,7 +144,11 @@ def read_key(text: str, fmt: str, key: str) -> str:
 
 
 def semver_key(tag: str) -> tuple:
-    core = tag.lstrip("vV").split("-")[0].split("+")[0]
+    # A pinned reference carries its digest (`3.7.1@sha256:...`); the digest
+    # is not a version component. Without this the last component read as
+    # `1@sha256:...`, parsed as -1, and every digest-pinned source sat behind
+    # its own upstream (.github#111).
+    core = tag.split("@")[0].lstrip("vV").split("-")[0].split("+")[0]
     parts = []
     for p in core.split("."):
         parts.append(int(p) if p.isdigit() else -1)
@@ -162,7 +167,7 @@ def newest_release(releases: list[dict]) -> str | None:
 
 def upstream_ahead(newest: str, source: str) -> bool:
     """Compare at the precision of the source: `3.6` vs `v3.6.4` is in sync."""
-    precision = len(source.lstrip("vV").split("-")[0].split("+")[0].split("."))
+    precision = len(source.split("@")[0].lstrip("vV").split("-")[0].split("+")[0].split("."))
     return semver_key(newest)[:precision] > semver_key(source)[:precision]
 
 
@@ -208,7 +213,16 @@ def evaluate(manifest: dict, gw) -> list[dict]:
                 rows.append(dict(link=name, role="consumer", where=cwhere, value="", state=ERROR, note=str(e)))
                 continue
             val = raw.split(c["before"], 1)[0] if c.get("before") else raw
-            val = val.rsplit(c["after"], 1)[-1] if c.get("after") else val
+            # `after` reads the tag of an inline image reference: the part
+            # after the first occurrence of the string in the LAST path
+            # segment. The last occurrence is wrong once the reference is
+            # digest-pinned (`name:1.33.0@sha256:...`): it read the digest hex
+            # and every pinned consumer sat MISMATCH against a source it
+            # equalled (.github#111). The first occurrence anywhere is wrong
+            # too: a registry with a port (`host:5000/name:tag`) has one.
+            if c.get("after"):
+                head, sep, last = val.rpartition("/")
+                val = last.split(c["after"], 1)[-1] if c["after"] in last else val
             state = OK if val == src_val else MISMATCH
             note = "" if state == OK else f"source is {src_val}"
             rows.append(dict(link=name, role="consumer", where=cwhere, value=val, state=state, note=note))
@@ -459,11 +473,27 @@ def selftest() -> int:
     vals_ok = vals.replace("alpine-k8s:1.31.0", "alpine-k8s:1.33.0")
     rows = evaluate(tools, FixtureGateway({("o/charts", "values.yaml"): vals_ok}, {}))
     check(all(r["state"] == OK for r in rows), "`after` consumer equal to the source reads OK")
+    # 12b. FAILING FIXTURES (.github#111): a digest-pinned inline reference reads
+    # its tag@digest, never the digest hex, and a registry port is not a tag.
+    pinned = "1.33.0@sha256:" + "6" * 64
+    vals_pinned = vals.replace('tag: "1.33.0"', f'tag: "{pinned}"').replace("alpine-k8s:1.31.0", f"alpine-k8s:{pinned}")
+    rows = evaluate(tools, FixtureGateway({("o/charts", "values.yaml"): vals_pinned}, {}))
+    cons = [r for r in rows if r["role"] == "consumer"][0]
+    check(cons["state"] == OK and cons["value"] == pinned, "`after: ':'` on a digest-pinned reference reads tag@digest, not the digest hex")
+    vals_port = vals.replace("ghcr.io/o/mirror/alpine-k8s:1.31.0", "registry.local:5000/mirror/alpine-k8s:1.33.0")
+    rows = evaluate(tools, FixtureGateway({("o/charts", "values.yaml"): vals_port}, {}))
+    cons = [r for r in rows if r["role"] == "consumer"][0]
+    check(cons["state"] == OK and cons["value"] == "1.33.0", "`after: ':'` ignores a registry port and reads the tag")
 
     # 13. upstream compare at the precision of the source: floating minor `3.6`
     check(not upstream_ahead("v3.6.4", "3.6"), "source 3.6 is in sync with newest v3.6.4")
     check(upstream_ahead("v3.7.1", "3.6"), "source 3.6 is behind newest v3.7.1")
     check(upstream_ahead("v4.17.4", "v4.17.3") and not upstream_ahead("v4.17.3", "v4.17.3"), "full versions compare at patch precision")
+    # FAILING FIXTURE (.github#111): a digest-pinned source is compared on its
+    # tag; `3.7.1@sha256:...` is in sync with v3.7.1 and behind v3.7.2.
+    pinned_src = "3.7.1@sha256:" + "4" * 64
+    check(not upstream_ahead("v3.7.1", pinned_src), "a digest-pinned source equal to the newest release is in sync")
+    check(upstream_ahead("v3.7.2", pinned_src), "a digest-pinned source behind the newest release is drift")
 
     # 14. subchart row: informational, never drift; index failure is ERROR
     chart = ('dependencies:\n  - name: zitadel\n    alias: zitadel\n    version: "9.34.1"\n'
