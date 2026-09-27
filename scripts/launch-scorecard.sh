@@ -257,6 +257,49 @@ oss_org() {
     || printf '{"default_token":"?","actions_can_approve_prs":null}'
 }
 
+# ------------------------------------------------------------ must close ----
+# must_close_rows — every open issue in the org that carries the
+# `launch-blocker` label. The label IS the list: to add or drop an issue, change
+# its label, never this board. One search call, so the list cannot drift from
+# what `gh search issues --label launch-blocker` shows a human.
+#
+# This board is public. A private repo's issue is named by number only, its
+# title withheld, because a private title can describe a gap in the live
+# service.
+must_close_rows() {
+  local private items
+  private=$(gh api "orgs/${ORG}/repos" --paginate --jq '[.[] | select(.private) | .name]' 2>/dev/null \
+              | jq -s -c 'add // []') || private='[]'
+  items=$(gh api -X GET search/issues -f q="org:${ORG} is:issue is:open label:launch-blocker" \
+            -f per_page=100 --jq '.items' 2>/dev/null) || { echo 'null'; return; }
+  jq -c --argjson private "$private" '
+    [.[] | (.repository_url | split("/") | last) as $repo
+         | {repo:$repo, number:.number,
+            private:($private | index($repo) != null),
+            title:(if ($private | index($repo) != null) then "" else .title end)}]
+    | sort_by(.repo, .number)' <<<"$items"
+}
+
+# must_close_table <json> — the rendered list, or one line when it is empty.
+# The backticks in this function are literal Markdown, not command substitution.
+# shellcheck disable=SC2016
+must_close_table() {
+  local j="$1" n
+  if [ "$(jq -r '.must_close == null' <<<"$j")" = "true" ]; then
+    printf 'Not measured this run.'
+    return
+  fi
+  n=$(jq -r '.must_close | length' <<<"$j")
+  if [ "$n" -eq 0 ]; then
+    printf 'No open issue carries the `launch-blocker` label.'
+    return
+  fi
+  printf '%s open issue(s) carry the `launch-blocker` label.\n\n' "$n"
+  printf '| Issue | What must be true |\n|---|---|\n'
+  jq -r --arg org "$ORG" '.must_close[]
+    | "| [\(.repo)#\(.number)](https://github.com/\($org)/\(.repo)/issues/\(.number)) | \(if .private then "_private repo, title withheld_" else (.title | gsub("\\|"; "\\|")) end) |"' <<<"$j"
+}
+
 # ---------------------------------------------------------------- collect ----
 collect() {
   command -v gh >/dev/null || die "gh is not installed"
@@ -333,6 +376,10 @@ collect() {
   oss_skipped=$(grep -v '^#' "$NOT_DISTRIBUTED_FILE" 2>/dev/null | grep -v '^$' \
                   | jq -R . | jq -s -c . || echo '[]')
 
+  # --- Must close: the issues labelled launch-blocker, org-wide ---------------
+  local must_close
+  must_close=$(must_close_rows)
+
   jq -n --arg gen "$since_iso" --arg since "$since" --argjson wd "$WINDOW_DAYS" \
         --argjson blockers "$blockers_json" --argjson green "$green" \
         --argjson signals "$signals_json" \
@@ -341,10 +388,10 @@ collect() {
         --argjson filed "${filed:-0}" --argjson closed "${closed:-0}" \
         --argjson merged "${merged:-0}" --argjson hygiene "${hygiene:-0}" \
         --argjson rework "${rework:-0}" --argjson alerts "${alerts:-0}" \
-        --argjson openprs "$openprs" \
+        --argjson openprs "$openprs" --argjson mustclose "${must_close:-null}" \
     '{generated_at:$gen, window_since:$since, window_days:$wd,
       blockers:$blockers, green:$green, total:($blockers|length),
-      signals:$signals,
+      signals:$signals, must_close:$mustclose,
       oss:{org:$ossorg, repos:$oss, not_distributed:$ossskip},
       process:{issues_filed:$filed, issues_closed:$closed, prs_merged:$merged,
                hygiene_prs:$hygiene, rework_prs:$rework,
@@ -475,6 +522,14 @@ $(jq -r '(.signals // [])[] | select(.status != "PASS") | "| \(.n) | \(.name) (\
 
 $(passing_line "$j" signals signal)
 
+## Must close before launch
+
+$(must_close_table "$j")
+
+The list is the open issues labelled \`launch-blocker\` across the org. To add or
+drop an issue, change its label. The live query is
+\`gh search issues --owner ${ORG} --label launch-blocker --state open\`.
+
 ## Open-source readiness — the repos that will be published
 
 $(oss_summary "$j")
@@ -570,6 +625,7 @@ case "${1:-all}" in
   collect) collect ;;
   measure) measure_rows "${2:?usage: $0 measure <tsv>}" ;;
   oss)     jq -n --argjson org "$(oss_org)" --argjson repos "$(oss_rows)" '{org:$org,repos:$repos}' ;;
+  must-close) must_close_rows ;;
   not-distributed) grep -v '^#' "$NOT_DISTRIBUTED_FILE" | grep -v '^$' ;;
   render)  render ;;
   publish) publish ;;
@@ -578,5 +634,5 @@ case "${1:-all}" in
     collect | render | publish
     rm -f "$PREV_BODY"
     ;;
-  *) die "usage: $0 {collect|measure <tsv>|oss|not-distributed|render|publish|all}" ;;
+  *) die "usage: $0 {collect|measure <tsv>|oss|must-close|not-distributed|render|publish|all}" ;;
 esac
