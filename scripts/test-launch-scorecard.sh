@@ -232,6 +232,43 @@ mkfixture FAIL 4 1 40 0 0 '{"deploy":1}' > "$tmp/nopass.json"
 assert_has "$tmp/nopass.md" "Nothing hidden: no blocker passes yet."
 assert_has "$tmp/nopass.md" "| 1 | One (deploy#1) | **FAIL** |"
 
+echo "== the must-close list renders the labelled issues, private titles withheld =="
+# The label is the list. A public title renders, a pipe in it cannot break the
+# table, and a private repo's title never reaches this public board.
+jq '.must_close=[
+      {repo:"gibson", number:32, private:false, title:"e2e | cluster half runs nowhere"},
+      {repo:"hosted", number:123, private:true, title:""}]' \
+  "$tmp/hide.json" > "$tmp/mc.json"
+"$SCRIPT" render < "$tmp/mc.json" > "$tmp/mc.md"
+assert_has   "$tmp/mc.md" "## Must close before launch"
+assert_has   "$tmp/mc.md" "2 open issue(s) carry the \`launch-blocker\` label."
+assert_has   "$tmp/mc.md" "| [gibson#32](https://github.com/zeroroot-ai/gibson/issues/32) | e2e \| cluster half runs nowhere |"
+assert_has   "$tmp/mc.md" "| [hosted#123](https://github.com/zeroroot-ai/hosted/issues/123) | _private repo, title withheld_ |"
+jq '.must_close=[]' "$tmp/hide.json" > "$tmp/mc0.json"
+"$SCRIPT" render < "$tmp/mc0.json" > "$tmp/mc0.md"
+assert_has   "$tmp/mc0.md" "No open issue carries the \`launch-blocker\` label."
+# An unmeasured list must not read as an empty one: "nothing to do" is a claim.
+"$SCRIPT" render < "$tmp/hide.json" > "$tmp/mcnull.md"
+assert_has   "$tmp/mcnull.md" "Not measured this run."
+assert_lacks "$tmp/mcnull.md" "No open issue carries"
+
+echo "== the must-close collector withholds a private repo's title =="
+mcstub="$tmp/mcstub"; mkdir -p "$mcstub"
+cat > "$mcstub/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *"search/issues"*) echo '[{"repository_url":"https://api.github.com/repos/zeroroot-ai/hosted","number":9,"title":"secret gap"},
+                           {"repository_url":"https://api.github.com/repos/zeroroot-ai/gibson","number":3,"title":"public thing"}]' ;;
+  *"orgs/"*"/repos"*) echo '["hosted"]' ;;
+  *) echo "" ;;
+esac
+STUB
+chmod +x "$mcstub/gh"
+PATH="$mcstub:$PATH" "$SCRIPT" must-close > "$tmp/mc-collect.json"
+assert_lacks "$tmp/mc-collect.json" "secret gap"
+assert_has   "$tmp/mc-collect.json" '"repo":"gibson","number":3,"private":false,"title":"public thing"'
+assert_has   "$tmp/mc-collect.json" '"repo":"hosted","number":9,"private":true,"title":""'
+
 echo "== readiness lists only the repos a gate blocks =="
 # THE FIXTURE THIS SECTION EXISTS FOR. A repo that passes every gate must not
 # appear; a blocked repo must appear with its reason; an unscanned repo must

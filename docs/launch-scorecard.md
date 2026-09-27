@@ -95,6 +95,17 @@ kind, `terraform plan`, a rendered chart, or a fake sink. A test that needs a
 live cluster can never go green while the estate is down, so it is not a valid
 exit test.
 
+## The must-close list
+
+The **Must close before launch** section lists every open issue in the org that
+carries the `launch-blocker` label. The label is the list. To add an issue, add
+the label. To drop one, remove the label or close the issue. Never edit the
+board to change the list.
+
+The board is public. For an issue in a private repo, the board shows the
+number and withholds the title, because a private title can describe a gap in
+the live service.
+
 ## Local use
 
 ```bash
