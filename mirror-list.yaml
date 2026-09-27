@@ -84,6 +84,21 @@ mirrors:
     tag: "v1.14.2"
     dest: velero-plugin-for-aws
 
+  # Argo CD on kind — the images of the argo-cd chart 8.1.3 that
+  # hosted's bootstrap/kind/gibson installs in stage 1. Pulled straight from
+  # upstream, the Redis image hit public ECR's rate limit ("429 Too Many
+  # Requests: Data limit exceeded") and the release timed out, which killed
+  # five exit-test runs on 2026-09-27 (hosted#235).
+  - source: quay.io/argoproj/argocd
+    tag: "v3.0.11"
+    dest: argocd
+  - source: ghcr.io/dexidp/dex
+    tag: "v2.43.1"
+    dest: dex
+  - source: docker.io/library/redis
+    tag: "7.2.8-alpine"
+    dest: redis
+
   # ---------------------------------------------------------------------------
   # Bitnami refugees (legacy registry; pull-then-mirror until replacements land)
   # ---------------------------------------------------------------------------
