@@ -145,6 +145,11 @@ jobs:
       # swap-storage is intentionally kept (removing it risks OOM on heavy
       # buildx graphs); tool-cache is kept to avoid a slow wipe of caches the
       # build itself may reuse.
+      # large-packages is OFF: it runs `apt-get remove` over hundreds of
+      # packages and took 1.3 to 4.7 minutes per job, more than the build
+      # step itself in setec (7 jobs) and gibson (10 jobs). The directory
+      # removals below free about 20 GB in seconds, which is the headroom
+      # .github#187 needed (.github#122).
       - name: Free up runner disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
@@ -152,7 +157,7 @@ jobs:
           android: true
           dotnet: true
           haskell: true
-          large-packages: true
+          large-packages: false
           docker-images: false
           swap-storage: false
       # QEMU is only needed when a requested platform differs from the amd64
