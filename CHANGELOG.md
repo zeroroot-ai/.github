@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/zeroroot-ai/.github/compare/v0.5.2...v0.6.0) (2026-09-28)
+
+
+### Features
+
+* **scorecard:** list the issues that must close before launch ([#117](https://github.com/zeroroot-ai/.github/issues/117)) ([cb15426](https://github.com/zeroroot-ai/.github/commit/cb15426991e6e67903a6a3f1044eaddb888f63f8))
+* **version-links:** bind the chart's Neo4j APOC copies to gibson's contract ([#115](https://github.com/zeroroot-ai/.github/issues/115)) ([5fffa80](https://github.com/zeroroot-ai/.github/commit/5fffa801422b512d83533f00d431b60aaf1afea0))
+
+
+### Bug Fixes
+
+* **version-drift:** a digest-pinned reference is compared on its tag ([#112](https://github.com/zeroroot-ai/.github/issues/112)) ([57edcee](https://github.com/zeroroot-ai/.github/commit/57edcee746c852578f158779218366da936f283f)), closes [#111](https://github.com/zeroroot-ai/.github/issues/111)
+
+
+### Performance Improvements
+
+* **image-build:** stop purging apt packages in the disk step ([#124](https://github.com/zeroroot-ai/.github/issues/124)) ([af8fa01](https://github.com/zeroroot-ai/.github/commit/af8fa019a0bf9bc2243f31f46b69661c665700d8)), closes [#122](https://github.com/zeroroot-ai/.github/issues/122)
+
 ## [0.5.2](https://github.com/zeroroot-ai/.github/compare/v0.5.1...v0.5.2) (2026-09-18)
 
 
