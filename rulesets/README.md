@@ -97,6 +97,8 @@ non-archived repo. `apply-rulesets.yml` PATCHes it on push and
 Why it is pinned to `PR_TITLE`: with GitHub's default `COMMIT_OR_PR_TITLE`, a
 one-commit PR lands its own commit subject on `main`, unlinted, and both
 release-please and Dependabot read that subject. `pr-title-lint` governs the
-PR title, so the PR title is what must become the commit subject
-(hosted#264). The message half stays `COMMIT_MESSAGES` so `BREAKING CHANGE:`
+PR title, so the PR title is what must become the commit subject. That is
+how every Dependabot PR in two repos sat red on the lint for ten days in
+September 2026: the copied case came from unlinted squash subjects. The
+message half stays `COMMIT_MESSAGES` so `BREAKING CHANGE:`
 footers and `Co-Authored-By:` trailers written in commits survive the squash.
