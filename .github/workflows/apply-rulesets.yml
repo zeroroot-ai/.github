@@ -60,6 +60,7 @@ on:
     branches: [main]
     paths:
       - 'rulesets/**.json'
+      - 'repo-settings/**.json'
       - '.github/workflows/apply-rulesets.yml'
   workflow_dispatch:
 
@@ -193,9 +194,54 @@ jobs:
   # Separate job with `needs:` on both appliers so it sees the end state, and
   # `if: always()` so it still reports when an applier failed -- that is
   # precisely when you most want to know which repos did and did not take.
+  # repo-settings/merge.json is the committed squash-merge setting for every
+  # non-archived repo (hosted#264). Enumerated live, never from a list: a list
+  # drifts the day a repo is added, and the setting is harmless on a repo
+  # without a merge queue.
+  apply-repo-merge-settings:
+    name: Apply repo squash-merge settings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PATCH every non-archived repo from repo-settings/merge.json
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: |
+          set -uo pipefail
+          title=$(jq -r '.squash_merge_commit_title' repo-settings/merge.json)
+          message=$(jq -r '.squash_merge_commit_message' repo-settings/merge.json)
+          failures=0
+          applied=0
+          while IFS=$'\t' read -r name cur_title cur_message; do
+            [ -z "${name:-}" ] && continue
+            if [ "$cur_title" = "$title" ] && [ "$cur_message" = "$message" ]; then
+              echo "ok      $name"
+              continue
+            fi
+            if gh api --method PATCH "/repos/zeroroot-ai/$name" \
+                 -f squash_merge_commit_title="$title" \
+                 -f squash_merge_commit_message="$message" >/dev/null; then
+              echo "applied $name ($cur_title/$cur_message -> $title/$message)"
+              applied=$((applied+1))
+            else
+              echo "::error::Failed to apply squash-merge settings to $name"
+              failures=$((failures+1))
+            fi
+          done < <(gh api "/orgs/zeroroot-ai/repos?per_page=100&type=all" --paginate \
+                     --jq '.[] | select(.archived | not) | .name' \
+                   | while read -r name; do
+                       gh api "repos/zeroroot-ai/$name" \
+                         --jq '[.name, (.squash_merge_commit_title // "absent"), (.squash_merge_commit_message // "absent")] | @tsv'
+                     done)
+          echo "applied to $applied repo(s)"
+          if [ "$failures" -gt 0 ]; then
+            echo "::error::$failures repo(s) failed"
+            exit 1
+          fi
+
   verify-applied:
     name: Verify live matches committed
-    needs: [apply-org-rulesets, apply-repo-rulesets]
+    needs: [apply-org-rulesets, apply-repo-rulesets, apply-repo-merge-settings]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -205,3 +251,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
         run: bash scripts/check-ruleset-drift.sh
+      - name: Compare live squash-merge settings against repo-settings/merge.json
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-repo-merge-settings-drift.sh
