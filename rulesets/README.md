@@ -85,3 +85,18 @@ Aggregator semantics that must hold (see any repo's `ci-required` job):
 - It must enumerate `needs.<job>.result` **explicitly**. `always()` plus no
   evaluation is a job that passes whenever it runs, i.e. a guard that cannot
   fail.
+
+## Repo squash-merge settings live next door
+
+`repo-settings/merge.json` is the committed squash-merge setting for every
+non-archived repo. `apply-rulesets.yml` PATCHes it on push and
+`ruleset-drift.yml` checks it hourly with
+`scripts/check-repo-merge-settings-drift.sh`, mutation-tested by
+`scripts/test-repo-merge-settings-drift.sh`.
+
+Why it is pinned to `PR_TITLE`: with GitHub's default `COMMIT_OR_PR_TITLE`, a
+one-commit PR lands its own commit subject on `main`, unlinted, and both
+release-please and Dependabot read that subject. `pr-title-lint` governs the
+PR title, so the PR title is what must become the commit subject
+(hosted#264). The message half stays `COMMIT_MESSAGES` so `BREAKING CHANGE:`
+footers and `Co-Authored-By:` trailers written in commits survive the squash.

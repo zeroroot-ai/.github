@@ -84,6 +84,9 @@ jobs:
       - name: Mutation-test the ADR-0088 security-features guard
         run: bash scripts/test-security-features-drift.sh
 
+      - name: Mutation-test the squash-merge settings guard (hosted#264)
+        run: bash scripts/test-repo-merge-settings-drift.sh
+
       - name: Mutation-test the Go toolchain guard (.github#22)
         run: bash scripts/test-go-toolchain-guard.sh
 
@@ -119,6 +122,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
         run: bash scripts/check-security-features-drift.sh
+
+      - name: Compare live squash-merge settings against repo-settings/merge.json
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/check-repo-merge-settings-drift.sh
 
   # ---- is every required context actually produced on a PR? (.github#277) ----
   # Same class as live-drift — a fact about the committed file that only real
