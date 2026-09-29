@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/zeroroot-ai/.github/compare/v0.6.0...v0.7.0) (2026-09-29)
+
+
+### Features
+
+* **repo-settings:** pin squash_merge_commit_title=PR_TITLE on every repo, as code ([#128](https://github.com/zeroroot-ai/.github/issues/128)) ([6608660](https://github.com/zeroroot-ai/.github/commit/6608660a343da8fb86d120a0a6dc0ce17e486752))
+
+
+### Bug Fixes
+
+* **node-ci:** the heavy tier runs the unit tests, so the merge queue gates on them ([#129](https://github.com/zeroroot-ai/.github/issues/129)) ([d03b20d](https://github.com/zeroroot-ai/.github/commit/d03b20dd712a2366d34e8e2973cb653c8b8ea085))
+* **rulesets:** require ci-required on sdk main ([#126](https://github.com/zeroroot-ai/.github/issues/126)) ([17bdac9](https://github.com/zeroroot-ai/.github/commit/17bdac99b777a819c92fc7dcb17c5daa8b44ada6))
+
 ## [0.6.0](https://github.com/zeroroot-ai/.github/compare/v0.5.2...v0.6.0) (2026-09-28)
 
 
