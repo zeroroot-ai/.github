@@ -11,7 +11,10 @@ name: Reusable Node CI (tiered)
 #
 #   pull_request  -> tier: fast   (quick contributor signal: typecheck,
 #                                 lint, vitest unit tests. No build.)
-#   merge_group   -> tier: heavy  (authoritative gate: `pnpm build`, which
+#   merge_group   -> tier: heavy  (authoritative gate: the vitest unit
+#                                 tests again, because the queue requires
+#                                 this tier and nothing forces the fast tier
+#                                 green before enqueue, then `pnpm build`, which
 #                                 runs the full `prebuild` policy-guard
 #                                 chain -- security-lint, CSP, no-store-
 #                                 clients, no-direct-daemon-grpc, the AST
@@ -213,8 +216,13 @@ jobs:
         if: ${{ inputs.tier == 'fast' }}
         run: pnpm lint
 
+      # Both tiers. The merge queue requires the heavy tier only, and the
+      # fast tier is a pull_request check that nothing forces green before
+      # enqueue. Measured 2026-09-29: dashboard#135 enqueued with a red fast
+      # tier, the heavy tier built and merged it, and main carried 8 failing
+      # tests until dashboard#137. The unit tests are part of the gate that
+      # lands a change, so they run where the gate runs.
       - name: unit tests (vitest)
-        if: ${{ inputs.tier == 'fast' }}
         run: pnpm test -- --run
 
       # ---- HEAVY tier (merge_group): authoritative gate before landing ----
