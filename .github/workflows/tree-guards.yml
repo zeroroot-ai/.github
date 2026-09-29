@@ -55,10 +55,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check every link in this repository
+      # A pull request checks the Markdown it touched; the push to main sweeps
+      # the whole tree (the action falls back to `all` without a base commit).
+      - name: Check every link this change touched
         uses: ./actions/link-check
         with:
           repo-root: ${{ github.workspace }}
+          scope: changed
 
   link-check-fixtures:
     name: link-check-fixtures
