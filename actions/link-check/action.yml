@@ -19,6 +19,15 @@ description: Check a repository's Markdown for what a public reader cannot follo
 # the 2026-09-05 history reset; check-spelling.sh fails British spelling in
 # prose (AGENTS.md § 12). Both prove they can fail before every scan, and the
 # fixture job in tree-guards.yml proves each one on a fixture file.
+#
+# TWO SCOPES
+#
+# `scope: all` reads every Markdown file under `paths`. `scope: changed` reads
+# only the Markdown files the event's change touched (changed-markdown.sh),
+# and runs no check at all when it touched none. A pull request that pins an
+# image must not fail because a site linked from an untouched document is
+# down. The reusable workflow passes `changed`, so pull requests and merge
+# groups check their own change and the push to main sweeps the whole tree.
 
 inputs:
   repo-root:
@@ -31,6 +40,15 @@ inputs:
       tree. Default: the whole repository.
     required: false
     default: "."
+  scope:
+    description: >-
+      Which Markdown files to read: `all` reads every file under `paths`;
+      `changed` reads only the files under `paths` that the event's change
+      added, modified or renamed, and skips every check when there are none.
+      `changed` needs a pull_request or merge_group event for the base commit,
+      and falls back to `all` on any other event.
+    required: false
+    default: "all"
   config:
     description: >-
       Caller configuration file, relative to repo-root, applied after the org
@@ -66,17 +84,56 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        chmod +x "${{ github.action_path }}"/check-org-refs.sh "${{ github.action_path }}"/check-spelling.sh
+        chmod +x "${{ github.action_path }}"/check-org-refs.sh "${{ github.action_path }}"/check-spelling.sh "${{ github.action_path }}"/changed-markdown.sh
         "${{ github.action_path }}/check-org-refs.sh" --selftest
         "${{ github.action_path }}/check-org-refs.sh" --check-policy
         "${{ github.action_path }}/check-spelling.sh" --selftest
+        "${{ github.action_path }}/changed-markdown.sh" --selftest
 
-    - name: Build the lychee arguments
-      id: args
+    - name: Resolve the files to check
+      id: scope
       shell: bash
       env:
         REPO_ROOT: ${{ inputs.repo-root }}
         PATHS: ${{ inputs.paths }}
+        SCOPE: ${{ inputs.scope }}
+        EVENT: ${{ github.event_name }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      run: |
+        set -euo pipefail
+        case "$SCOPE" in
+          all|changed) ;;
+          *) echo "::error::link-check: scope must be all or changed, got '${SCOPE}'"; exit 2 ;;
+        esac
+        if [ "$SCOPE" = "changed" ] && [ -z "$BASE_SHA" ]; then
+          echo "::notice::link-check: ${EVENT} carries no base commit, checking every file under '${PATHS}'"
+          SCOPE=all
+        fi
+        if [ "$SCOPE" = "all" ]; then
+          echo "paths=${PATHS}" >>"$GITHUB_OUTPUT"
+          echo "empty=false" >>"$GITHUB_OUTPUT"
+          echo "checking every Markdown file under '${PATHS}'"
+          exit 0
+        fi
+        files="$("${{ github.action_path }}/changed-markdown.sh" | tr '\n' ' ')"
+        files="${files% }"
+        if [ -z "$files" ]; then
+          echo "paths=" >>"$GITHUB_OUTPUT"
+          echo "empty=true" >>"$GITHUB_OUTPUT"
+          echo "::notice::link-check: the change touched no Markdown under '${PATHS}', nothing to check"
+          exit 0
+        fi
+        echo "paths=${files}" >>"$GITHUB_OUTPUT"
+        echo "empty=false" >>"$GITHUB_OUTPUT"
+        echo "checking the Markdown the change touched: ${files}"
+
+    - name: Build the lychee arguments
+      id: args
+      if: steps.scope.outputs.empty != 'true'
+      shell: bash
+      env:
+        REPO_ROOT: ${{ inputs.repo-root }}
+        PATHS: ${{ steps.scope.outputs.paths }}
         CALLER_CONFIG: ${{ inputs.config }}
         ORG_CONFIG: ${{ github.action_path }}/lychee.toml
       run: |
@@ -111,6 +168,7 @@ runs:
 
     - name: Check the links
       id: lychee
+      if: steps.scope.outputs.empty != 'true'
       # v2.9.0 is the first release that finds the binary when the release
       # tarball carries it inside a directory, which every lychee release
       # after v0.23.0 does. v2.8.0 installs nothing and fails with
@@ -133,10 +191,11 @@ runs:
 
     - name: References a public reader cannot follow
       id: org_refs
+      if: steps.scope.outputs.empty != 'true'
       shell: bash
       env:
         REPO_ROOT: ${{ inputs.repo-root }}
-        PATHS: ${{ inputs.paths }}
+        PATHS: ${{ steps.scope.outputs.paths }}
         CALLER_REPO: ${{ github.repository }}
         CALLER_VISIBILITY: ${{ inputs.visibility }}
         GH_TOKEN: ${{ github.token }}
@@ -149,10 +208,11 @@ runs:
 
     - name: American spelling in prose
       id: spelling
+      if: steps.scope.outputs.empty != 'true'
       shell: bash
       env:
         REPO_ROOT: ${{ inputs.repo-root }}
-        PATHS: ${{ inputs.paths }}
+        PATHS: ${{ steps.scope.outputs.paths }}
       # The composite shell runs with -e, so the exit code is captured on the
       # same line and the step itself never fails: the combining step decides.
       run: |
@@ -168,8 +228,14 @@ runs:
         ORG_REFS: ${{ steps.org_refs.outputs.exit_code }}
         SPELLING: ${{ steps.spelling.outputs.exit_code }}
         FAIL: ${{ inputs.fail }}
+        EMPTY: ${{ steps.scope.outputs.empty }}
       run: |
         set -euo pipefail
+        if [ "$EMPTY" = "true" ]; then
+          echo "exit_code=0" >>"$GITHUB_OUTPUT"
+          echo "no Markdown in scope, every check skipped, exit 0"
+          exit 0
+        fi
         code=0
         for c in "${LYCHEE:-0}" "${ORG_REFS:-0}" "${SPELLING:-0}"; do
           if [ "$c" != "0" ]; then code="$c"; break; fi
