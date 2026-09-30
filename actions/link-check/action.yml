@@ -112,9 +112,11 @@ runs:
         if [ "$SCOPE" = "all" ]; then
           echo "paths=${PATHS}" >>"$GITHUB_OUTPUT"
           echo "empty=false" >>"$GITHUB_OUTPUT"
+          echo "sweep=true" >>"$GITHUB_OUTPUT"
           echo "checking every Markdown file under '${PATHS}'"
           exit 0
         fi
+        echo "sweep=false" >>"$GITHUB_OUTPUT"
         files="$("${{ github.action_path }}/changed-markdown.sh" | tr '\n' ' ')"
         files="${files% }"
         if [ -z "$files" ]; then
@@ -180,9 +182,11 @@ runs:
         # The action decides below whether to fail, so every check gets to
         # run and report before the step goes red.
         fail: false
-        # A glob that matches no Markdown at all is a configuration error, not
-        # a clean repository.
-        failIfEmpty: true
+        # On a sweep, a glob that matches no Markdown at all is a configuration
+        # error, not a clean repository. On a changed-files run the set is
+        # whatever the change touched, and a document with no links in it is
+        # a clean result, not an error.
+        failIfEmpty: ${{ steps.scope.outputs.sweep == 'true' }}
         # Pinned so the workstation and the runner check the same way.
         lycheeVersion: v0.24.2
         # lychee resolves github.com links through the API when a token is
