@@ -221,3 +221,26 @@ links:
       format: env
     upstream:
       repo: kata-containers/kata-containers
+
+  - name: docs-site
+    # docs-site's release image feeds the umbrella chart's in-cluster docs-svc
+    # (Envoy serves docs.<env> from it). Before this link the pin was hand-bumped
+    # and went months stale — staging docs 404'd on new pages (/docs/domain-packs)
+    # because the docs-site -> charts fan-out other first-party images use never
+    # existed here. image-tag.env is release-please-maintained (v<semver>), and
+    # the image is tagged v<semver> like every other first-party image.
+    source:
+      repo: zeroroot-ai/docs-site
+      file: image-tag.env
+      key: DOCS_SITE_IMAGE_TAG
+      format: env
+    consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson-workloads/values.yaml
+        key: docs.image.tag
+        format: yaml
+        before: "@"
+        image: docs-site
+        regenerate:
+          - ./scripts/golden.sh update
+          - ./bigbang/images/generate-image-list.py
