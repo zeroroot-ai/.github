@@ -52,7 +52,7 @@ caller workflow.
 | Guard | What it rejects | Config |
 |---|---|---|
 | `brand-guard` | A retired brand string anywhere in the tracked tree | [`actions/brand-guard/check-brand.sh`](actions/brand-guard/check-brand.sh) |
-| `link-check` | A broken link in any Markdown file, including a relative path and an anchor | [`actions/link-check/lychee.toml`](actions/link-check/lychee.toml) |
+| `link-check` | A broken link in the Markdown a change touched (the whole tree on main), including a relative path and an anchor | [`actions/link-check/lychee.toml`](actions/link-check/lychee.toml) |
 
 Copy [`templates/tree-guards.yml`](templates/tree-guards.yml) to
 `.github/workflows/tree-guards.yml` in the repo. It has two jobs and needs no
