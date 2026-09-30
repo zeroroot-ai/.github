@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/zeroroot-ai/.github/compare/v0.7.0...v0.7.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **link-check:** a change that touches only exempt Markdown checks nothing ([d739406](https://github.com/zeroroot-ai/.github/commit/d7394063a7988e7e95a348e0d259ec41d0d133cc))
+* **link-check:** scope a pull request to the Markdown it touched ([#130](https://github.com/zeroroot-ai/.github/issues/130)) ([7e1e75c](https://github.com/zeroroot-ai/.github/commit/7e1e75c48e468ae8d0d0636c8c84e8983fe7dbaf))
+* **rework:** a change that touches only exempt Markdown checks nothing ([#132](https://github.com/zeroroot-ai/.github/issues/132)) ([d739406](https://github.com/zeroroot-ai/.github/commit/d7394063a7988e7e95a348e0d259ec41d0d133cc))
+
 ## [0.7.0](https://github.com/zeroroot-ai/.github/compare/v0.6.0...v0.7.0) (2026-09-29)
 
 
