@@ -1,9 +1,14 @@
 # Reusable workflow: the org-wide link checker.
 #
-# lychee reads every Markdown file in the calling repository and checks each
-# link. Relative file links and anchors are checked offline, so a heading that
-# gets renamed and a document that gets moved both fail here. External URLs are
+# lychee reads the calling repository's Markdown and checks each link.
+# Relative file links and anchors are checked offline, so a heading that gets
+# renamed and a document that gets moved both fail here. External URLs are
 # fetched.
+#
+# A pull request or merge group checks only the Markdown its change added,
+# modified or renamed, and runs no check when it touched none. A pin PR must
+# not fail because a site linked from an untouched document is down
+# (charts#251). The push to main and the schedule sweep the whole tree.
 #
 # The flags, the org policy and the caller-override contract live in
 # actions/link-check/. Read actions/link-check/lychee.toml for what is
@@ -45,8 +50,9 @@ jobs:
         with:
           path: caller
 
-      - name: Check every link
-        uses: zeroroot-ai/.github/actions/link-check@e9a1f3a2fc975b386dc7604f4261ce0186d51320 # v0.5.0
+      - name: Check every link the change touched
+        uses: zeroroot-ai/.github/actions/link-check@60a45769fae0fd161f6e4b2f01d869eb534c127c # v0.7.1
         with:
           repo-root: ${{ github.workspace }}/caller
           paths: ${{ inputs.paths }}
+          scope: changed
