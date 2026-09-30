@@ -35,6 +35,15 @@ mirrors:
     tag: "3.21"
     dest: alpine
     refresh: true
+  # alpine:3.22 — the gibson runtime base moves here: Alpine's secdb marks
+  # CVE-2026-75804 and CVE-2026-84782 fixed in openssl 3.3.7-r2, but the 3.21
+  # package index still ships 3.3.7-r1, so every 3.21-based image is blocked
+  # by the vulnerability gate as "fixable" with nothing to upgrade to. 3.22
+  # ships openssl 3.5.9-r0, which is not affected.
+  - source: docker.io/library/alpine
+    tag: "3.22"
+    dest: alpine
+    refresh: true
   - source: docker.io/library/bash
     tag: "5.2"
     dest: bash
