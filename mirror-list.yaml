@@ -27,9 +27,14 @@ mirrors:
   # ---------------------------------------------------------------------------
   # Build & shell base images
   # ---------------------------------------------------------------------------
+  # alpine:3.21 is a floating patch tag: upstream rebuilds it for every
+  # package fix. Frozen at its first copy, the gibson runtime base carried
+  # libssl3 3.3.7-r1 after the fix (3.3.7-r2) was out, and the vulnerability
+  # gate blocked the v0.146.2 image (run 36770434972).
   - source: docker.io/library/alpine
     tag: "3.21"
     dest: alpine
+    refresh: true
   - source: docker.io/library/bash
     tag: "5.2"
     dest: bash
