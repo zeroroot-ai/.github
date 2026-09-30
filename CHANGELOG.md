@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/zeroroot-ai/.github/compare/v0.7.1...v0.7.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* **link-check:** the reusable checks only the Markdown a change touched ([#133](https://github.com/zeroroot-ai/.github/issues/133)) ([ce395cd](https://github.com/zeroroot-ai/.github/commit/ce395cdb40379a8dafffe759d82b8b3d6b379b97))
+
 ## [0.7.1](https://github.com/zeroroot-ai/.github/compare/v0.7.0...v0.7.1) (2026-09-30)
 
 
