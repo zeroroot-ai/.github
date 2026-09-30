@@ -18,7 +18,9 @@
 #
 # Prints one path per line, relative to REPO_ROOT, for every *.md or *.mdx
 # file that differs between BASE_SHA and HEAD with status A, C, M or R. A
-# deleted file has nothing left to check and is not listed. PATHS narrows the
+# deleted file has nothing left to check and is not listed, and neither is a
+# file the org policy exempts from every check (exempt.sh: generated trees,
+# CHANGELOG.md, docs/adr/, fixture files). PATHS narrows the
 # list the way the action's `paths` input narrows a full run: a file is kept
 # when it is one of the listed files or lives under one of the listed
 # directories. "." keeps everything. BASE_SHA is fetched at depth 1 when the
@@ -26,12 +28,15 @@
 #
 #   bash changed-markdown.sh --selftest
 #
-# Builds a throwaway repository and proves the five cases the contract names.
+# Builds a throwaway repository and proves the six cases the contract names.
 # The action runs it before every scan, so the scoping cannot go inert.
 
 set -euo pipefail
 
 GUARD_NAME="changed-markdown"
+
+# shellcheck source=actions/link-check/exempt.sh
+. "$(dirname "${BASH_SOURCE[0]}")/exempt.sh"
 
 fail() { echo "::error::${GUARD_NAME}: $*" >&2; exit 2; }
 
@@ -68,6 +73,7 @@ list_changed() {
   local f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
+    markdown_exempt "$root" "$f" && continue
     if in_scope "$f" "$@"; then
       printf '%s\n' "$f"
     fi
@@ -127,7 +133,22 @@ selftest() {
   got="$(list_changed "$repo" "$pinbase" .)"
   [ -z "$got" ] || fail "selftest: a non-Markdown change must print nothing, got [$got]"
 
-  echo "PASS: ${GUARD_NAME} selftest (5 cases)"
+  # A release PR rewrites CHANGELOG.md and nothing else. The changelog is
+  # exempt from every check, so the list is empty and lychee is never handed
+  # an input set with no links in it (that failed .github#131).
+  mkdir -p "$repo/docs/adr" "$repo/node_modules/dep" "$repo/tests"
+  printf '# log\n' >"$repo/CHANGELOG.md"
+  printf '# adr\n' >"$repo/docs/adr/0001-x.md"
+  printf '# dep\n' >"$repo/node_modules/dep/README.md"
+  printf '%s\n# fixture\n' "$FIXTURE_MARKER" >"$repo/tests/fixture.md"
+  git -C "$repo" add -A
+  git -C "$repo" commit --quiet -m exempt
+  local exemptbase
+  exemptbase="$(git -C "$repo" rev-parse HEAD~1)"
+  got="$(list_changed "$repo" "$exemptbase" .)"
+  [ -z "$got" ] || fail "selftest: exempt files must not be listed, got [$got]"
+
+  echo "PASS: ${GUARD_NAME} selftest (6 cases)"
 }
 
 main() {

@@ -54,7 +54,8 @@ set -euo pipefail
 
 GUARD_NAME="org-refs"
 ORG="${ORG:-zeroroot-ai}"
-FIXTURE_MARKER="<!-- link-check: fixture -->"
+# shellcheck source=actions/link-check/exempt.sh
+. "$(dirname "${BASH_SOURCE[0]}")/exempt.sh"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NOT_DISTRIBUTED="${NOT_DISTRIBUTED:-${HERE}/../../data/not-distributed.txt}"
 
@@ -126,18 +127,13 @@ collect_files() {
   local p f
   for p in "$@"; do
     case "$p" in
+      # A file named by the caller is read even when a sweep would skip it.
       *.md|*.mdx) echo "$p" ;;
       *)
-        find "${root}/${p%/}" -type f \( -name '*.md' -o -name '*.mdx' \) \
-          -not -path '*/node_modules/*' -not -path '*/.git/*' \
-          -not -path '*/vendor/*' -not -path '*/dist/*' \
-          -not -path '*/.next/*' -not -path '*/.worktrees/*' \
+        find "${root}/${p%%/}" -type f \( -name '*.md' -o -name '*.mdx' \) -not -path '*/.git/*' \
         | sed -E "s#^${root}/##; s#^\./##" | sort \
         | while IFS= read -r f; do
-            case "$f" in
-              CHANGELOG.md|*/CHANGELOG.md|docs/adr/*|*/docs/adr/*) continue ;;
-            esac
-            grep -qF "$FIXTURE_MARKER" "${root}/${f}" && continue
+            markdown_exempt "$root" "$f" && continue
             echo "$f"
           done
         ;;

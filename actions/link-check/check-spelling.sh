@@ -39,7 +39,8 @@ set -euo pipefail
 
 GUARD_NAME="spelling-guard"
 EXEMPT_MARKER="spelling-guard-exempt:"
-FIXTURE_MARKER="<!-- link-check: fixture -->"
+# shellcheck source=actions/link-check/exempt.sh
+. "$(dirname "${BASH_SOURCE[0]}")/exempt.sh"
 
 # British stem -> American stem. A stem matches the whole word plus the
 # endings the word takes (e, es, ed, er, ers, ing, ation, ations, s, d, r, rs,
@@ -127,18 +128,17 @@ collect_files() {
   local p f
   for p in "$@"; do
     case "$p" in
-      *.md|*.mdx) echo "$p" ;;
+      *.md|*.mdx)
+        # A file named by the caller is read even when a sweep would skip it,
+        # except the one file this check alone exempts.
+        [ "$p" = "docs/code-scanning-dismissals.md" ] || echo "$p"
+        ;;
       *)
-        find "${root}/${p%/}" -type f \( -name '*.md' -o -name '*.mdx' \) \
-          -not -path '*/node_modules/*' -not -path '*/.git/*' \
-          -not -path '*/vendor/*' -not -path '*/dist/*' \
-          -not -path '*/.next/*' -not -path '*/.worktrees/*' \
+        find "${root}/${p%/}" -type f \( -name '*.md' -o -name '*.mdx' \) -not -path '*/.git/*' \
         | sed -E "s#^${root}/##; s#^\./##" | sort \
         | while IFS= read -r f; do
-            case "$f" in
-              CHANGELOG.md|*/CHANGELOG.md|docs/code-scanning-dismissals.md|docs/adr/*|*/docs/adr/*) continue ;;
-            esac
-            grep -qF "$FIXTURE_MARKER" "${root}/${f}" && continue
+            markdown_exempt "$root" "$f" && continue
+            [ "$f" = "docs/code-scanning-dismissals.md" ] && continue
             echo "$f"
           done
         ;;
