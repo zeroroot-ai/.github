@@ -1,0 +1,75 @@
+name: dependabot-automerge
+
+# Arms auto-merge on every open Dependabot PR in the org, so dependency bumps
+# land on green without anybody merging them by hand. The owner's standing
+# preference is to be on the latest of everything; before this, 74 Dependabot
+# PRs had piled up across 13 repos.
+#
+# What this does NOT do: merge anything itself, merge a red PR, or bypass a
+# ruleset. `gh pr merge --auto` asks GitHub to merge WHEN THE REQUIRED CHECKS
+# PASS. The merge gate stays the only thing deciding what lands. A PR that
+# goes red sits there, armed, until the bump is fixed or closed.
+#
+# Central sweeper rather than a workflow in each repo, deliberately. The
+# per-repo pattern needs `pull_request_target`, which runs with a write token
+# on a pull-request event and is the standard way to hand a dependency PR
+# more privilege than it should have. A scheduled sweep in this repo needs no
+# such trigger, keeps the policy in one reviewable place, and matches the
+# shape of sarif-triage, flake-report and makefile-contract.
+#
+# Policy: repo-settings/automerge.json (an `enabled` kill switch plus two
+# exclude lists, both empty on purpose).
+#
+# Prerequisite: `allow_auto_merge` must be on, or the call is refused and the
+# PR looks armed while nothing armed it. It is declared in
+# repo-settings/merge.json, applied by apply-rulesets.yml, and checked hourly
+# by the drift guard. It was off on eight of sixteen repos.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"  # every 30 minutes: a bump opened now is armed within one window
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/dependabot-automerge.yml"
+      - "scripts/dependabot-automerge.sh"
+      - "repo-settings/automerge.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  # One sweep at a time. Two overlapping runs would race on the same PRs and
+  # double-report, and a 30-minute cron can overlap a slow run.
+  group: dependabot-automerge
+  cancel-in-progress: false
+
+jobs:
+  policy-self-test:
+    # Proves the eligibility rules before anything is armed: the title parser
+    # on five real Dependabot subjects, both exclude lists (whole-string and
+    # case-insensitive, so "stripe" never catches "stripe-mock"), the
+    # kill switch, the already-armed path, and an empty backlog.
+    name: automerge-policy-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run the policy fixtures
+        run: bash scripts/dependabot-automerge.sh --selftest
+
+  sweep:
+    name: arm-open-dependabot-prs
+    if: github.event_name != 'pull_request'
+    needs: policy-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Arm auto-merge on every open Dependabot PR
+        env:
+          # Needs write on pull requests across the org, and read on private
+          # repos so the sweep is not silently partial — the same blind spot
+          # that made the makefile-contract audit under-report (.github#170).
+          GH_TOKEN: ${{ secrets.RULESET_APPLY_TOKEN }}
+        run: bash scripts/dependabot-automerge.sh

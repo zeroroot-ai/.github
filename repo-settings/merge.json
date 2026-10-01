@@ -1,5 +1,6 @@
 {
-  "_comment": "Applied to every non-archived repo in the org by apply-rulesets.yml, checked hourly by ruleset-drift.yml (scripts/check-repo-merge-settings-drift.sh). squash_merge_commit_title=PR_TITLE makes the squash commit subject the PR title, which pr-title-lint governs; COMMIT_OR_PR_TITLE let a one-commit PR land its unlinted commit subject on main, where release-please reads it (hosted#264). The message half stays COMMIT_MESSAGES so BREAKING CHANGE footers and Co-Authored-By trailers in commits survive the squash (AGENTS.md).",
+  "_comment": "Applied to every non-archived repo in the org by apply-rulesets.yml, checked hourly by ruleset-drift.yml (scripts/check-repo-merge-settings-drift.sh). squash_merge_commit_title=PR_TITLE makes the squash commit subject the PR title, which pr-title-lint governs; COMMIT_OR_PR_TITLE let a one-commit PR land its unlinted commit subject on main, where release-please reads it (hosted#264). The message half stays COMMIT_MESSAGES so BREAKING CHANGE footers and Co-Authored-By trailers in commits survive the squash (AGENTS.md). allow_auto_merge=true is what lets the Dependabot auto-merge sweeper arm a PR: `gh pr merge --auto` is refused outright on a repo with the setting off, and it was off on eight of sixteen. Auto-merge never bypasses a required check — it waits for the gate and merges when the gate is green.",
   "squash_merge_commit_title": "PR_TITLE",
-  "squash_merge_commit_message": "COMMIT_MESSAGES"
+  "squash_merge_commit_message": "COMMIT_MESSAGES",
+  "allow_auto_merge": true
 }

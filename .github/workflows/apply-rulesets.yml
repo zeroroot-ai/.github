@@ -210,28 +210,31 @@ jobs:
           set -uo pipefail
           title=$(jq -r '.squash_merge_commit_title' repo-settings/merge.json)
           message=$(jq -r '.squash_merge_commit_message' repo-settings/merge.json)
+          automerge=$(jq -r '.allow_auto_merge' repo-settings/merge.json)
           failures=0
           applied=0
-          while IFS=$'\t' read -r name cur_title cur_message; do
+          while IFS=$'\t' read -r name cur_title cur_message cur_automerge; do
             [ -z "${name:-}" ] && continue
-            if [ "$cur_title" = "$title" ] && [ "$cur_message" = "$message" ]; then
+            if [ "$cur_title" = "$title" ] && [ "$cur_message" = "$message" ] \
+               && [ "$cur_automerge" = "$automerge" ]; then
               echo "ok      $name"
               continue
             fi
             if gh api --method PATCH "/repos/zeroroot-ai/$name" \
                  -f squash_merge_commit_title="$title" \
-                 -f squash_merge_commit_message="$message" >/dev/null; then
-              echo "applied $name ($cur_title/$cur_message -> $title/$message)"
+                 -f squash_merge_commit_message="$message" \
+                 -F allow_auto_merge="$automerge" >/dev/null; then
+              echo "applied $name ($cur_title/$cur_message/$cur_automerge -> $title/$message/$automerge)"
               applied=$((applied+1))
             else
-              echo "::error::Failed to apply squash-merge settings to $name"
+              echo "::error::Failed to apply merge settings to $name"
               failures=$((failures+1))
             fi
           done < <(gh api "/orgs/zeroroot-ai/repos?per_page=100&type=all" --paginate \
                      --jq '.[] | select(.archived | not) | .name' \
                    | while read -r name; do
                        gh api "repos/zeroroot-ai/$name" \
-                         --jq '[.name, (.squash_merge_commit_title // "absent"), (.squash_merge_commit_message // "absent")] | @tsv'
+                         --jq '[.name, (.squash_merge_commit_title // "absent"), (.squash_merge_commit_message // "absent"), (.allow_auto_merge | tostring)] | @tsv'
                      done)
           echo "applied to $applied repo(s)"
           if [ "$failures" -gt 0 ]; then

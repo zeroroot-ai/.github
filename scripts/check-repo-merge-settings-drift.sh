@@ -16,12 +16,14 @@ SPEC="${MERGE_SETTINGS_SPEC:-${HERE}/../repo-settings/merge.json}"
 
 want_title=$(jq -r '.squash_merge_commit_title // empty' "$SPEC")
 want_message=$(jq -r '.squash_merge_commit_message // empty' "$SPEC")
-if [ -z "$want_title" ] || [ -z "$want_message" ]; then
-  echo "::error::${SPEC}: squash_merge_commit_title and squash_merge_commit_message are both required" >&2
+want_automerge=$(jq -r 'if has("allow_auto_merge") then (.allow_auto_merge | tostring) else "" end' "$SPEC")
+if [ -z "$want_title" ] || [ -z "$want_message" ] || [ -z "$want_automerge" ]; then
+  echo "::error::${SPEC}: squash_merge_commit_title, squash_merge_commit_message and allow_auto_merge are all required" >&2
   exit 1
 fi
 
-# Emits one line per repo: name<TAB>squash_merge_commit_title<TAB>squash_merge_commit_message
+# Emits one line per repo:
+#   name<TAB>squash_merge_commit_title<TAB>squash_merge_commit_message<TAB>allow_auto_merge
 fetch() {
   if [ -n "${MERGE_FETCH_CMD:-}" ]; then
     eval "$MERGE_FETCH_CMD"
@@ -33,14 +35,14 @@ fetch() {
     --jq '.[] | select(.archived | not) | .name' \
   | while read -r name; do
       gh api "repos/${ORG}/${name}" \
-        --jq '[.name, (.squash_merge_commit_title // "absent"), (.squash_merge_commit_message // "absent")] | @tsv' 2>/dev/null \
-        || printf '%s\tunreadable\tunreadable\n' "$name"
+        --jq '[.name, (.squash_merge_commit_title // "absent"), (.squash_merge_commit_message // "absent"), (.allow_auto_merge | tostring)] | @tsv' 2>/dev/null \
+        || printf '%s\tunreadable\tunreadable\tunreadable\n' "$name"
     done
 }
 
 drift=0
 checked=0
-while IFS=$'\t' read -r name title message; do
+while IFS=$'\t' read -r name title message automerge; do
   [ -z "${name:-}" ] && continue
   checked=$((checked + 1))
   if [ "$title" != "$want_title" ]; then
@@ -51,6 +53,13 @@ while IFS=$'\t' read -r name title message; do
     echo "DRIFT ${name}: squash_merge_commit_message is '${message}', want '${want_message}'" >&2
     drift=$((drift + 1))
   fi
+  # allow_auto_merge off is what silently defeats the Dependabot sweeper:
+  # `gh pr merge --auto` is refused on such a repo, so the PR just sits there
+  # looking armed when nothing armed it.
+  if [ "$automerge" != "$want_automerge" ]; then
+    echo "DRIFT ${name}: allow_auto_merge is '${automerge}', want '${want_automerge}'" >&2
+    drift=$((drift + 1))
+  fi
 done < <(fetch)
 
 if [ "$checked" -eq 0 ]; then
@@ -58,7 +67,7 @@ if [ "$checked" -eq 0 ]; then
   exit 1
 fi
 if [ "$drift" -gt 0 ]; then
-  echo "::error::${drift} squash-merge setting(s) drifted across ${checked} repo(s); run apply-rulesets or fix repo-settings/merge.json" >&2
+  echo "::error::${drift} merge setting(s) drifted across ${checked} repo(s); run apply-rulesets or fix repo-settings/merge.json" >&2
   exit 1
 fi
-echo "ok: ${checked} repo(s) squash with title=${want_title} message=${want_message}"
+echo "ok: ${checked} repo(s) squash with title=${want_title} message=${want_message} allow_auto_merge=${want_automerge}"
