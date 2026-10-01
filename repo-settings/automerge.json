@@ -1,0 +1,6 @@
+{
+  "_comment": "Policy for scripts/dependabot-automerge.sh, the sweeper that arms auto-merge on every open Dependabot PR in the org. Auto-merge NEVER bypasses a required check: GitHub holds the PR until the gate is green and merges it then, so the merge gate remains the only thing deciding what lands. The lists below are escape hatches, empty on purpose — the owner's standing preference is to be on the latest of everything. Add a repo to exclude_repos to stop arming it, or a dependency name to exclude_dependencies to keep bumps of one package manual (useful if a package ever needs a human read of every diff). Both match the whole string, case-insensitively.",
+  "enabled": true,
+  "exclude_repos": [],
+  "exclude_dependencies": []
+}
