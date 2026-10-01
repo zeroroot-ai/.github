@@ -54,12 +54,22 @@ mirrors:
     tag: "1.25-alpine"     # floating: tracks the latest 1.25.x-alpine patch
     dest: golang
     refresh: true
-    dest: golang
   - source: docker.io/library/golang
     tag: "1.26.8-alpine"   # gibson, gibson-bootstrap, ext-authz, spiffe-jwks-exporter builders: the Go their go.mod names (.github#22 guard, #25)
     dest: golang
   - source: docker.io/library/golang
     tag: "1.26.8"          # debian-based; setec builders (gibson moved every builder to 1.26.8-alpine): the Go its go.mod names (.github#22 guard, #25)
+    dest: golang
+  # 1.27.1 is the floor every Go repo is moving to. Both variants are
+  # mirrored BEFORE any go.mod moves, because the toolchain guard fails a
+  # Dockerfile whose FROM disagrees with go.mod, and the FROM cannot point at
+  # an image the mirror does not carry yet. The 1.26.8 pair stays until the
+  # last repo is off it, then goes in its own change.
+  - source: docker.io/library/golang
+    tag: "1.27.1-alpine"   # gibson, ext-authz, platform-operator, connector-operator, spiffe-jwks-exporter and the sdk tool-runner example
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.27.1"          # debian-based; the setec builders
     dest: golang
 
   # ---------------------------------------------------------------------------
