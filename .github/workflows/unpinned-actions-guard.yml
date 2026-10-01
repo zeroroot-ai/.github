@@ -68,7 +68,8 @@ jobs:
         # reusable-coverage-gate.yml curled scripts/coverage-compare.sh from
         # `main`, so a caller's SHA pin bound the workflow and not the script
         # it ran. A `uses:` scanner cannot see a curl, so the guard reads raw
-        # URLs too.
+        # URLs too. That workflow was deleted in #146 as uncalled; the guard
+        # stays, because the class it catches does not depend on it.
         run: |
           set -uo pipefail
           if python3 scripts/pin-actions.py tests/fixtures/unpinned-raw-fetch --check; then
