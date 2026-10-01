@@ -1,0 +1,6 @@
+.PHONY: build check
+build:
+	go build ./...
+
+check:
+	go vet ./...
