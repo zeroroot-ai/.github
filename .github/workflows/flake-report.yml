@@ -16,26 +16,41 @@ on:
   schedule:
     - cron: "0 10 * * 1"  # weekly: Monday 10:00 UTC (matches the 7-day window)
   workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/flake-report.yml"
+      - "scripts/flake-report-render.sh"
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
-  aggregate:
-    name: aggregate-flakes
+  renderer-self-test:
+    # The renderer distinguishes three states — no artifacts, artifacts with
+    # no flakes, artifacts with flakes — and the middle one used to print a
+    # bare table header (.github#249). The selftest asserts all three, and
+    # that --count agrees with each, because --count is what decides whether
+    # the report is closed. It gates the aggregate job, so a broken renderer
+    # fails before anything is filed or closed.
+    name: report-renderer-self-test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # The renderer distinguishes three states — no artifacts, artifacts
-      # with no flakes, artifacts with flakes — and the middle one used to
-      # print a bare table header (.github#249). Its selftest asserts all
-      # three, and runs before the report so a broken renderer fails the
-      # job instead of filing a malformed issue.
       - name: Selftest the report renderer
         run: bash scripts/flake-report-render.sh --selftest
+
+  aggregate:
+    name: aggregate-flakes
+    if: github.event_name != 'pull_request'
+    needs: renderer-self-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Aggregate from last 7 days of CI runs
         env:
@@ -97,6 +112,25 @@ jobs:
                        --state open --search 'in:title "Weekly flake report"' \
                        --json number --jq '.[0].number // empty')
           TITLE="Weekly flake report — $(date -u +%Y-%m-%d)"
+
+          # Self-heal: nothing flaked, so there is nothing for an agent to do.
+          # The report used to stay open regardless, asserting "there is just
+          # nothing to report" (.github#120). The sarif-triage and
+          # makefile-contract audits both close their tracker when they go
+          # clean; this one now does too.
+          #
+          # A failed download is NOT clean: the window may hold a flake this
+          # run could not see, so the report stays open and says so.
+          FLAKED=$(bash scripts/flake-report-render.sh --count /tmp/flakes)
+          if [ "$FLAKED" -eq 0 ] && [ "$DOWNLOAD_FAILURES" -eq 0 ]; then
+            echo "::notice::no flakes in the window — nothing to file"
+            if [ -n "$EXISTING" ]; then
+              gh issue close "$EXISTING" -R zeroroot-ai/.github \
+                --comment "No run in the scanned repos flaked in the last 7 days. Auto-closed by the flake-report aggregator; it reopens a report the week something flakes."
+            fi
+            exit 0
+          fi
+
           if [ -n "$EXISTING" ]; then
             gh issue edit "$EXISTING" -R zeroroot-ai/.github --title "$TITLE" --body-file /tmp/flake-report.md
           else
