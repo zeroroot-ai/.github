@@ -213,6 +213,30 @@ jobs:
           The intent is convergence: every cycle leaves a durable artifact
           future agents can read before falling into the same trap.
 
+          ────────────────────────────────────────────────────────────────
+          ADDING THE TRAILER MAY NOT CLEAR THIS CHECK ON ITS OWN.
+
+          This gate reads the PR body from the event payload, so it needs a
+          run to see your edit. Whether editing the body starts one depends
+          on the CALLER's trigger, not on this workflow:
+
+            types: [..., edited]   editing the body re-runs this. Nothing to do.
+            no 'types:' at all     GitHub defaults to opened/synchronize/
+                                   reopened, which EXCLUDES edited, so your
+                                   edit starts nothing and this stays red.
+
+          If you have added the trailer and this check is still red, re-run it:
+
+              gh run rerun <run-id> --failed
+
+          An empty commit also works and is worse: it re-runs every other gate
+          in the caller's workflow too.
+
+          Callers that keep this job inside a large workflow cannot simply add
+          'edited', because every expensive gate beside it would re-run on a
+          body typo. That is a deliberate trade, not an oversight, and the
+          re-run above is the remedy for it (zeroroot-ai/.github#155).
+
           See workspace CLAUDE.md → "Close the loop with documentation".
           EOF
             exit 1
