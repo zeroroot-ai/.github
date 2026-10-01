@@ -57,10 +57,30 @@ eligible() {
   return 0
 }
 
-arm() { # <repo> <number>
-  if [ "$DRY_RUN" = 1 ]; then return 0; fi
-  gh pr merge "$2" -R "${ORG}/$1" --auto --squash >/dev/null 2>&1 \
-    || gh pr merge "$2" -R "${ORG}/$1" --auto >/dev/null 2>&1
+# arm <repo> <number> — prints its outcome: armed | already | failed.
+#
+# On a merge-queue repo the squash strategy is set by the queue and
+# `--auto --squash` is refused, so the plain `--auto` is the fallback. Both
+# print "already queued to merge" and exit 0 for a PR that is already in the
+# queue, which is the only way to tell that case apart: `autoMergeRequest`
+# reads null for a QUEUED pull request, so the API cannot distinguish a
+# queued PR from an unarmed one.
+arm() {
+  local repo="$1" number="$2" out
+  if [ -n "${AUTOMERGE_ARM_CMD:-}" ]; then eval "$AUTOMERGE_ARM_CMD"; return 0; fi
+  # A dry run cannot tell "unarmed" from "queued": the only thing that
+  # reports the difference is the merge call itself, and a QUEUED pull
+  # request reads autoMergeRequest: null. So --dry-run counts every
+  # not-true PR as one it would arm, which is an upper bound, not a count of
+  # work to do.
+  if [ "$DRY_RUN" = 1 ]; then echo armed; return 0; fi
+  out=$(gh pr merge "$number" -R "${ORG}/${repo}" --auto --squash 2>&1) \
+    || out=$(gh pr merge "$number" -R "${ORG}/${repo}" --auto 2>&1) \
+    || { echo failed; return 0; }
+  case "$out" in
+    *"already queued to merge"*|*"already enabled"*) echo already ;;
+    *) echo armed ;;
+  esac
 }
 
 sweep() {
@@ -69,10 +89,13 @@ sweep() {
     return 0
   fi
 
-  local armed=0 skipped=0 already=0 failed=0 seen=0
+  local armed=0 skipped=0 already=0 failed=0 seen=0 outcome
   while IFS=$'\t' read -r repo number title auto; do
     [ -n "${repo:-}" ] || continue
     seen=$((seen + 1))
+    # `auto` is authoritative only when true. A QUEUED pull request reports
+    # autoMergeRequest: null, so a false here means "unarmed OR queued" and
+    # arm() settles which.
     if [ "$auto" = "true" ]; then
       already=$((already + 1)); continue
     fi
@@ -80,17 +103,25 @@ sweep() {
       echo "skip     ${repo}#${number} — excluded by policy"
       skipped=$((skipped + 1)); continue
     fi
-    if arm "$repo" "$number"; then
-      echo "armed    ${repo}#${number}  ${title}"
-      armed=$((armed + 1))
-    else
-      echo "::warning::could not arm ${repo}#${number} — check allow_auto_merge and the branch protection on ${repo}"
-      failed=$((failed + 1))
-    fi
+    outcome=$(arm "$repo" "$number")
+    case "$outcome" in
+      armed)
+        echo "armed    ${repo}#${number}  ${title}"
+        armed=$((armed + 1)) ;;
+      already)
+        already=$((already + 1)) ;;
+      *)
+        echo "::warning::could not arm ${repo}#${number} — check allow_auto_merge and the branch protection on ${repo}"
+        failed=$((failed + 1)) ;;
+    esac
   done < <(open_dependabot_prs)
 
   echo
-  echo "${seen} open Dependabot PR(s): ${armed} armed, ${already} already armed, ${skipped} excluded, ${failed} refused"
+  if [ "$DRY_RUN" = 1 ]; then
+    echo "${seen} open Dependabot PR(s): ${armed} would be armed (upper bound: a queued PR is indistinguishable here), ${already} already armed, ${skipped} excluded"
+  else
+    echo "${seen} open Dependabot PR(s): ${armed} armed, ${already} already armed, ${skipped} excluded, ${failed} refused"
+  fi
   # A refusal is a real condition worth a red run: it means a repo setting or
   # a ruleset is blocking the policy, and silence would hide it.
   [ "$failed" -eq 0 ]
@@ -158,8 +189,41 @@ CASES
   out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\ttrue\n'" sweep 2>&1)
   case "$out" in *"1 already armed"*) ok "an already-armed PR is left alone" ;; *) bad "re-armed a PR: $out" ;; esac
 
+  # A QUEUED pull request reports autoMergeRequest: null, so it reaches the
+  # loop looking unarmed. Counting it as newly armed would mean every sweep
+  # reports the same queued PR as a fresh action, for as long as it sits in
+  # the queue — which on a merge-queue repo is every PR, for days. arm() has
+  # to settle it from what gh actually said.
+  out=$(AUTOMERGE_ARM_CMD="echo already" \
+        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\n'" sweep 2>&1)
+  case "$out" in
+    *"1 already armed"*) ok "a QUEUED PR reporting autoMergeRequest:null counts as already armed" ;;
+    *) bad "a queued PR was counted as newly armed: $out" ;;
+  esac
+  case "$out" in
+    *"armed    gibson#1"*) bad "a queued PR printed an 'armed' line" ;;
+    *) ok "a queued PR prints no 'armed' line" ;;
+  esac
+
+  # A refusal must stay loud and must turn the run red.
+  out=$(AUTOMERGE_ARM_CMD="echo failed" \
+        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\n'" sweep 2>&1)
+  rc=$?
+  case "$out" in
+    *"could not arm"*)
+      if [ "$rc" -ne 0 ]; then ok "a refusal warns and fails the run"; else bad "a refusal warned but the run stayed green"; fi ;;
+    *) bad "a refusal was swallowed: $out" ;;
+  esac
+
   out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\ngibson\t2\tchore(deps): bump y from 1 to 2\tfalse\n'" sweep 2>&1)
-  case "$out" in *"2 armed"*) ok "two unarmed PRs are both armed" ;; *) bad "wrong arm count: $out" ;; esac
+  case "$out" in *"2 would be armed"*) ok "two unarmed PRs are both armed" ;; *) bad "wrong arm count: $out" ;; esac
+
+  # The dry-run summary must not claim it distinguished a queued PR, because
+  # it cannot: it never makes the call that would tell it.
+  case "$out" in
+    *"upper bound"*) ok "the dry-run summary says its count is an upper bound" ;;
+    *) bad "the dry run presented a count it cannot know as exact: $out" ;;
+  esac
 
   out=$(AUTOMERGE_FETCH_CMD="printf ''" sweep 2>&1)
   case "$out" in *"0 open Dependabot PR(s)"*) ok "an empty backlog is a clean no-op" ;; *) bad "empty backlog misreported: $out" ;; esac
