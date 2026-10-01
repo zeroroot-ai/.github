@@ -24,7 +24,14 @@
 #
 # Usage:
 #   flake-report-render.sh <flakes-dir> [<window-days>] [<download-failures>]
+#   flake-report-render.sh --count <flakes-dir>
 #   flake-report-render.sh --selftest
+#
+# --count prints the number of runs that flaked, so the workflow can close a
+# stale report instead of leaving it open asserting nothing actionable. The
+# sarif-triage and makefile-contract audits already self-heal this way; this
+# one did not, so .github#120 sat open saying "there is just nothing to
+# report".
 #
 set -euo pipefail
 
@@ -80,6 +87,18 @@ render() {
   printf '|---|---|---|---|\n'
   printf '%s' "$rows"
   render_download_warning "$download_failures"
+}
+
+# flaked_count prints how many collected runs actually flaked. States 1 and 2
+# of render() both yield 0.
+flaked_count() {
+  local dir="$1" f n=0
+  [ -d "$dir" ] || { printf '0'; return 0; }
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ "$(jq -r '.is_flake // false' "$f")" = "true" ] && n=$((n + 1))
+  done < <(find "$dir" -type f -name '*.json' | sort)
+  printf '%s' "$n"
 }
 
 render_download_warning() {
@@ -159,12 +178,31 @@ selftest() {
     failures=$((failures + 1))
   fi
 
+  # --- --count agrees with what each state rendered. This is what decides
+  # whether the workflow closes the report, so it is asserted, not assumed.
+  if [ "$(flaked_count "$tmp/empty")" != "0" ]; then
+    echo "::error::[selftest] --count on state 1 (no artifacts) is not 0"
+    failures=$((failures + 1))
+  fi
+  if [ "$(flaked_count "$tmp/clean")" != "0" ]; then
+    echo "::error::[selftest] --count on state 2 (none flaked) is not 0"
+    failures=$((failures + 1))
+  fi
+  if [ "$(flaked_count "$tmp/flaky")" != "1" ]; then
+    echo "::error::[selftest] --count on state 3 (one flake of two runs) is not 1"
+    failures=$((failures + 1))
+  fi
+  if [ "$(flaked_count "$tmp/does-not-exist")" != "0" ]; then
+    echo "::error::[selftest] --count on a missing directory is not 0"
+    failures=$((failures + 1))
+  fi
+
   if [ "$failures" -ne 0 ]; then
     echo "[selftest] $failures assertion(s) failed"
     return 1
   fi
 
-  echo "[selftest] all three render states behave"
+  echo "[selftest] all three render states behave, and --count agrees with each"
 }
 
 main() {
@@ -172,8 +210,12 @@ main() {
     --selftest)
       selftest
       ;;
+    --count)
+      [ $# -ge 2 ] || { echo "usage: $0 --count <flakes-dir>" >&2; exit 2; }
+      flaked_count "$2"
+      ;;
     "" | -h | --help)
-      echo "usage: $0 <flakes-dir> [<window-days>] [<download-failures>] | $0 --selftest" >&2
+      echo "usage: $0 <flakes-dir> [<window-days>] [<download-failures>] | $0 --count <flakes-dir> | $0 --selftest" >&2
       exit 2
       ;;
     *)
