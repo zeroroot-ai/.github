@@ -260,7 +260,7 @@ def apply_consumer(dest: str, c: dict, value: str, gw) -> str:
 
 
 # The fan-out's own credentials. A consumer's `regenerate` command is that
-# consumer's code (`./scripts/golden.sh`, `./bigbang/images/generate-image-list.py`),
+# consumer's code (`./scripts/golden.sh`, `./airgap/generate-image-list.py`),
 # so write access to one consumer must not turn into the App token that can
 # push branches and open PRs on every consumer in the link.
 FANOUT_TOKENS = ("GH_TOKEN", "GITHUB_TOKEN", "GHCR_TOKEN", "GH_ENTERPRISE_TOKEN")
