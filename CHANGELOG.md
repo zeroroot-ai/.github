@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/zeroroot-ai/.github/compare/v0.8.0...v0.8.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **go-ci:** govulncheck that can scan Go 1.27, from one pin not two ([#153](https://github.com/zeroroot-ai/.github/issues/153)) ([9c19a28](https://github.com/zeroroot-ai/.github/commit/9c19a280dc3804bcbb6a225a395b81a5f53c8554))
+
 ## [0.8.0](https://github.com/zeroroot-ai/.github/compare/v0.7.2...v0.8.0) (2026-10-01)
 
 
