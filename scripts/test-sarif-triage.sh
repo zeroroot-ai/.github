@@ -98,25 +98,36 @@ edit_count() { grep -c "^issue edit" "$GH_CALLS_LOG"; }
 
 # A real-shaped code-scanning alerts page: 3 error alerts on 2 rules,
 # 2 warnings on one rule, 1 note.
+# Three tools, because the real estate has three and they need different
+# actions. Measured across the org on 2026-10-01: 27 open alerts, of which 21
+# were Trivy, 5 Scorecard, and exactly ONE CodeQL — while every digest issue
+# is titled "ci(codeql)". A fixture with only CodeQL rows could not catch
+# that.
 REAL_FIXTURE='[
-  {"number": 11, "state": "open",
+  {"number": 11, "state": "open", "tool": {"name": "CodeQL"},
    "rule": {"id": "go/sql-injection", "severity": "error", "security_severity_level": "high"},
    "most_recent_instance": {"location": {"path": "internal/db/query.go", "start_line": 10}}},
-  {"number": 12, "state": "open",
+  {"number": 12, "state": "open", "tool": {"name": "CodeQL"},
    "rule": {"id": "go/sql-injection", "severity": "error", "security_severity_level": "high"},
    "most_recent_instance": {"location": {"path": "internal/db/exec.go", "start_line": 44}}},
-  {"number": 13, "state": "open",
+  {"number": 13, "state": "open", "tool": {"name": "CodeQL"},
    "rule": {"id": "go/path-injection", "severity": "error", "security_severity_level": "high"},
    "most_recent_instance": {"location": {"path": "cmd/server/main.go", "start_line": 7}}},
-  {"number": 14, "state": "open",
+  {"number": 14, "state": "open", "tool": {"name": "CodeQL"},
    "rule": {"id": "go/unused-parameter-warnrule", "severity": "warning", "security_severity_level": null},
    "most_recent_instance": {"location": {"path": "pkg/util/x.go", "start_line": 1}}},
-  {"number": 15, "state": "open",
+  {"number": 15, "state": "open", "tool": {"name": "CodeQL"},
    "rule": {"id": "go/unused-parameter-warnrule", "severity": "warning", "security_severity_level": null},
    "most_recent_instance": {"location": {"path": "pkg/util/y.go", "start_line": 2}}},
-  {"number": 16, "state": "open",
+  {"number": 16, "state": "open", "tool": {"name": "CodeQL"},
    "rule": {"id": "go/todo-comment", "severity": "note", "security_severity_level": null},
-   "most_recent_instance": {"location": {"path": "pkg/util/z.go", "start_line": 3}}}
+   "most_recent_instance": {"location": {"path": "pkg/util/z.go", "start_line": 3}}},
+  {"number": 17, "state": "open", "tool": {"name": "Trivy"},
+   "rule": {"id": "CVE-2026-85024", "severity": "warning", "security_severity_level": "medium"},
+   "most_recent_instance": {"location": {"path": "Dockerfile", "start_line": 1}}},
+  {"number": 18, "state": "open", "tool": {"name": "Scorecard"},
+   "rule": {"id": "VulnerabilitiesID", "severity": "error", "security_severity_level": "high"},
+   "most_recent_instance": {"location": {"path": "no file associated with this alert", "start_line": 1}}}
 ]'
 
 # --------------------------------------------------------------------------
@@ -213,12 +224,42 @@ case "$body" in
   *) ok "warning/note rules roll up to counts only" ;;
 esac
 case "$body" in
-  *'**6** total — 3 error, 2 warning, 1 note/other'*) ok "digest counts line is correct" ;;
+  *'**8** total — 4 error, 3 warning, 1 note/other'*) ok "digest counts line is correct" ;;
   *) bad "digest counts line wrong or missing" ;;
 esac
 case "$body" in
   *'security/code-scanning?query=is%3Aopen'*) ok "digest links the repo code-scanning UI" ;;
   *) bad "digest is missing the code-scanning UI link" ;;
+esac
+
+# The by-tool table. Every digest is titled "ci(codeql)" while most alerts
+# come from Trivy or Scorecard, and each needs a different action. Without
+# this, an agent opens a digest expecting a code defect and finds CVEs.
+case "$body" in
+  *'### By tool'*) ok "digest groups alerts by the tool that raised them" ;;
+  *) bad "digest is missing the by-tool table" ;;
+esac
+case "$body" in
+  *'| CodeQL | 6 |'*) ok "the by-tool table counts CodeQL alerts" ;;
+  *) bad "the by-tool table miscounts CodeQL" ;;
+esac
+case "$body" in
+  *'| Trivy | 1 |'*) ok "the by-tool table counts Trivy alerts" ;;
+  *) bad "the by-tool table miscounts Trivy" ;;
+esac
+case "$body" in
+  *'dependency or base image'*) ok "a Trivy alert names the bump as its remedy, not a code fix" ;;
+  *) bad "a Trivy alert does not name its remedy" ;;
+esac
+case "$body" in
+  *'not a distinct defect'*) ok "a Scorecard score is marked as restating the CVEs, not a separate defect" ;;
+  *) bad "a Scorecard score is presented as its own defect" ;;
+esac
+# The error table must say which tool raised each rule, so a repo-level
+# Scorecard score is never read as an error-severity code finding.
+case "$body" in
+  *'| `VulnerabilitiesID` | Scorecard |'*) ok "the error table names the tool beside the rule" ;;
+  *) bad "the error table does not name the tool" ;;
 esac
 
 # (6) existing digest issue => update in place (edit, not create)

@@ -30,6 +30,13 @@ set -euo pipefail
 
 ORG="${SARIF_TRIAGE_ORG:-zeroroot-ai}"
 TITLE_PREFIX="ci(codeql): code-scanning digest"
+
+# What actually closes an alert, per tool. The title says "codeql" for every
+# digest, but most alerts come from somewhere else and need a different
+# action. Keyed by the tool name GitHub reports.
+TOOL_REMEDIATION="CodeQL=A code defect. Fix the code, or dismiss with a reason (ADR-0013).\
+;Trivy=A CVE in a dependency or base image. Merge the bump, or move the base image.\
+;Scorecard=A repo-level OpenSSF score, not a distinct defect. \`VulnerabilitiesID\` restates the dependency CVEs above; it clears when they do."
 MAX_RULE_ROWS="${SARIF_TRIAGE_MAX_RULE_ROWS:-25}"
 MAX_BODY_BYTES="${SARIF_TRIAGE_MAX_BODY_BYTES:-20000}"
 
@@ -94,6 +101,28 @@ build_digest() {
   echo
   echo "Open alerts in \`${ORG}/${repo}\`: **${total}** total — ${errors} error, ${warnings} warning, ${other} note/other."
   echo
+
+  # Which tool raised them, because the remediation differs entirely and the
+  # issue title says "codeql" for all of them. Measured across the org on
+  # 2026-10-01: of 27 open alerts, 21 were Trivy, 5 were Scorecard, and ONE
+  # was CodeQL. An agent picking up a digest expecting a code defect found
+  # dependency CVEs instead.
+  if [ "$total" -gt 0 ]; then
+    echo "### By tool"
+    echo
+    echo "| Tool | Open alerts | What closes it |"
+    echo "|---|---|---|"
+    jq -r --arg tbl "$TOOL_REMEDIATION" '
+      ($tbl | split(";") | map(split("=")) | map({(.[0]): .[1]}) | add) as $rem
+      | group_by(.tool.name // "unknown")
+      | sort_by(-length)
+      | .[]
+      | (.[0].tool.name // "unknown") as $t
+      | "| \($t) | \(length) | \($rem[$t] // "Fix or dismiss the alert.") |"
+    ' "$alerts"
+    echo
+  fi
+
   if [ "$errors" -gt 0 ]; then
     local rows n_rules
     rows=$(mktemp)
@@ -102,13 +131,13 @@ build_digest() {
       | group_by(.rule.id // "unknown")
       | sort_by(-length)
       | .[]
-      | "| `\(.[0].rule.id // "unknown")` | \(length) | \([.[0:3][] | "\(.most_recent_instance.location.path // "?"):\(.number)"] | join(", ")) |"
+      | "| `\(.[0].rule.id // "unknown")` | \(.[0].tool.name // "unknown") | \(length) | \([.[0:3][] | "\(.most_recent_instance.location.path // "?"):\(.number)"] | join(", ")) |"
     ' "$alerts" > "$rows"
     n_rules=$(wc -l < "$rows")
     echo "### Error-severity rules"
     echo
-    echo "| Rule | Open alerts | Example locations (path:alert) |"
-    echo "|---|---|---|"
+    echo "| Rule | Tool | Open alerts | Example locations (path:alert) |"
+    echo "|---|---|---|---|"
     head -n "$MAX_RULE_ROWS" "$rows"
     if [ "$n_rules" -gt "$MAX_RULE_ROWS" ]; then
       echo
