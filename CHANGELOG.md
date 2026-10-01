@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0](https://github.com/zeroroot-ai/.github/compare/v0.7.2...v0.8.0) (2026-10-01)
+
+
+### Features
+
+* **automerge:** land Dependabot bumps on green, without a human in the path ([#147](https://github.com/zeroroot-ai/.github/issues/147)) ([1f9b53d](https://github.com/zeroroot-ai/.github/commit/1f9b53d3d4aae6f68e905b6e175e0a682e4c9142))
+* **mirror:** carry golang 1.27.1, and drop a duplicate key ([#149](https://github.com/zeroroot-ai/.github/issues/149)) ([d9de564](https://github.com/zeroroot-ai/.github/commit/d9de564b9690ad209e59e0a565e6efb551615b71))
+
+
+### Bug Fixes
+
+* **automerge:** a queued PR is already armed, not a fresh action ([#148](https://github.com/zeroroot-ai/.github/issues/148)) ([0dcc112](https://github.com/zeroroot-ai/.github/commit/0dcc11284631c043adec22d3c978d37fb10e15ed))
+* **ci:** delete seven reusable workflows no repo calls ([#150](https://github.com/zeroroot-ai/.github/issues/150)) ([74667ae](https://github.com/zeroroot-ai/.github/commit/74667aedd66ee53b4aabac86f3f6ee21d597cbf2)), closes [#146](https://github.com/zeroroot-ai/.github/issues/146)
+* **fanout:** point the air-gap generator at airgap/, and drop Big Bang ([#143](https://github.com/zeroroot-ai/.github/issues/143)) ([f9ba14d](https://github.com/zeroroot-ai/.github/commit/f9ba14dbaed376123cff85886092e07a8bde6695)), closes [#118](https://github.com/zeroroot-ai/.github/issues/118)
+* **flake-report:** close the report when nothing flaked ([#144](https://github.com/zeroroot-ai/.github/issues/144)) ([9dbc448](https://github.com/zeroroot-ai/.github/commit/9dbc44897b1c974520488d2b9a09840432ff4660)), closes [#120](https://github.com/zeroroot-ai/.github/issues/120)
+* **go-ci:** golangci-lint that can read Go 1.27 export data ([#151](https://github.com/zeroroot-ai/.github/issues/151)) ([cd870a8](https://github.com/zeroroot-ai/.github/commit/cd870a8ef8400e563b520c77edd86d49aa40859a))
+* **makefile-contract:** grep the file, so SIGPIPE cannot read as a missing target ([#142](https://github.com/zeroroot-ai/.github/issues/142)) ([aa96506](https://github.com/zeroroot-ai/.github/commit/aa9650692859b855a8dc206e32d0d8ea3adbe48e)), closes [#141](https://github.com/zeroroot-ai/.github/issues/141)
+* **mirror:** mirror alpine:3.22 for the gibson runtime base ([#137](https://github.com/zeroroot-ai/.github/issues/137)) ([e2ba01d](https://github.com/zeroroot-ai/.github/commit/e2ba01d35fac2ada63eea75b9413e5c872e65e6f))
+* **mirror:** refresh alpine:3.21, a floating patch tag ([#135](https://github.com/zeroroot-ai/.github/issues/135)) ([8a2abde](https://github.com/zeroroot-ai/.github/commit/8a2abdeea7d4b89fa31d7ce314081e4e9ee9d65b))
+* **sarif-triage:** name the tool that raised each alert, and what closes it ([#145](https://github.com/zeroroot-ai/.github/issues/145)) ([c673b86](https://github.com/zeroroot-ai/.github/commit/c673b8610dce80be6b6f380f0747b3643151dfcd))
+
 ## [0.7.2](https://github.com/zeroroot-ai/.github/compare/v0.7.1...v0.7.2) (2026-09-30)
 
 
