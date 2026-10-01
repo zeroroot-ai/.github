@@ -111,7 +111,7 @@ Each row links to the page that proves it.
 | **[Tenancy](https://docs.zeroroot.ai/docs/security/tenancy)** | One graph database per tenant, in its own namespace. Nodes carry no tenant identifier, because there is nothing to disambiguate. There is no cross-tenant query to get wrong. |
 | **[Runtime](https://docs.zeroroot.ai/docs/security/runtime)** | Missions run on a persistent event-sourced loop. Constraints on the mission cap duration, cost, tokens, turns, findings, tools and domains. A person declares control before the run starts. |
 | **[Audit](https://docs.zeroroot.ai/docs/security/audit)** | The platform records every model call with an immutable transcript and token counts, inside your tenant. No third-party trace vendor sits on that path. Every mission replays from its timeline. |
-| **[Supply chain](https://docs.zeroroot.ai/docs/security/supply-chain)** | One versioned OCI umbrella chart pins every first-party image by digest at package time. To roll back, pin the previous version. Big Bang compatible: Flux-wrappable, hardened, no service-mesh assumption. |
+| **[Supply chain](https://docs.zeroroot.ai/docs/security/supply-chain)** | One versioned OCI umbrella chart pins every first-party image by digest at package time. To roll back, pin the previous version. On-prem and air-gapped installs take the same chart: `helm`, Argo or Flux, with an air-gap image list to mirror, and no service-mesh assumption. |
 
 ---
 

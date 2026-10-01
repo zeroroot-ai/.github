@@ -79,7 +79,7 @@ links:
         image: zitadel-login
         regenerate:
           - ./scripts/golden.sh update
-          - ./bigbang/images/generate-image-list.py
+          - ./airgap/generate-image-list.py
     upstream:
       repo: zitadel/zitadel
     subchart:
@@ -178,7 +178,7 @@ links:
         format: yaml
         regenerate:
           - ./scripts/golden.sh update
-          - ./bigbang/images/generate-image-list.py
+          - ./airgap/generate-image-list.py
       - repo: zeroroot-ai/charts
         file: helm/gibson/values.yaml
         key: zitadel.initContainers.0.image
@@ -243,4 +243,4 @@ links:
         image: docs-site
         regenerate:
           - ./scripts/golden.sh update
-          - ./bigbang/images/generate-image-list.py
+          - ./airgap/generate-image-list.py
