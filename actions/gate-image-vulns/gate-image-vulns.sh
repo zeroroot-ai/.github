@@ -10,9 +10,7 @@
 #   * There is NO escape hatch. No .trivyignore, no expiring allowlist, no
 #     per-repo opt-out. The only ways past a block are fixing the CVE or
 #     bumping the base.
-#   * HIGH and CRITICAL block. MEDIUM stays visible and non-blocking, matching
-#     what the launch scorecard gates on, so the board and the build agree
-#     about what matters.
+#   * HIGH and CRITICAL block. MEDIUM stays visible and non-blocking.
 #
 # Because there is no hatch, the failure message is the whole ergonomics of
 # this gate. It names the package, what is installed, what fixes it, and the

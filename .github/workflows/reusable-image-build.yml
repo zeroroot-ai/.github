@@ -236,9 +236,7 @@ jobs:
       # registry and pullable, and the board caught it up to a day later.
       #
       # Three parts to the decision, all deliberate:
-      #   * HIGH and CRITICAL block. MEDIUM stays visible and non-blocking,
-      #     matching what the launch scorecard gates on, so the board and the
-      #     build agree about what matters.
+      #   * HIGH and CRITICAL block. MEDIUM stays visible and non-blocking.
       #   * NO escape hatch. No .trivyignore, no expiring allowlist, no
       #     per-repo opt-out. Fix the CVE or bump the base.
       #   * PRs are scanned but NOT blocked. A PR author sees a new base-image

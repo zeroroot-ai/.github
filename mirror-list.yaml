@@ -74,7 +74,7 @@ mirrors:
   - source: docker.io/library/neo4j
     tag: "5.26.0-community"
     dest: neo4j
-  # MinIO — the S3-compatible object store the launch blocker 3 exit test
+  # MinIO — the S3-compatible object store the backup-restore exit test
   # (deploy#1546) writes its OpenBao snapshot to. The drill runs on kind with
   # no AWS, so it needs an object store in-cluster. It is also what a
   # self-hosted install backs up to, which is why openbao.backup.s3EndpointUrl

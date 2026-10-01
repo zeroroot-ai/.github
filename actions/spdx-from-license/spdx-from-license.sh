@@ -14,8 +14,7 @@
 # procurement filter both read NOASSERTION as "unlicensed", which is a worse
 # answer than the truth and is not one anybody chose.
 #
-# Classify from the licence TEXT instead, the same way the launch scorecard's
-# readiness gate does. One rule, two places, same answer.
+# Classify from the licence TEXT instead.
 set -euo pipefail
 
 dir="${1:-.}"

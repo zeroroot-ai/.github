@@ -12,11 +12,10 @@ commit SHA, and so can you.
 | Path | What |
 |---|---|
 | `.github/workflows/reusable-*.yml` | Reusable workflows called by every repo — Go CI, image build and sign, release-please |
-| `.github/workflows/*.yml` | Org-level jobs: ruleset drift, security-feature drift, doc coverage, the launch scorecard |
+| `.github/workflows/*.yml` | Org-level jobs: ruleset drift, security-feature drift, doc coverage |
 | `actions/*/` | Composite actions the reusable workflows call. Each one carries its scanner and its self-test |
 | `rulesets/org/*.json` | Branch-protection tiers. **These files are the source of truth**, not the live GitHub state |
 | `rulesets/repo/*.json` | Per-repo required checks |
-| `data/launch-*.tsv` | What the launch scorecard measures |
 | `scripts/` | The guards, each with a mutation test proving it can fail |
 | `AGENTS.md` | The branching, PR, release and merge contract |
 | `profile/README.md` | The org landing page |

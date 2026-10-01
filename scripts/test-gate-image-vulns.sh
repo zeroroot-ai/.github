@@ -46,8 +46,7 @@ mk unfixed.json <<'J'
 J
 allows unfixed.json "an UNFIXED critical"
 
-# MEDIUM does not block: the scorecard gates on HIGH/CRITICAL and the two must
-# agree about what matters.
+# MEDIUM does not block: only HIGH and CRITICAL do.
 mk medium.json <<'J'
 {"Results":[{"Target":"img","Vulnerabilities":[
  {"VulnerabilityID":"CVE-2026-5450","PkgName":"libc6","InstalledVersion":"2.41-12+deb13u3","FixedVersion":"2.41-12+deb13u4","Severity":"MEDIUM"}]}]}
