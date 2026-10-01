@@ -174,7 +174,17 @@ jobs:
         if: ${{ inputs.tier == 'fast' && ! inputs.skip-lint }}
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: v2.0.2
+          # Must be a release whose VENDORED x/tools can read the export data
+          # the consumer's Go emits. golangci-lint ships its own importer, so
+          # the build toolchain is not what decides this — a v2.4.0 rebuilt
+          # with go1.27.1 still fails. v2.14.0 is the first release carrying
+          # an x/tools that reads export format v4 (Go 1.27):
+          #
+          #   could not load export data: cannot decode "sync/atomic",
+          #   export data version 4 is greater than maximum supported version 2
+          #
+          # Keep this at or above the highest Go floor in the org.
+          version: v2.14.0
           working-directory: ${{ inputs.go-mod-path }}
           args: --timeout=10m
 
