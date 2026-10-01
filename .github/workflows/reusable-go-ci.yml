@@ -223,6 +223,25 @@ jobs:
       # rationale lives on that job.
       GOFLAGS: ${{ inputs.build-tags != '' && format('-tags={0}', inputs.build-tags) || '' }}
       GOPROXY: https://proxy.golang.org|direct
+      # One version for both steps below, so the two cannot drift. They were two
+      # hard-coded copies of the same tag, which is the duplication the
+      # allowlist comment further down warns about.
+      #
+      # It must be a release whose VENDORED x/tools can analyse the code the
+      # caller asks it to scan. govulncheck ships its own SSA builder, so the
+      # toolchain that compiles the tool does not decide this — rebuilding the
+      # old pin on go1.27.1 still panics:
+      #
+      #   panic: unexpected expr: *ast.KeyValueExpr
+      #   created by golang.org/x/tools/go/ssa.(*Program).Build
+      #
+      # A Go panic exits 2, so the job reads as a scan failure rather than as a
+      # tool that never ran. Seen on zeroroot-ai/setec#117, on all three example
+      # scans, after that repo moved to the Go 1.27.1 floor. v1.8.0 vendors
+      # x/tools v0.50.0, which handles it.
+      #
+      # Keep at or above the x/tools that the highest Go floor in the org needs.
+      GOVULNCHECK_VERSION: v1.8.0
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -237,7 +256,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "${{ inputs.go-mod-path }}" 2>/dev/null || true
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           govulncheck ./...
 
       # Same scan, but findings are checked against the caller's allowlist.
@@ -264,7 +283,7 @@ jobs:
             echo "copy of it. Add the script, or unset vuln-allowlist to fail on any finding." >&2
             exit 1
           fi
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
           # govulncheck exits non-zero merely for HAVING findings; the checker
           # owns the verdict and exits non-zero itself when they are not
           # tolerated, so this step still fails when it should.
