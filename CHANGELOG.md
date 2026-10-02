@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/zeroroot-ai/.github/compare/v0.8.3...v0.9.0) (2026-10-02)
+
+
+### Features
+
+* **reusable-image-build:** a vendored_binaries input, so the vuln gate can ask reachability ([#164](https://github.com/zeroroot-ai/.github/issues/164)) ([6e3ee45](https://github.com/zeroroot-ai/.github/commit/6e3ee45ac2cbc1bdc06dfe5d9b38cbeba379e0ba))
+
 ## [0.8.3](https://github.com/zeroroot-ai/.github/compare/v0.8.2...v0.8.3) (2026-10-02)
 
 
