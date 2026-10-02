@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/zeroroot-ai/.github/compare/v0.10.2...v0.10.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **rulesets:** adk requires ci-required, so its gates can block a merge ([#175](https://github.com/zeroroot-ai/.github/issues/175)) ([ca5dc79](https://github.com/zeroroot-ai/.github/commit/ca5dc7900b6c1c203a884c9e65234597b971d453))
+
 ## [0.10.2](https://github.com/zeroroot-ai/.github/compare/v0.10.1...v0.10.2) (2026-10-02)
 
 
