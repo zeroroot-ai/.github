@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/zeroroot-ai/.github/compare/v0.8.1...v0.8.2) (2026-10-01)
+
+
+### Bug Fixes
+
+* **doc-coverage:** the gate now says how to clear it ([#155](https://github.com/zeroroot-ai/.github/issues/155)) ([61d3c90](https://github.com/zeroroot-ai/.github/commit/61d3c905c7e238df484f72d4fc2219660e9d9d63))
+
 ## [0.8.1](https://github.com/zeroroot-ai/.github/compare/v0.8.0...v0.8.1) (2026-10-01)
 
 
