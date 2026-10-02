@@ -83,6 +83,85 @@ J
 n=$(bash "$S" "$tmp/dupes.json" 2>&1 | grep -c "CVE-1" || true)
 if [ "$n" -eq 1 ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: one CVE across two targets listed $n times"; fi
 
+
+# ---------------------------------------------------------------------------
+# Vendored binaries: reachability, not staleness.
+# ---------------------------------------------------------------------------
+# The gVisor case. A Go stdlib finding on a binary we do not build is a version
+# comparison with no remedy: every artifact upstream publishes is built with the
+# Go their own go.mod names. The gate must ask whether the affected symbol is in
+# the binary, and these cases are what stop it going back to asking staleness.
+slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'; }
+
+# evidence <reachdir> <binary-path> <failed|ok> [reachable-id ...]
+evidence() {
+  local d="$1" path="$2" state="$3"; shift 3
+  mkdir -p "$d"
+  local sl; sl="$(slug "$path")"
+  printf '%s\n' "$path" > "$d/${sl}.path"
+  if [ "$state" = failed ]; then
+    printf 'govulncheck exited 1: could not load binary\n' > "$d/${sl}.failed"
+  else
+    : > "$d/${sl}.reachable"
+    local id
+    for id in "$@"; do printf '%s\n' "$id" >> "$d/${sl}.reachable"; done
+  fi
+}
+
+blocks_r() { if bash "$S" "$tmp/$1" HIGH,CRITICAL "$2" >/dev/null 2>&1; then FAIL=$((FAIL+1)); echo "  FAIL: $3 was allowed"; else PASS=$((PASS+1)); fi; }
+allows_r() { if bash "$S" "$tmp/$1" HIGH,CRITICAL "$2" >/dev/null 2>&1; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "  FAIL: $3 was blocked"; fi; }
+
+mk vendored.json <<'J'
+{"Results":[{"Target":"opt/gvisor/runsc","Vulnerabilities":[
+ {"VulnerabilityID":"CVE-2026-27145","PkgName":"stdlib","InstalledVersion":"v1.26.3","FixedVersion":"1.26.4","Severity":"HIGH"},
+ {"VulnerabilityID":"CVE-2026-33818","PkgName":"stdlib","InstalledVersion":"v1.26.3","FixedVersion":"1.26.6","Severity":"HIGH"}]}]}
+J
+
+# 1. Neither affected symbol is in the binary: the image ships.
+evidence "$tmp/r_none" opt/gvisor/runsc ok
+allows_r vendored.json "$tmp/r_none" "a vendored stdlib finding with no reachable symbol"
+
+# 2. One IS reachable: it blocks. This is the case that keeps the gate a gate.
+evidence "$tmp/r_one" opt/gvisor/runsc ok CVE-2026-33818
+blocks_r vendored.json "$tmp/r_one" "a vendored stdlib finding whose symbol IS present"
+
+# 3. The analysis did not run. Blocking is the only safe answer: "no finding"
+#    and "no analysis" are indistinguishable to anything reading only a result,
+#    and treating the second as a pass is how a gate stops being one.
+evidence "$tmp/r_fail" opt/gvisor/runsc failed
+blocks_r vendored.json "$tmp/r_fail" "a vendored binary whose reachability analysis failed"
+
+# 4. A declaration for ONE binary must not soften the verdict on another. The
+#    OS-package finding below is on a different target and still blocks.
+mk mixed.json <<'J'
+{"Results":[
+ {"Target":"opt/gvisor/runsc","Vulnerabilities":[
+  {"VulnerabilityID":"CVE-2026-27145","PkgName":"stdlib","InstalledVersion":"v1.26.3","FixedVersion":"1.26.4","Severity":"HIGH"}]},
+ {"Target":"img (debian 13.6)","Vulnerabilities":[
+  {"VulnerabilityID":"CVE-2026-11822","PkgName":"libsqlite3-0","InstalledVersion":"3.46.1-7","FixedVersion":"3.46.1-8","Severity":"HIGH"}]}]}
+J
+evidence "$tmp/r_mixed" opt/gvisor/runsc ok
+blocks_r mixed.json "$tmp/r_mixed" "an OS finding beside an unreachable vendored one"
+
+# 5. A finding on a binary that was NOT declared vendored keeps the old
+#    treatment even when a reachability dir exists for something else.
+mk undeclared.json <<'J'
+{"Results":[{"Target":"usr/local/bin/setec","Vulnerabilities":[
+ {"VulnerabilityID":"CVE-2026-27145","PkgName":"stdlib","InstalledVersion":"v1.26.3","FixedVersion":"1.26.4","Severity":"HIGH"}]}]}
+J
+blocks_r undeclared.json "$tmp/r_none" "a finding on a binary nobody declared vendored"
+
+# 6. And with no reachability dir at all, the gate is exactly what it was.
+blocks vendored.json "a vendored finding with no reachability dir"
+
 echo
 echo "passed=$PASS failed=$FAIL"
+# A FLOOR. These cases are appended over time, and appending below this block is
+# how six of them silently never ran: the summary and the exit line sat in the
+# middle of the file, so everything after it was dead. The count is the guard
+# against that happening again.
+if [ "$PASS" -lt 21 ] && [ "$FAIL" -eq 0 ]; then
+  echo "FAIL: only $PASS case(s) ran; cases were added below the summary block again" >&2
+  exit 1
+fi
 [ "$FAIL" -eq 0 ]
