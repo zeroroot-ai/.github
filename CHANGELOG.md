@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.4](https://github.com/zeroroot-ai/.github/compare/v0.10.3...v0.10.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **gate-image-vulns:** path spelling decided whether the gate worked, and it was silent ([#179](https://github.com/zeroroot-ai/.github/issues/179)) ([0ac6ed5](https://github.com/zeroroot-ai/.github/commit/0ac6ed5d46814523867e66a4c4d7760a7218ea79))
+* **link-check:** a 503 is a statement about the server, not about the link ([#177](https://github.com/zeroroot-ai/.github/issues/177)) ([ce26a9b](https://github.com/zeroroot-ai/.github/commit/ce26a9b7ce1345c31a9e30d6445defad22ac269c))
+
 ## [0.10.3](https://github.com/zeroroot-ai/.github/compare/v0.10.2...v0.10.3) (2026-10-02)
 
 
