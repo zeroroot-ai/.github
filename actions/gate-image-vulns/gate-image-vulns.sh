@@ -76,11 +76,42 @@ fi
 # An analysis that did not run is NOT a pass. A missing or failed evidence file
 # blocks, loudly, because "no finding" and "no analysis" are indistinguishable to
 # anything that reads only a result.
-slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'; }
+# slug maps a binary path to an evidence-file name. BOTH sides normalise first,
+# and that is the whole point: the gate matches a Trivy finding to a declared
+# vendored binary by comparing these slugs, so any difference in path spelling
+# silently means "not a declared binary" and the finding blocks unexamined.
+#
+# setec's installer hit exactly that. The declaration said `opt/gvisor/runsc`,
+# the extraction found the binary and reported 26 reachable ids for it, and every
+# one of the eleven findings still blocked with neither a [REACHABLE] mark nor a
+# not-reachable line — because no slug matched. A leading slash, a `./` prefix or
+# a trailing slash is enough, and which of those a scanner emits is not a
+# documented contract. A security gate must not turn on it.
+slug() {
+  printf '%s' "$1" \
+    | sed -e 's#^\./##' -e 's#^/\+##' -e 's#/\+$##' \
+    | tr -c 'A-Za-z0-9._-' '_'
+}
 
 blocking=""
 notreachable=""
 if [ -n "$reachdir" ]; then
+  # Name the declarations the evidence directory holds. A finding is matched to a
+  # declared binary by the slug of its Trivy target, so a target string that does
+  # not equal a declared path silently falls through to the unchanged treatment.
+  # That failure is invisible unless both sides are printed.
+  declared=""
+  for pf in "${reachdir}"/*.path; do
+    [ -e "$pf" ] || continue
+    declared="${declared}    $(cat "$pf")\n"
+  done
+  if [ -n "$declared" ]; then
+    {
+      echo ""
+      echo "Vendored binaries with reachability evidence:"
+      printf '%b' "$declared"
+    } >&2
+  fi
   while IFS=$'\t' read -r sev pkg have fix id target; do
     [ -n "${sev:-}" ] || continue
     sl="$(slug "$target")"
@@ -128,9 +159,17 @@ n=$(printf '%s\n' "$rows" | wc -l)
   echo ""
   echo "BLOCKED: ${n} fixable ${severities} finding(s). This image is not pushed."
   echo ""
-  printf '  %-9s %-28s %-24s %s\n' SEVERITY PACKAGE INSTALLED "FIXED IN"
+  # The TARGET is printed, and it is not decoration. For an OS package the row
+  # is self-explanatory from the package name; for a Go stdlib finding it is not
+  # — eleven rows reading `stdlib v1.26.3` say nothing about WHICH binary, and
+  # that is the only field that distinguishes a binary this repo compiles from a
+  # vendored one it does not. Omitting it made a real failure undiagnosable from
+  # the log: setec's installer blocked on eleven stdlib rows and the output could
+  # not show whether the vendored-binary declaration had matched them.
+  printf '  %-9s %-24s %-18s %-26s %s\n' SEVERITY PACKAGE INSTALLED "FIXED IN" TARGET
   printf '%s\n' "$rows" | while IFS=$'\t' read -r sev pkg have fix id target; do
-    printf '  %-9s %-28s %-24s %s   (%s)\n' "$sev" "$pkg" "$have" "$fix" "$id"
+    printf '  %-9s %-24s %-18s %-26s %s\n' "$sev" "$pkg" "$have" "$fix" "$target"
+    printf '  %-9s %-24s %s\n' "" "" "$id"
   done
   echo ""
   echo "There is no allowlist and no opt-out, by decision. Two things clear it:"

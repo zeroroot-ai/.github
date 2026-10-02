@@ -32,7 +32,14 @@ shift 2
 [ "$#" -gt 0 ] || { echo "collect-reachability: no binary paths given"; exit 0; }
 
 mkdir -p "$reachdir"
-slug() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'; }
+# slug must match gate-image-vulns.sh byte for byte: the two halves of the
+# match live in different files, and a difference here is a gate that
+# refuses every finding without saying so.
+slug() {
+  printf '%s' "$1" \
+    | sed -e 's#^\./##' -e 's#^/\+##' -e 's#/\+$##' \
+    | tr -c 'A-Za-z0-9._-' '_'
+}
 
 # govulncheck is installed at a pinned version; a floating one would change the
 # gate's verdict with no commit. Resolved explicitly from where go install wrote
