@@ -1,0 +1,205 @@
+# After a release, re-pin this repo's own reusable workflows to the action code
+# that release contains.
+#
+# WHY THIS EXISTS
+#
+# A reusable workflow here pins the actions it calls by SHA, because
+# sha_pinning_required is true org-wide and .github#66 settled that first-party
+# refs are not exempt — the trust boundary is whether a ref can move, not who owns
+# it. A SHA pin cannot name the commit that creates it, so releasing a change to an
+# action leaves every reusable pinning the version from before it.
+#
+# That happened three times in one day:
+#
+#   v0.10.0  reusable pinned gate-image-vulns at v0.8.3  (setec#143 blocked on it)
+#   v0.10.1  fixed by hand after .github#171 built the guard
+#   v0.10.4  shipped BOTH of its own fixes stale — the gate-image-vulns path
+#            normalisation and the link-check 503 accept (.github#180)
+#
+# The guard turns a silent miss into a red check, which is better than nothing, but
+# it fires AFTER a release has shipped stale. This closes the window instead: the
+# re-pin PR opens itself the moment the tag exists.
+#
+# It does NOT push to main. It opens a pull request, which goes through the merge
+# gate like anything else (ADR-0012).
+#
+# The second release is unavoidable, not an oversight. A pin to the commit a tag
+# points at can only be written after that commit exists, so the shape is always
+# release, re-pin, release. What this removes is the human in the middle.
+name: repin-after-release
+
+on:
+  release:
+    types: [published]
+  # Manual run for the case where a release predates this workflow, or where the
+  # automatic run failed and the window is still open.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The tag to re-pin to (defaults to the latest release)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  repin:
+    name: Open the re-pin PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The rewriter compares an action's content between the pinned SHA and
+          # the tag, so it needs history and tags, not just this ref.
+          fetch-depth: 0
+          fetch-tags: true
+
+      # The guard runs FIRST and is allowed to pass. A release that happened to
+      # ship with current pins needs no PR, and opening an empty one would train
+      # people to ignore these.
+      - name: Are the pins already current?
+        id: check
+        run: |
+          set -uo pipefail
+          ref="${INPUT_REF:-${GITHUB_REF_NAME}}"
+          echo "ref=${ref}" >>"$GITHUB_OUTPUT"
+          if bash scripts/check-action-pins-are-current.sh --ref "${ref}"; then
+            echo "stale=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "stale=true" >>"$GITHUB_OUTPUT"
+          fi
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+
+      # The App token is a precondition, not an assumption. This repo holds
+      # GH_PAT_PLATFORM_RO and RULESET_APPLY_TOKEN and no re-pin App, because the
+      # fan-out's App secrets are passed IN by callers and live in consumer repos.
+      # Until an org admin creates one, this workflow has no way to open a PR whose
+      # checks will run.
+      #
+      # It says so and stops, rather than failing red on every release or — worse —
+      # skipping quietly. Nothing is masked by stopping: the pin guard still fails
+      # on the actual staleness, on every PR and nightly, so the safety property
+      # holds without this workflow. What is lost is only the automation.
+      - name: Is the re-pin App configured?
+        id: token-ready
+        if: steps.check.outputs.stale == 'true'
+        env:
+          APP_ID: ${{ secrets.REPIN_APP_ID }}
+        run: |
+          set -uo pipefail
+          if [ -n "${APP_ID:-}" ]; then
+            echo "ready=true" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "ready=false" >>"$GITHUB_OUTPUT"
+          {
+            echo "### Re-pin needed, and the App is not configured"
+            echo ""
+            echo "\`${{ steps.check.outputs.ref }}\` shipped with stale action pins and this"
+            echo "workflow cannot open the PR: secrets \`REPIN_APP_ID\` and"
+            echo "\`REPIN_APP_PRIVATE_KEY\` are not set on this repository."
+            echo ""
+            echo "A PR opened with \`github.token\` would carry no check runs and could"
+            echo "never satisfy a required context, so using it would move the problem"
+            echo "rather than fix it."
+            echo ""
+            echo "Until the App exists, re-pin by hand with:"
+            echo ""
+            echo '```sh'
+            echo "git fetch --tags"
+            echo "bash scripts/check-action-pins-are-current.sh --ref ${{ steps.check.outputs.ref }} --fix"
+            echo '```'
+            echo ""
+            echo "The nightly pin guard keeps failing until that lands, so this is not"
+            echo "a silent gap."
+          } >>"$GITHUB_STEP_SUMMARY"
+          echo "::warning::${{ steps.check.outputs.ref }} has stale action pins and REPIN_APP_ID is unset; re-pin manually with scripts/check-action-pins-are-current.sh --fix"
+
+      # Proving the rewriter can fail before trusting it to edit workflow files.
+      - name: Mutation-test the guard and the rewriter
+        if: steps.check.outputs.stale == 'true' && steps.token-ready.outputs.ready == 'true'
+        run: bash scripts/check-action-pins-are-current.sh --selftest
+
+      - name: Rewrite the stale pins
+        if: steps.check.outputs.stale == 'true' && steps.token-ready.outputs.ready == 'true'
+        run: |
+          set -euo pipefail
+          bash scripts/check-action-pins-are-current.sh --ref "${REF}" --fix
+          # The rewrite must leave the tree passing its own check. If it does not,
+          # the PR would carry a half-applied edit.
+          bash scripts/check-action-pins-are-current.sh --ref "${REF}"
+        env:
+          REF: ${{ steps.check.outputs.ref }}
+
+      # The PR is opened with gh and an App token, matching
+      # reusable-version-fanout.yml, rather than a third-party PR action. Two
+      # reasons, and the second is the decisive one:
+      #
+      #   * one fewer third-party action in the one workflow that edits workflow
+      #     files;
+      #   * a pull request created with github.token does NOT trigger workflow
+      #     runs (GitHub's loop protection). The re-pin PR would open with no
+      #     checks, never satisfy a required context, and sit there — which is
+      #     the same silent window this workflow exists to close, relocated.
+      - name: Mint the App token
+        id: app-token
+        if: steps.check.outputs.stale == 'true' && steps.token-ready.outputs.ready == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.REPIN_APP_ID }}
+          private-key: ${{ secrets.REPIN_APP_PRIVATE_KEY }}
+          owner: zeroroot-ai
+          repositories: .github
+
+      - name: Open or update the re-pin PR
+        if: steps.check.outputs.stale == 'true' && steps.token-ready.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          REF: ${{ steps.check.outputs.ref }}
+        run: |
+          set -euo pipefail
+          branch="chore/repin-actions-${REF}"
+          git config user.name "zeroroot-ai-repin[bot]"
+          git config user.email "zeroroot-ai-repin[bot]@users.noreply.github.com"
+
+          title="fix(pins): re-pin the reusables to ${REF}"
+          body=$(cat <<BODY
+          Opened automatically after **${REF}** was published.
+
+          A reusable workflow here pins the actions it calls by SHA, and a SHA pin
+          cannot name the commit that creates it — so a release that changes an
+          action leaves every reusable pinning the version from before it.
+          \`check-action-pins-are-current.sh\` found stale pins at \`${REF}\` and
+          \`--fix\` rewrote them. Both the guard and the rewriter were
+          mutation-tested in this run before the edit was made.
+
+          **This needs its own release** before a consumer can pin anything useful.
+          That second release is inherent to SHA-pinning your own repository, not an
+          oversight — what this removes is the human who had to notice.
+
+          Three occurrences in one day motivated it: v0.10.0 (setec#143 blocked on
+          it), v0.10.1 (fixed by hand), and v0.10.4, which shipped both of its own
+          fixes stale.
+          BODY
+          )
+
+          # Idempotent: a re-run for the same tag updates the branch in place
+          # rather than opening a second PR.
+          git checkout -b "$branch" 2>/dev/null || git checkout "$branch"
+          git add .github/workflows
+          git commit -m "${title}" -m "Opened by repin-after-release.yml for ${REF}."
+          git push --force-with-lease origin "$branch"
+
+          existing=$(gh pr list --head "$branch" --state open --json number -q '.[0].number' || true)
+          if [ -n "${existing:-}" ]; then
+            gh pr edit "$existing" --title "$title" --body "$body"
+            echo "updated PR #${existing}"
+          else
+            gh pr create --head "$branch" --base main --title "$title" --body "$body" --label dependencies
+          fi
