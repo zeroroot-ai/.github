@@ -23,6 +23,9 @@ on:
       - 'scripts/test-gate-image-vulns.sh'
       - 'scripts/test-reachable-ids.sh'
       - 'scripts/test-spdx-from-license.sh'
+      - 'scripts/check-action-pins-are-current.sh'
+      - '.github/workflows/reusable-image-build.yml'
+      - '.github/workflows/reusable-go-ci.yml'
       - '.github/workflows/action-fixtures-selftest.yml'
   merge_group:
   workflow_dispatch:
@@ -35,6 +38,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pin guard compares an action's content at a pinned SHA against the
+          # latest release TAG, so it needs history and tags, not just this ref.
+          fetch-depth: 0
+          fetch-tags: true
 
       # Each suite prints its own case count and fails on a count below its
       # floor, so a truncated or short-circuited harness cannot read as green.
@@ -46,3 +54,16 @@ jobs:
 
       - name: spdx-from-license fixtures
         run: bash scripts/test-spdx-from-license.sh
+
+      # A reusable pins its own actions by SHA (PR #88), and the cost of that is
+      # that every action change needs a follow-up re-pin. Forgetting one runs OLD
+      # action code silently: reusable-image-build at v0.10.0 still called
+      # gate-image-vulns at v0.8.3, so the reachability fix released in v0.10.0
+      # never ran and the gate reported 350 reachable advisory ids per binary.
+      #
+      # Needs tags, hence fetch-depth 0 and fetch-tags on the checkout above.
+      - name: action pins are current with the latest release
+        run: bash scripts/check-action-pins-are-current.sh
+
+      - name: action-pin guard selftest
+        run: bash scripts/check-action-pins-are-current.sh --selftest
