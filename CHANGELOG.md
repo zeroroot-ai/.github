@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.3](https://github.com/zeroroot-ai/.github/compare/v0.8.2...v0.8.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **comments:** two comments name a deleted repo, and one names seven ([#161](https://github.com/zeroroot-ai/.github/issues/161)) ([3f05dec](https://github.com/zeroroot-ai/.github/commit/3f05decfe0e0cb6657f8a323c33c50c179ac880f))
+* **gate-image-vulns:** ask reachability for a binary we do not build ([#163](https://github.com/zeroroot-ai/.github/issues/163)) ([c241f56](https://github.com/zeroroot-ai/.github/commit/c241f5643b5cd9bba459d5f4b2b62cfe0b4f5eea)), closes [#89](https://github.com/zeroroot-ai/.github/issues/89)
+* **guards:** the toolchain guard now covers .tool-versions ([#157](https://github.com/zeroroot-ai/.github/issues/157)) ([a4ad11a](https://github.com/zeroroot-ai/.github/commit/a4ad11a29bff2c64d4b15ee1642aa4bb2b769ba5)), closes [#152](https://github.com/zeroroot-ai/.github/issues/152)
+
 ## [0.8.2](https://github.com/zeroroot-ai/.github/compare/v0.8.1...v0.8.2) (2026-10-01)
 
 
