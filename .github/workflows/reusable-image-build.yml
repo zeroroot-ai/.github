@@ -320,7 +320,7 @@ jobs:
       # named here rather than changed quietly.
       - name: Block the push on a fixable vulnerability
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/gate-image-vulns@77275736f7508b8edb4b5594e446ba93be368681 # v0.10.1
+        uses: zeroroot-ai/.github/actions/gate-image-vulns@bb464955a3f949898f6b7ef8e576a20e04302302 # v0.10.4
         with:
           report: gate-${{ inputs.component_name }}.json
           severities: ${{ inputs.trivy_severity }}
