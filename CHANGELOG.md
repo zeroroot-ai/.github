@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.5](https://github.com/zeroroot-ai/.github/compare/v0.10.4...v0.10.5) (2026-10-02)
+
+
+### Bug Fixes
+
+* **pins:** v0.10.4 shipped two actions stale, and one of them was the fix it released ([#180](https://github.com/zeroroot-ai/.github/issues/180)) ([341da1d](https://github.com/zeroroot-ai/.github/commit/341da1d08f108d3da00df4c1f6316ea3c2a7478c))
+
 ## [0.10.4](https://github.com/zeroroot-ai/.github/compare/v0.10.3...v0.10.4) (2026-10-02)
 
 
