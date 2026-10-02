@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/zeroroot-ai/.github/compare/v0.10.5...v0.11.0) (2026-10-02)
+
+
+### Features
+
+* **pins:** the re-pin rewrites itself, because noticing it three times was enough ([#182](https://github.com/zeroroot-ai/.github/issues/182)) ([54cf124](https://github.com/zeroroot-ai/.github/commit/54cf1246ddcdd83379b4953a148650fd37ea8a33))
+
 ## [0.10.5](https://github.com/zeroroot-ai/.github/compare/v0.10.4...v0.10.5) (2026-10-02)
 
 
