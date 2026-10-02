@@ -73,5 +73,46 @@ runs:
           bash "${{ github.action_path }}/collect-reachability.sh" \
             "${IMAGE}" "$reachdir" "${paths[@]}"
         fi
+        # The verdict has to be VISIBLE even where it is not fatal.
+        #
+        # The caller wraps this step in
+        #   continue-on-error: ${{ github.event_name == 'pull_request' }}
+        # so on a PR the gate runs, prints BLOCKED, and the job goes green anyway.
+        # The result is a PR that passes having said no, and the first push to the
+        # default branch then fails on a verdict the PR already knew. docs-site,
+        # dashboard and integrations all hit that on 2026-10-02, and so did setec:
+        # its installer gate printed BLOCKED on the PR, merged green, and broke
+        # main.
+        #
+        # So the exit code is captured rather than allowed to end the step, and a
+        # blocking verdict is written to the run's step summary and raised as a
+        # workflow annotation. Annotations and the summary survive
+        # continue-on-error, so the author sees the verdict wherever this runs.
+        # The original exit code is then re-raised unchanged: whether CI goes red
+        # stays the caller's decision, which is not this action's to make.
+        out="$(mktemp)"
+        rc=0
         bash "${{ github.action_path }}/gate-image-vulns.sh" \
-          "${REPORT}" "${SEVERITIES}" "$reachdir"
+          "${REPORT}" "${SEVERITIES}" "$reachdir" >"$out" 2>&1 || rc=$?
+        cat "$out"
+
+        if [ "$rc" -ne 0 ]; then
+          {
+            echo "### Image vulnerability gate: BLOCKED"
+            echo ""
+            echo "This image would NOT be pushed. On a pull request the step is"
+            echo "wrapped in \`continue-on-error\`, so the job may still report"
+            echo "green — the verdict below is what the default branch will do."
+            echo ""
+            echo '```'
+            cat "$out"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+
+          # One annotation carrying the first blocking line, so the verdict is
+          # visible in the Checks view and not only inside a step's log.
+          first="$(grep -m1 -E '^(BLOCKED|  (CRITICAL|HIGH|MEDIUM|LOW))' "$out" | sed 's/[[:space:]]\+/ /g; s/^ //')"
+          echo "::error title=Image vulnerability gate blocked this image::${first:-see the job summary for the findings}"
+        fi
+        rm -f "$out"
+        exit "$rc"

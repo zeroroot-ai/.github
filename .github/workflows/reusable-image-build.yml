@@ -299,8 +299,26 @@ jobs:
           ignore-unfixed: true
           exit-code: 0
 
+      # Scanned everywhere, ENFORCED only where the push happens. On a pull
+      # request this step runs, prints its full verdict, and then does not fail
+      # the job.
+      #
+      # Say the consequence plainly, because three repos were surprised by it on
+      # 2026-10-02 (docs-site#66) and so was setec: a PR can go GREEN while this
+      # gate has said BLOCKED, and the first push to the default branch then fails
+      # on a verdict the PR already had. A caller comment that tells contributors
+      # "the PR proves the image gate" is wrong — it proves the image was scanned,
+      # not that it may be pushed.
+      #
+      # The action writes a blocking verdict to the run's step summary and raises
+      # a workflow annotation, both of which survive continue-on-error, so the
+      # verdict is visible on the PR even though CI stays green.
+      #
+      # Whether a PR should be RED for this is a policy question with estate-wide
+      # blast radius — an image that genuinely cannot be fixed (see the alpine
+      # secdb case) would wedge every PR in its repo — so it is left as it is and
+      # named here rather than changed quietly.
       - name: Block the push on a fixable vulnerability
-        # Scanned everywhere, enforced where the push happens.
         continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: zeroroot-ai/.github/actions/gate-image-vulns@76842051ca980d343fe51b131a8e345db7e2c6b7 # v0.10.0
         with:
@@ -423,6 +441,12 @@ jobs:
           echo "cosign attest failed after 4 attempts" >&2
           exit 1
 
+  # NOT A GATE, and the name invites the opposite reading. This job uploads SARIF
+  # and writes the findings table; it carries continue-on-error: true and skips
+  # outside tag and default-branch refs, so it has never blocked anything and does
+  # not run on a pull request at all. docs-site#66 read its `skipping` on a PR as
+  # the image gate being absent — the gate is the step above, in build-and-push,
+  # which DOES run on a PR.
   vuln-scan:
     name: Vulnerability scan
     needs: build-and-push
