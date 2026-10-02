@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/zeroroot-ai/.github/compare/v0.10.1...v0.10.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **pins:** v0.10.1 shipped with both gate actions stale, and the guard could not run ([#173](https://github.com/zeroroot-ai/.github/issues/173)) ([4195de5](https://github.com/zeroroot-ai/.github/commit/4195de564b76e5156de8fbb827c8b034fd1ae430))
+
 ## [0.10.1](https://github.com/zeroroot-ai/.github/compare/v0.10.0...v0.10.1) (2026-10-02)
 
 
