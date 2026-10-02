@@ -9,7 +9,11 @@ description: Refuse to push an image that has a fixable HIGH or CRITICAL vulnera
 # this workflow; the first two were spdx-from-license and verify-image-license.
 #
 # scripts/test-gate-image-vulns.sh holds the fixtures and runs offline against
-# crafted Trivy JSON — no docker, no network.
+# crafted Trivy JSON — no docker, no network. That is why the DECISION lives in
+# gate-image-vulns.sh and the govulncheck run lives in
+# collect-reachability.sh: the half that decides is fully testable offline, and
+# the half that needs docker and a vulnerability database is a thin producer of
+# the evidence file it reads.
 
 inputs:
   report:
@@ -19,11 +23,55 @@ inputs:
     description: "Comma-separated severities that block. Default HIGH,CRITICAL."
     required: false
     default: "HIGH,CRITICAL"
+  vendored-binaries:
+    description: >
+      Newline-separated paths, inside the image, of binaries this repo does NOT
+      compile. For these the gate asks REACHABILITY instead of staleness: it runs
+      govulncheck -mode=binary and blocks only on a finding whose affected symbol
+      is actually present.
+
+      This is not an allowlist. There are no per-CVE entries, nothing to expire
+      and nothing to re-pin, and a reachable finding still blocks. It exists
+      because a Go stdlib finding on a binary we cannot rebuild is a version
+      comparison with no remedy: gVisor ships every artifact built with the Go its
+      own go.mod names, so eleven fixable HIGH findings arrived that setec could
+      not act on in any way. A gate with no remedy is a wall.
+
+      An analysis that does not run BLOCKS. Leave this empty and the gate behaves
+      exactly as it did before.
+    required: false
+    default: ""
+  image:
+    description: >
+      The image ref to extract vendored binaries from. Required when
+      vendored-binaries is set; the image must already be loaded locally, which
+      it is at the point the scan runs.
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
     - shell: bash
+      env:
+        VENDORED: ${{ inputs.vendored-binaries }}
+        IMAGE: ${{ inputs.image }}
+        REPORT: ${{ inputs.report }}
+        SEVERITIES: ${{ inputs.severities }}
       run: |
+        set -euo pipefail
+        reachdir=""
+        # Read the paths from the environment, not from an interpolated argv: a
+        # path with a space would otherwise split into two arguments.
+        mapfile -t paths < <(printf '%s\n' "${VENDORED}" | sed '/^[[:space:]]*$/d')
+        if [ "${#paths[@]}" -gt 0 ]; then
+          if [ -z "${IMAGE}" ]; then
+            echo "::error::vendored-binaries is set but image is empty; the gate cannot extract a binary it was not told where to find"
+            exit 1
+          fi
+          reachdir="$(mktemp -d)"
+          bash "${{ github.action_path }}/collect-reachability.sh" \
+            "${IMAGE}" "$reachdir" "${paths[@]}"
+        fi
         bash "${{ github.action_path }}/gate-image-vulns.sh" \
-          "${{ inputs.report }}" "${{ inputs.severities }}"
+          "${REPORT}" "${SEVERITIES}" "$reachdir"
