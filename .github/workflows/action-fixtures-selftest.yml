@@ -1,0 +1,48 @@
+# Runs the action fixture suites that no workflow ran.
+#
+# scripts/ holds 17 test-*.sh suites. Fourteen were wired to a workflow and
+# three were not: test-gate-image-vulns.sh, test-spdx-from-license.sh, and
+# test-reachable-ids.sh as it was added. So those fixtures only ever ran when
+# somebody typed them, which makes them documentation rather than gates — and
+# test-gate-image-vulns.sh had just grown six new cases that had never executed
+# anywhere.
+#
+# These suites are offline by construction: crafted Trivy JSON, crafted
+# govulncheck JSON, no docker and no network. There is no reason for them not to
+# run on every PR that touches what they cover.
+#
+# A single job on purpose. The root cause is "a fixture suite with no runner",
+# and one root cause is one fix; a workflow per suite would be the same omission
+# waiting to happen a fourth time.
+name: action-fixtures-selftest
+on:
+  pull_request:
+    paths:
+      - 'actions/gate-image-vulns/**'
+      - 'actions/spdx-from-license/**'
+      - 'scripts/test-gate-image-vulns.sh'
+      - 'scripts/test-reachable-ids.sh'
+      - 'scripts/test-spdx-from-license.sh'
+      - '.github/workflows/action-fixtures-selftest.yml'
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  selftest:
+    name: action-fixtures-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Each suite prints its own case count and fails on a count below its
+      # floor, so a truncated or short-circuited harness cannot read as green.
+      - name: gate-image-vulns fixtures
+        run: bash scripts/test-gate-image-vulns.sh
+
+      - name: reachability extraction fixtures
+        run: bash scripts/test-reachable-ids.sh
+
+      - name: spdx-from-license fixtures
+        run: bash scripts/test-spdx-from-license.sh
