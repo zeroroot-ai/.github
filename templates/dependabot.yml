@@ -7,10 +7,10 @@
 
 version: 2
 updates:
-  # Go modules — covers gibson, sdk, ext-authz, tenant-operator, adk,
-  # gibson-tool-runner, spiffe-jwks-exporter, setec, platform-operator,
-  # platform-debug, debug-plugin, ast-checks, zda-ast, testharness,
-  # testfixtures (any repo with go.mod at root).
+  # Go modules — any repo with go.mod at the root. Verified 2026-10-02:
+  # gibson, sdk, setec, gibson-executor, billing, cve-triage, ast-checks,
+  # testfixtures, testharness. adk is a Go module too, rooted at gibson/
+  # rather than at the repo root, so it adapts the directory below.
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
