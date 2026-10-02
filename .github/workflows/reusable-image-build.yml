@@ -67,6 +67,25 @@ on:
         type: string
         default: "HIGH,CRITICAL"
         description: Comma-separated Trivy severities that fail the build.
+      vendored_binaries:
+        required: false
+        type: string
+        default: ""
+        description: >
+          Newline-separated paths, inside the image, of binaries this repo does
+          NOT compile. For these the vulnerability gate asks REACHABILITY instead
+          of staleness: it runs govulncheck -mode=binary and blocks only on a
+          finding whose affected symbol is actually present in the binary.
+
+          Not an allowlist. No per-CVE entries, nothing to expire, nothing to
+          re-pin, and a reachable finding still blocks. It exists because a Go
+          stdlib finding on a binary we cannot rebuild is a version comparison
+          with no remedy: gVisor publishes every artifact built with the Go its
+          own go.mod names, so eleven fixable HIGH findings reached setec with no
+          action available to it. A gate with no remedy is a wall.
+
+          An analysis that does not run BLOCKS. Leave this empty and the gate
+          behaves exactly as before.
       trivy_category:
         required: false
         type: string
@@ -283,10 +302,14 @@ jobs:
       - name: Block the push on a fixable vulnerability
         # Scanned everywhere, enforced where the push happens.
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/gate-image-vulns@e9a1f3a2fc975b386dc7604f4261ce0186d51320 # v0.5.0
+        uses: zeroroot-ai/.github/actions/gate-image-vulns@4fb065fae58dcf4c9adf8abc5ed22a24936c0d2b # v0.8.3
         with:
           report: gate-${{ inputs.component_name }}.json
           severities: ${{ inputs.trivy_severity }}
+          vendored-binaries: ${{ inputs.vendored_binaries }}
+          # The scan above ran against this same loaded ref, so the image the
+          # gate extracts from is the image that was judged.
+          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
       - id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
