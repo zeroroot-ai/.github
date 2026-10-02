@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.10.1](https://github.com/zeroroot-ai/.github/compare/v0.10.0...v0.10.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **deadcode-gate:** a library module has no main, and the gate should say that ([#169](https://github.com/zeroroot-ai/.github/issues/169)) ([ac04130](https://github.com/zeroroot-ai/.github/commit/ac0413062a17ca0dcc0e7356278bd80cbc230e55)), closes [#160](https://github.com/zeroroot-ai/.github/issues/160)
+* **gate-image-vulns:** a PR that said BLOCKED must not report green silently ([#170](https://github.com/zeroroot-ai/.github/issues/170)) ([f305ce5](https://github.com/zeroroot-ai/.github/commit/f305ce5956c3e89e3110459c78d0f3f0cd40ed16))
+* **pins:** the reusable ran the OLD gate action, and nothing asked for a re-pin ([#171](https://github.com/zeroroot-ai/.github/issues/171)) ([8d259b7](https://github.com/zeroroot-ai/.github/commit/8d259b7a1095e8f25a5cc7a7bf003d09406e7c07))
+
 ## [0.10.0](https://github.com/zeroroot-ai/.github/compare/v0.9.0...v0.10.0) (2026-10-02)
 
 
