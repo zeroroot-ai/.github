@@ -166,10 +166,42 @@ else
   fi
 fi
 
+# --- 9. a library module with no main says SO, not "could not analyse" ----------
+# Whole-program reachability needs an entry point. Without one deadcode exits
+# non-zero with "no main packages", which the generic analysis-failure message
+# would blame on the toolchain. It must still FAIL — a caller that switched the
+# input on asked for a gate it will not get — but the message has to send the
+# reader to unwired rather than to a version bump.
+mkdir -p "$tmp/libonly"
+cat > "$tmp/libonly/go.mod" <<'EOF'
+module libonly
+
+go 1.24
+EOF
+cat > "$tmp/libonly/lib.go" <<'EOF'
+package libonly
+
+// Exported is public API with no main to be reachable from.
+func Exported() string { return "x" }
+EOF
+if out="$(run_gate "$tmp/libonly")"; then
+  bad "a library module with no main passed, so the gate did nothing and said nothing"
+else
+  if printf '%s' "$out" | grep -q 'no main package, so whole-program reachability does'; then
+    if printf '%s' "$out" | grep -q 'unwired'; then
+      ok "a module with no main is named as such and pointed at unwired"
+    else
+      bad "the no-main message does not mention unwired: $out"
+    fi
+  else
+    bad "a module with no main got the generic analysis error instead of the specific one: $out"
+  fi
+fi
+
 echo
 echo "deadcode-gate selftest: ${pass} passed, ${fail} failed"
 # A FLOOR. A selftest that ran no case is the worst kind of green.
-if [ "$pass" -lt 8 ] && [ "$fail" -eq 0 ]; then
+if [ "$pass" -lt 9 ] && [ "$fail" -eq 0 ]; then
   echo "FAIL: only ${pass} case(s) ran; the harness is not exercising the gate" >&2
   exit 1
 fi

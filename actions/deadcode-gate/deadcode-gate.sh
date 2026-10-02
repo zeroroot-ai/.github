@@ -96,6 +96,42 @@ echo "deadcode-gate: running x/tools ${have} from ${bin}"
 # stdout. So the exit code is checked first and stderr is kept.
 err="$(mktemp)"
 out="$("$bin" ./... 2>"$err")" && rc=0 || rc=$?
+
+# "no main packages" is NOT an analysis failure, and conflating the two sends the
+# reader to the wrong place. Whole-program reachability needs a main to be
+# reachable FROM, so on a library module deadcode refuses and exits non-zero. The
+# generic message below would then blame the toolchain for a module that simply
+# has no entry point.
+#
+# Measured: a module with one package and no cmd/ main gives exactly
+# "deadcode: no main packages" on stderr and a non-zero exit.
+#
+# This still FAILS rather than passing, because a caller that switched the input
+# on has asked for a gate it is not going to get, and silently doing nothing is
+# how a gate becomes decorative. The message says what to do instead.
+if [ "$rc" -ne 0 ] && grep -q 'no main packages' "$err"; then
+  cat >&2 <<'MSG'
+deadcode-gate: this module has no main package, so whole-program reachability does
+not apply to it.
+
+deadcode answers "is this function reachable from a main". A library module has no
+main, so there is nothing to compute reachability from and the question is not
+meaningful here — this is not a toolchain or version problem.
+
+Turn the `deadcode` input OFF for this module and use the per-declaration reader
+instead, which does not need an entry point:
+
+  go run github.com/zeroroot-ai/ast-checks/cmd/unwired@latest -dir .     -baseline .unwired-baseline.txt
+
+ADR-0094 pairs the two deliberately: deadcode is the function-level floor for a
+module that builds a binary, and unwired answers "does production code read this
+declaration", which also sees struct fields. Only one of them applies to a
+library.
+MSG
+  rm -f "$err"
+  exit 1
+fi
+
 if [ "$rc" -ne 0 ]; then
   echo "deadcode-gate: deadcode could not analyse the module (exit ${rc})." >&2
   echo "The gate found NO dead code because it read no code. Do not read this as a pass." >&2
