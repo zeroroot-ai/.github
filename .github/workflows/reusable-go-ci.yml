@@ -71,6 +71,54 @@ on:
         type: string
         required: false
         default: ""
+      deadcode:
+        description: >
+          Run the whole-program dead-code gate (.github#159). OFF by default, so
+          this release changes no consumer's behaviour until it opts in. When on,
+          deadcode-version is required.
+
+          ADR-0094 keeps this as the function-level FLOOR underneath its
+          consumer-side gates, and it is NOT the same question as ast-checks'
+          `unwired` scanner: this answers "is this function reachable from a
+          main", which cannot see a struct field, and unwired answers "does
+          production code read this declaration", which can. Both are wanted.
+
+          Before this input, two Go repos of twelve had the gate and had each
+          hand-written the same job.
+        type: boolean
+        required: false
+        default: false
+      deadcode-version:
+        description: >
+          The golang.org/x/tools version to install cmd/deadcode from, e.g.
+          v0.50.0. Required when deadcode is true, and deliberately without a
+          default: the caller passes its Makefile's DEADCODE_VERSION so one pin
+          serves a developer's gate and CI's gate. A default here would let the
+          two drift, and installing @latest would change the gate's meaning
+          between runs with no commit.
+
+          The gate asserts the installed binary's own vendored x/tools version
+          equals this. A NEWER version fails too — the pin is the pin, not a
+          floor. adk#82 is why: PATH served an x/tools v0.44.0 deadcode from an
+          older toolchain's packages dir and the gate blamed the pin.
+        type: string
+        required: false
+        default: ""
+      deadcode-allowlist:
+        description: >
+          Path, relative to go-mod-path, of a dead-code allowlist. Entries are
+          keyed by the SYMBOL deadcode names, never by file and line: a guard
+          that needs re-pinning after an unrelated edit is a defect in the guard.
+
+          When empty, ANY unreachable function fails. When set, listed symbols
+          are tolerated, and an entry that no longer matches a real finding FAILS
+          the build — an exemption that outlives its reason is worse than none,
+          because it reads as reviewed. Same rule vuln-allowlist applies to
+          advisories. A path that does not exist fails as a wiring mistake,
+          rather than being read as an empty baseline that tolerates nothing.
+        type: string
+        required: false
+        default: ""
 permissions:
   contents: read
 
@@ -187,6 +235,16 @@ jobs:
           version: v2.14.0
           working-directory: ${{ inputs.go-mod-path }}
           args: --timeout=10m
+
+      # The dead-code floor (.github#159). On both tiers, so the gate is present
+      # on the run the required-checks gate actually reads.
+      - name: deadcode (whole-program reachability)
+        if: inputs.deadcode
+        uses: zeroroot-ai/.github/actions/deadcode-gate@34a4373847e143c71c3b24a7eeb4bad43bb3966a # v0.9.0
+        with:
+          version: ${{ inputs.deadcode-version }}
+          dir: ${{ inputs.go-mod-path || '.' }}
+          allowlist: ${{ inputs.deadcode-allowlist }}
 
       - name: go build (compile-check)
         if: ${{ inputs.tier == 'fast' }}
