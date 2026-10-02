@@ -7,7 +7,6 @@ name: tool-catalog-generator
 #   - CodeQL queries (qlpack.yml files)
 #   - Required CI checks (per-repo ruleset)
 #   - Make targets (build / test / check / etc.)
-#   - zda-ast subcommands (when the zda-ast CLI lands)
 #
 # Emits a consolidated docs/agents/tools.md as a workflow artifact. It
 # belongs in the internal docs tree, which is not a GitHub repository, so a
