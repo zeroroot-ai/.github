@@ -80,18 +80,37 @@ for path in "$@"; do
     continue
   fi
 
-  # Every OSV id govulncheck reported, plus its CVE/GHSA aliases, because the
-  # image scanner names CVEs and govulncheck names GO-YYYY-NNNN.
-  if ! printf '%s' "$out" | jq -r '
-        select(.osv != null)
-        | .osv
-        | ([.id] + (.aliases // []))[]
-      ' 2>/dev/null | LC_ALL=C sort -u > "${reachdir}/${sl}.reachable"; then
+  # The extraction lives in reachable-ids.jq so it can be tested without docker
+  # or a vulnerability database — scripts/test-reachable-ids.sh does exactly that.
+  # It was inline here first, and being inline is why it shipped untested: the
+  # collector around it needs the network, and the jq in the middle of it does not.
+  #
+  # What it got wrong: govulncheck streams an `osv` DEFINITION for every advisory
+  # it loads, and a `finding` only for what it actually found. Reading `.osv`
+  # returned the whole database — 350 ids per gVisor binary, 665 for kata's shim —
+  # so every finding looked reachable and nothing could ever be ruled out.
+  if ! printf '%s' "$out" | jq -r -n -f "$(dirname "$0")/reachable-ids.jq" 2>/dev/null \
+       | LC_ALL=C sort -u > "${reachdir}/${sl}.reachable"; then
     printf 'could not parse govulncheck JSON for %s\n' "$path" > "${reachdir}/${sl}.failed"
     echo "collect-reachability: unparseable govulncheck output for ${path}" >&2
     continue
   fi
 
   n=$(wc -l < "${reachdir}/${sl}.reachable" | tr -d ' ')
+  # A FLOOR ON PLAUSIBILITY. The first version of this returned the entire
+  # vulnerability database and reported "350 reachable advisory id(s)" with a
+  # straight face. A real binary reaches a handful. A set this large means the
+  # extraction is reading definitions again, and treating it as evidence would
+  # make every finding block for a reason unrelated to the binary.
+  if [ "$n" -gt 60 ]; then
+    {
+      printf 'implausible reachability result for %s: %s advisory ids\n' "$path" "$n"
+      printf 'That is the size of the advisory database, not of one binary.\n'
+      printf 'The extraction is almost certainly reading osv definitions instead of findings.\n'
+    } > "${reachdir}/${sl}.failed"
+    rm -f "${reachdir}/${sl}.reachable"
+    echo "collect-reachability: ${path}: ${n} ids is implausible; refusing to use it as evidence" >&2
+    continue
+  fi
   echo "collect-reachability: ${path}: ${n} reachable advisory id(s)"
 done
