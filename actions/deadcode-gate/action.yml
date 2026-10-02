@@ -1,0 +1,51 @@
+name: deadcode-gate
+description: Whole-program dead-code gate, minus a symbol-keyed allowlist
+
+# WHY THIS IS AN ACTION AND NOT A `run:` STEP
+#
+# A reusable workflow's `run:` steps execute in the CALLER's checkout, so a
+# script kept under this repo's scripts/ is simply not on disk when the step
+# runs. An action ships its own files. That has bitten this repo three times
+# already — spdx-from-license, verify-image-license, gate-image-vulns — and this
+# would have been the fourth: the first draft of this gate checked .github out a
+# second time, which also fetches `main` and so would have let the script drift
+# from the SHA-pinned workflow that calls it.
+#
+# scripts/test-deadcode-gate.sh holds the fixtures. It generates a throwaway Go
+# module per case, so no deliberately dead code is committed here.
+
+inputs:
+  version:
+    description: >
+      The golang.org/x/tools version to install cmd/deadcode from, e.g. v0.50.0.
+      Required, and deliberately without a default: the caller passes its
+      Makefile's DEADCODE_VERSION so one pin serves a developer's gate and CI's.
+      The gate asserts the installed binary's own vendored x/tools version equals
+      this. A NEWER version fails too — the pin is the pin, not a floor.
+    required: true
+  dir:
+    description: "Module root to analyse, relative to the workspace. Default: the workspace root."
+    required: false
+    default: "."
+  allowlist:
+    description: >
+      Path, relative to `dir`, of a dead-code allowlist keyed by the SYMBOL
+      deadcode names — never by file and line, because a guard that needs
+      re-pinning after an unrelated edit is a defect in the guard. When empty,
+      ANY unreachable function fails. An entry that no longer matches a real
+      finding FAILS: an exemption that outlives its reason reads as reviewed.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # `shell: bash` runs under -e, so a failure here fails the step without any
+    # extra plumbing. The script does its own argument validation.
+    - shell: bash
+      run: |
+        args=(--version "${{ inputs.version }}" --dir "${{ inputs.dir }}")
+        if [ -n "${{ inputs.allowlist }}" ]; then
+          args+=(--allowlist "${{ inputs.allowlist }}")
+        fi
+        bash "${{ github.action_path }}/deadcode-gate.sh" "${args[@]}"
