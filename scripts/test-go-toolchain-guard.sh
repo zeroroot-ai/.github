@@ -21,6 +21,15 @@ expect disagree 1 "golang:1.26.8-alpine" "the message names the fix"
 expect floating 1 "FROM golang:1.26-alpine AS builder" "floating minor tag fails"
 expect no-golang 0 "0 golang FROM line(s)" "Dockerfile without a golang image is ignored"
 expect arg-resolved 0 "1 golang FROM line(s) match" "\${ARG} tag resolves from the ARG default"
+
+# Rule 3 — .tool-versions, the third declaration site (.github#152). The
+# mismatch case is the one that matters: asdf resolves `go` from this file, and
+# when it names a version asdf lacks the shim prints its installed list and
+# exits WITHOUT running go, which reads as success to anything piping the tail.
+expect tv-agree 0 ".tool-versions golang 1.26.8 agrees" "agreeing .tool-versions is reported, not just silent"
+expect tv-mismatch 1 ".tool-versions: golang 1.26.4, go.mod" "a .tool-versions four patches behind go.mod fails"
+expect tv-mismatch 1 "exits WITHOUT running" "the message explains why a silent shim is the real risk"
+expect agree 0 "no .tool-versions (optional)" "a repo with no .tool-versions is not a finding"
 expect arg-unresolved 1 "no \`ARG GO_VERSION=<default>\`" "unresolvable \${ARG} tag fails"
 expect no-toolchain-local 1 "no \`ARG GOTOOLCHAIN=local\`" "golang stage without GOTOOLCHAIN=local fails"
 expect toolchain-line 0 "match go 1.26.8" "toolchain directive wins over the go directive"

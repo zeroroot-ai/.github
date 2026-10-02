@@ -17,6 +17,24 @@
 #      `ARG GOTOOLCHAIN=local` so a mismatch fails the build instead of
 #      downloading a toolchain (the reusable image build passes the same
 #      value as a build-arg when the caller sets go_toolchain_local).
+#   3. `.tool-versions`, when present, names the same Go as go.mod. This is
+#      the third declaration site and was unguarded (.github#152): two repos
+#      declared a Go four patch versions behind their own go.mod.
+#
+#      It matters more than a tidiness mismatch, because the failure is silent
+#      in the reassuring direction. `.tool-versions` is what asdf resolves, and
+#      when it names a version asdf has not installed the `go` shim prints the
+#      list of versions it DOES have and exits without running go:
+#
+#          golang 1.25.9
+#          golang 1.26.4
+#          golang 1.26.8
+#          BUILD=0        <- from the pipe, not from go
+#
+#      Anything reading the tail of that cannot tell it from success. The same
+#      shim defeats `gofmt`, `cue` and `deadcode` the same way. A repo with no
+#      `.tool-versions` is not a finding: the file is optional and its absence
+#      means nothing is claiming a version.
 #
 #   check-go-toolchain.sh [--go-mod go.mod] [--root .]   exit 1 on any hit
 set -euo pipefail
@@ -74,8 +92,29 @@ for f in "${files[@]}"; do
   fi
 done
 
+# Rule 3 — .tool-versions, the third declaration site.
+# Plain ".tool-versions": the script cd'd into $ROOT above, so prefixing $ROOT
+# again would look for it inside itself. The fixture caught exactly that.
+tv=".tool-versions"
+tv_note="no .tool-versions (optional)"
+if [ -f "$tv" ]; then
+  tv_go=$(awk '$1=="golang"{print $2; exit}' "$tv")
+  if [ -z "$tv_go" ]; then
+    tv_note=".tool-versions has no golang line"
+  elif [ "$tv_go" != "$want" ]; then
+    echo "❌ .tool-versions: golang ${tv_go}, go.mod ($GO_MOD) names ${want}"
+    echo "   asdf resolves \`go\` from .tool-versions. When it names a version asdf has"
+    echo "   not installed, the shim prints its installed list and exits WITHOUT running"
+    echo "   go — which reads as success to anything that pipes the tail. Set it to ${want}."
+    hits=$((hits+1))
+    tv_note=".tool-versions MISMATCH"
+  else
+    tv_note=".tool-versions golang ${tv_go} agrees"
+  fi
+fi
+
 if [ "$hits" -gt 0 ]; then
   echo "❌ go toolchain guard: ${hits} problem(s); go.mod names go ${want}"
   exit 1
 fi
-echo "✅ go toolchain guard: ${checked} golang FROM line(s) match go ${want}"
+echo "✅ go toolchain guard: ${checked} golang FROM line(s) match go ${want}; ${tv_note}"
