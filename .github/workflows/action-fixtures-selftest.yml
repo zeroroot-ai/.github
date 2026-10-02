@@ -15,19 +15,26 @@
 # and one root cause is one fix; a workflow per suite would be the same omission
 # waiting to happen a fourth time.
 name: action-fixtures-selftest
+#
+# NO `paths:` FILTER, on purpose.
+#
+# The pin check below detects a condition that a RELEASE creates, not a file
+# edit: the moment a tag moves, every pin to the previous SHA is stale. The
+# release PR touches CHANGELOG.md and .release-please-manifest.json and nothing
+# else, so a path filter guaranteed the one check that would have caught the
+# staleness could not run at the moment it started. v0.10.1 was cut with both
+# actions stale and this workflow stayed green by never running.
+#
+# The schedule is the second half. With no PR open, a repo can sit on a stale
+# pin indefinitely, and the consumers are reading the reusable from `main`.
+#
+# The cost of dropping the filter is seconds: every suite here is offline by
+# construction, no docker and no network.
 on:
   pull_request:
-    paths:
-      - 'actions/gate-image-vulns/**'
-      - 'actions/spdx-from-license/**'
-      - 'scripts/test-gate-image-vulns.sh'
-      - 'scripts/test-reachable-ids.sh'
-      - 'scripts/test-spdx-from-license.sh'
-      - 'scripts/check-action-pins-are-current.sh'
-      - '.github/workflows/reusable-image-build.yml'
-      - '.github/workflows/reusable-go-ci.yml'
-      - '.github/workflows/action-fixtures-selftest.yml'
   merge_group:
+  schedule:
+    - cron: '17 6 * * *'
   workflow_dispatch:
 permissions:
   contents: read
