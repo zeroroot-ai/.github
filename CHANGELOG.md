@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/zeroroot-ai/.github/compare/v0.9.0...v0.10.0) (2026-10-02)
+
+
+### Features
+
+* **reusable-go-ci:** a deadcode input, so twelve Go repos stop hand-writing it ([#166](https://github.com/zeroroot-ai/.github/issues/166)) ([af1d900](https://github.com/zeroroot-ai/.github/commit/af1d900d086da7b4a000fccf3ddf66e2d4714754)), closes [#159](https://github.com/zeroroot-ai/.github/issues/159)
+
+
+### Bug Fixes
+
+* **gate-image-vulns:** reachability must read findings, not advisory definitions ([#168](https://github.com/zeroroot-ai/.github/issues/168)) ([4666d97](https://github.com/zeroroot-ai/.github/commit/4666d97a99a44f884b7d71505061edb95bb81ddb))
+
 ## [0.9.0](https://github.com/zeroroot-ai/.github/compare/v0.8.3...v0.9.0) (2026-10-02)
 
 
