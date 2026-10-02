@@ -1,0 +1,38 @@
+# Self-test for the actions/deadcode-gate composite action (.github#159).
+#
+# WHY A SEPARATE WORKFLOW: the action is called by reusable-go-ci.yml, which is
+# `workflow_call:` only, so nothing in this repo exercises the gate. Same reason gitleaks-gate-selftest.yml
+# exists. scripts/test-deadcode-gate.sh generates a fixture module per case and
+# proves the gate can fail: a planted unreachable function must exit 1, a clean
+# module must exit 0, a stale allowlist entry must fail, and an analysis error
+# must NOT read as "no dead code". No deliberately dead code is committed here —
+# every fixture is written at run time.
+#
+# "Every new guard ships with a failing fixture in the same PR. A guard that
+# cannot fail is worse than no guard."
+name: deadcode-gate-selftest
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/deadcode-gate-selftest.yml'
+      - 'actions/deadcode-gate/**'
+      - 'scripts/test-deadcode-gate.sh'
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  selftest:
+    name: deadcode-gate-selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27.1'
+          cache: false
+
+      - name: Assert the shipped gate can fail, and passes a clean module
+        run: bash scripts/test-deadcode-gate.sh
