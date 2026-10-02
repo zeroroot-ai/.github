@@ -8,15 +8,34 @@
 # Read actions/link-check/action.yml for the flags that are not settable from
 # a configuration file.
 
-# Fail on any 4xx or 5xx except these two.
+# Fail on any 4xx or 5xx except these three.
 #   429  the host is rate-limiting the runner, which says nothing about the link
 #   403  what github.com returns to an unauthenticated caller it is throttling.
 #        lychee cannot scope an accepted code to one host, so 403 is accepted
 #        everywhere. The action passes GITHUB_TOKEN, so real github.com links
 #        are resolved through the API rather than by an anonymous fetch.
-accept = ["200..=299", "403", "429"]
+#   503  the server is up and declining to serve right now, which is the same
+#        statement about the link as 429: none. gibson-executor's main went red
+#        on a single
+#          [503] https://github.com/zeroroot-ai/.github/blob/main/AGENTS.md
+#        a URL that plainly exists. max_retries below had already spent its
+#        three attempts inside the window.
+#
+#        This does not hide a dead host. A host that is gone fails DNS
+#        resolution or refuses the connection; returning 503 requires a live
+#        server. A link that is actually dead returns 404 or 410, and both
+#        still fail.
+#
+#        It matters more than a one-off annoyance because `link-check` is a
+#        REQUIRED status check in every repo's ruleset: a GitHub blip during a
+#        pull-request run does not just add noise, it blocks the merge.
+accept = ["200..=299", "403", "429", "503"]
 
-# A flaky host gets three chances before it fails a pull request.
+# A flaky host gets three chances before it fails a pull request. Three attempts
+# a second apart ride out very little, which is why the 503 accept above is the
+# actual fix rather than a larger retry budget: `retry_wait_time` is not a key I
+# could confirm lychee v0.24.2 reads from this file, and a setting that may be
+# silently ignored is worse than no setting, because it reads as protection.
 max_retries = 3
 
 exclude_loopback = true
