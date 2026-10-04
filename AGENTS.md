@@ -129,6 +129,11 @@ You do not cut releases by hand. The release tool runs on every push to `main`.
 It opens a release pull request that bumps the version and writes the changelog.
 Merging that pull request creates the tag and fires the image build.
 
+The session that needs the tag merges the release pull request, when its checks
+are green. The merge-queue rule of §4 applies to it like any other pull
+request. A red release pull request gets a root cause, never a rerun. Do not
+wait for the owner to merge it.
+
 Every repository is pre-1.0. Each `release-please-config.json` sets
 `bump-minor-pre-major: true`, so a `feat!:` or `BREAKING CHANGE:` commit bumps
 the minor version, not the major. Use the breaking-change form freely for
