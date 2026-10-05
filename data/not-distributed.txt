@@ -6,17 +6,23 @@
 # www.zeroroot.ai. `testharness` and the two CodeQL query packs joined the row
 # on 2026-09-06 (ADR-0089, third amendment).
 #
-# The open-source readiness section skips every repo named here. It has to: a
-# repo that is never published cannot pass a publication gate, and a rule that
-# cannot be satisfied gets ignored, taking the real signal with it. They keep an
-# explicit all-rights-reserved notice, which is the correct license for a repo
-# that is not distributed — so the license gate would fail them forever.
+# `docs` joined on 2026-10-05: it holds the ADRs and the internal documents,
+# and its license is all rights reserved (ADR-0089).
 #
-# Adding a name here is a decision, not a cleanup. It removes a repo from the
-# board's view.
+# The link check is the one consumer of this file. actions/link-check/
+# check-org-refs.sh reads it to tell a public repository that it links to a
+# repository its readers cannot open, and actions/link-check/lychee.toml
+# excludes the same names. `check-org-refs.sh --check-policy` fails when the
+# two disagree.
+#
+# A repo named here keeps an explicit all-rights-reserved notice, which is the
+# correct license for a repo that is not distributed.
+#
+# Adding a name here is a decision, not a cleanup.
 hosted
 billing
 www
 testharness
 codeql-go-queries
 codeql-ts-queries
+docs
