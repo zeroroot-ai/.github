@@ -1,0 +1,168 @@
+# Reusable workflow: the one CodeQL scan of the organization.
+#
+# CodeQL is the only tool in CI that follows data flow through the code
+# (ADR-0018). Each repo calls this workflow, so each repo runs one suite and
+# one set of custom queries (D38, .github#213).
+#
+#   - The suite is `security-extended`.
+#   - A `go` scan also runs the two Go queries of actions/codeql-queries.
+#   - A `javascript-typescript` scan also runs the four TypeScript queries.
+#   - Any other language runs the suite only.
+#
+# Called by a repo workflow:
+#
+#   jobs:
+#     codeql:
+#       permissions:
+#         actions: read
+#         contents: read
+#         security-events: write
+#       uses: zeroroot-ai/.github/.github/workflows/reusable-codeql.yml@<sha> # vX.Y.Z
+#       with:
+#         languages: '["go"]'
+#
+# The caller decides the triggers. A private repo with no code scanning sets
+# `upload: never`, and reads the result from the artifact.
+#
+# Check names: `CodeQL (<language>)`, one for each language.
+
+name: reusable-codeql
+
+on:
+  workflow_call:
+    inputs:
+      languages:
+        description: >-
+          JSON list of CodeQL languages, for example '["go"]' or
+          '["javascript-typescript","actions"]'.
+        type: string
+        required: true
+      go-version-file:
+        description: "File that states the Go version, for a go scan"
+        type: string
+        required: false
+        default: go.mod
+      go-build-command:
+        description: >-
+          Build command for a go scan. Empty means that CodeQL finds the build
+          by itself.
+        type: string
+        required: false
+        default: ""
+      paths-ignore:
+        description: "Paths that the scan ignores, one glob for each line"
+        type: string
+        required: false
+        default: ""
+      upload:
+        description: "always sends the result to code scanning, never keeps it in the artifact only"
+        type: string
+        required: false
+        default: always
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(inputs.languages) }}
+    env:
+      # A pipe, not a comma. With a comma, one transport error of the proxy
+      # is fatal. With a pipe, Go gets that module from its origin, and the
+      # checksum database still verifies it.
+      GOPROXY: https://proxy.golang.org|direct
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.language == 'go'
+        with:
+          go-version-file: ${{ inputs.go-version-file }}
+          cache: true
+
+      # Copies the custom queries of the language into the workspace. The
+      # output is empty for a language with no custom query.
+      - name: Get the custom queries
+        id: queries
+        uses: zeroroot-ai/.github/actions/codeql-queries@__PIN__
+        with:
+          language: ${{ matrix.language }}
+
+      # One config for each repo: the suite, the custom queries, and the
+      # ignored paths of the caller. No repo keeps a CodeQL config file.
+      - name: Write the CodeQL config
+        id: config
+        env:
+          QUERIES: ${{ steps.queries.outputs.queries }}
+          PACK: ${{ steps.queries.outputs.pack }}
+          PATHS_IGNORE: ${{ inputs.paths-ignore }}
+        run: |
+          set -euo pipefail
+          cfg="$RUNNER_TEMP/codeql-config.yml"
+          {
+            echo 'name: zeroroot-ai shared CodeQL config'
+            echo 'queries:'
+            echo '  - uses: security-extended'
+            if [ -n "$QUERIES" ]; then echo "  - uses: $QUERIES"; fi
+            if [ -n "$PACK" ] || [ -n "$PATHS_IGNORE" ]; then echo 'paths-ignore:'; fi
+            if [ -n "$PACK" ]; then echo "  - '${PACK#./}'"; fi
+            while IFS= read -r line; do
+              line="${line#"${line%%[![:space:]]*}"}"
+              line="${line%"${line##*[![:space:]]}"}"
+              [ -z "$line" ] && continue
+              case "$line" in *"'"*) echo "::error::a path in paths-ignore holds a quote: $line"; exit 1 ;; esac
+              echo "  - '$line'"
+            done <<<"$PATHS_IGNORE"
+          } > "$cfg"
+          echo "path=$cfg" >> "$GITHUB_OUTPUT"
+          echo "The scan uses this config:"
+          cat "$cfg"
+
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        id: init
+        with:
+          languages: ${{ matrix.language }}
+          config-file: ${{ steps.config.outputs.path }}
+          build-mode: ${{ matrix.language == 'go' && (inputs.go-build-command != '' && 'manual' || 'autobuild') || 'none' }}
+
+      # The pack has a lock file. This step gets the library versions that
+      # the lock file states, so each repo compiles the queries the same way.
+      - name: Install the dependencies of the custom queries
+        if: steps.queries.outputs.pack != ''
+        env:
+          CODEQL: ${{ steps.init.outputs.codeql-path }}
+          PACK: ${{ steps.queries.outputs.pack }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"$CODEQL" pack install "$PACK"'
+
+      - name: Build
+        if: matrix.language == 'go' && inputs.go-build-command != ''
+        env:
+          BUILD: ${{ inputs.go-build-command }}
+        run: bash -euo pipefail -c "$BUILD"
+
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}
+          upload: ${{ inputs.upload }}
+          output: codeql-results
+
+      # The result as a file. A repo with `upload: never` reads it here, and
+      # codeql-shared-selftest.yml asserts on it.
+      - name: Keep the result as an artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: codeql-results
+          if-no-files-found: warn

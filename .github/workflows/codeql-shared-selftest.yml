@@ -1,0 +1,81 @@
+# Proves that reusable-codeql.yml loads the custom queries.
+#
+# codeql-queries-selftest.yml proves that each query flags its fixture when
+# the CodeQL CLI runs it directly. This workflow proves the other half: a scan
+# through the SHARED workflow runs the same queries. It scans this repo, whose
+# only Go and TypeScript code is the fixtures of the queries, and then reads
+# the result file. Each of the six rule ids must have a result.
+#
+# The scan uses `upload: never`. The fixtures are wrong on purpose, and their
+# findings do not belong in the Security tab of this repo.
+name: codeql-shared-selftest
+
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-shared-selftest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/reusable-codeql.yml
+    with:
+      languages: '["go","javascript-typescript"]'
+      go-version-file: actions/codeql-queries/go/tests/SecretToLog/go.mod
+      go-build-command: |
+        (cd actions/codeql-queries/go/tests/SecretToLog && go build ./...)
+        (cd actions/codeql-queries/go/tests/RawErrorToGrpcStatus && go build -mod=vendor ./...)
+      upload: never
+
+  assert:
+    name: codeql-shared-selftest
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: codeql-sarif-*
+          path: sarif
+
+      - name: Each custom query has a result on its fixture
+        run: |
+          set -euo pipefail
+          fail=0
+          check() {
+            local lang=$1; shift
+            local file
+            file=$(find "sarif/codeql-sarif-$lang" -name '*.sarif' | head -1)
+            if [ -z "$file" ]; then echo "::error::no result file for $lang"; exit 1; fi
+            for rule in "$@"; do
+              n=$(jq --arg r "$rule" '[.runs[].results[] | select(.ruleId == $r)] | length' "$file")
+              if [ "$n" -lt 1 ]; then
+                echo "::error::$lang: the rule $rule has no result. The shared workflow did not run it, or it flags nothing."
+                fail=1
+              else
+                echo "$lang: $rule has $n result(s)"
+              fi
+            done
+            # A rule of the suite must be in the run too, or the suite did not load.
+            total=$(jq '[.runs[].tool.driver.rules[]?, .runs[].tool.extensions[]?.rules[]?] | length' "$file")
+            if [ "$total" -lt 20 ]; then
+              echo "::error::$lang: the run holds $total rules. The suite security-extended did not load."
+              fail=1
+            else
+              echo "$lang: the run holds $total rules"
+            fi
+          }
+          check go zeroroot-ai/raw-error-to-grpc-status zeroroot-ai/secret-to-log
+          check javascript-typescript zeroroot-ai/server-action-no-zod zeroroot-ai/server-only-secret-to-client \
+            zeroroot-ai/session-token-to-client zeroroot-ai/xss-without-sanitize
+          exit "$fail"
