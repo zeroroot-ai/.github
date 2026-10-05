@@ -186,8 +186,8 @@ jobs:
       # Dockerfile styles at the cost of a few seconds. amd64-only callers
       # (the default) are untouched.
       - if: inputs.platforms != 'linux/amd64'
-        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
@@ -201,7 +201,7 @@ jobs:
       # procurement filter both read that as "unlicensed", which is a worse
       # answer than the truth and is not one anybody chose.
       - id: license
-        uses: zeroroot-ai/.github/actions/spdx-from-license@76842051ca980d343fe51b131a8e345db7e2c6b7 # v0.10.0
+        uses: zeroroot-ai/.github/actions/spdx-from-license@eaa991cb73a79080f5ce1223b2f5332c47e02c70 # v0.10.5
         with:
           path: ${{ inputs.component_path }}
       - id: meta
@@ -267,7 +267,7 @@ jobs:
       # not the docker one, and this build exists only to be scanned. The push
       # below is a cache hit that re-does it properly with both attestations.
       - id: build-local
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs.component_path }}
           file: ${{ inputs.dockerfile_path }}
@@ -320,7 +320,7 @@ jobs:
       # named here rather than changed quietly.
       - name: Block the push on a fixable vulnerability
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/gate-image-vulns@bb464955a3f949898f6b7ef8e576a20e04302302 # v0.10.4
+        uses: zeroroot-ai/.github/actions/gate-image-vulns@eaa991cb73a79080f5ce1223b2f5332c47e02c70 # v0.10.5
         with:
           report: gate-${{ inputs.component_name }}.json
           severities: ${{ inputs.trivy_severity }}
@@ -330,7 +330,7 @@ jobs:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
 
       - id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ inputs.component_path }}
           file: ${{ inputs.dockerfile_path }}
@@ -356,7 +356,7 @@ jobs:
       # is no pushed reference to inspect.
       - name: The image carries its license text
         if: ${{ github.event_name != 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/verify-image-license@76842051ca980d343fe51b131a8e345db7e2c6b7 # v0.10.0
+        uses: zeroroot-ai/.github/actions/verify-image-license@eaa991cb73a79080f5ce1223b2f5332c47e02c70 # v0.10.5
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
       - if: github.event_name != 'pull_request'
@@ -393,7 +393,7 @@ jobs:
           exit 1
       - if: github.event_name != 'pull_request'
         name: Install syft (SBOM generator)
-        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - if: github.event_name != 'pull_request'
         name: Generate SBOM via syft + attest with cosign
         run: |

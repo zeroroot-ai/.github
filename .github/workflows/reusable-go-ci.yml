@@ -239,7 +239,7 @@ jobs:
       # on the run the required-checks gate actually reads.
       - name: deadcode (whole-program reachability)
         if: inputs.deadcode
-        uses: zeroroot-ai/.github/actions/deadcode-gate@77275736f7508b8edb4b5594e446ba93be368681 # v0.10.1
+        uses: zeroroot-ai/.github/actions/deadcode-gate@eaa991cb73a79080f5ce1223b2f5332c47e02c70 # v0.10.5
         with:
           version: ${{ inputs.deadcode-version }}
           dir: ${{ inputs.go-mod-path || '.' }}
