@@ -69,6 +69,11 @@ jobs:
       # never ran and the gate reported 350 reachable advisory ids per binary.
       #
       # Needs tags, hence fetch-depth 0 and fetch-tags on the checkout above.
+      # The lint in workflow-lint.yml is inline, so the fixture extracts the
+      # shipped blocks and runs them against failing workflows (setec#147).
+      - name: workflow-lint fixtures
+        run: bash scripts/test-workflow-lint.sh
+
       - name: action pins are current with the latest release
         run: bash scripts/check-action-pins-are-current.sh
 

@@ -1,0 +1,87 @@
+# Reusable workflow: every workflow file in the calling repository is a valid
+# workflow, checked with actionlint before it merges.
+#
+# WHY THIS EXISTS
+#
+# A workflow can be valid YAML and an invalid workflow, and nothing rejects it
+# when it is written, reviewed or merged. Measured cases in this org:
+#
+#   * setec e2e.yml read `steps.kata.outputs.version` after the step was renamed
+#     to `pins`. A reference to a step that does not exist is not an error to
+#     GitHub. It is an empty string. The nightly e2e suites failed three nights
+#     on "KATA_VERSION is empty" (setec#147).
+#   * charts exit-test-published-install.yml used the `runner` context at job
+#     level. Two runs failed at dispatch with zero jobs and no log to open.
+#
+# charts and hosted each carry a copy of scripts/check-workflows.sh for this.
+# A third copy in setec would be the same mistake. This is the one place.
+#
+# WHAT IT CHECKS
+#
+# actionlint's own rules: expressions, contexts, step and job references,
+# matrix keys, `needs`, inputs and secrets of reusable workflows, event
+# filters. shellcheck and pyflakes are switched off. They report style in
+# `run:` blocks, which is a different question with hundreds of answers, and a
+# gate that starts red in every repository gets switched off.
+#
+# The one runner label that is not GitHub-hosted is the org's ephemeral ARC
+# scale-set (`*-ephemeral`, ADR-0060, enforced by runs-on-lint.yml), so it is
+# declared here once and no consumer needs a config file.
+#
+# Called by per-repo workflows via:
+#   uses: zeroroot-ai/.github/.github/workflows/workflow-lint.yml@<sha> # vX.Y.Z
+#
+# Required check name: workflow-lint
+
+name: workflow-lint
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-lint:
+    name: workflow-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The CALLER's tree. This is what gets linted.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Lint every workflow file
+        # DELIBERATELY INLINE, for the reason runs-on-lint.yml gives: a reusable
+        # workflow's checkout fetches the caller, so this repo's scripts/ are
+        # not on disk here. Inline, the logic travels with the pinned sha.
+        # scripts/test-workflow-lint.sh extracts the two blocks below out of
+        # this file and runs them against failing fixtures, so the tested thing
+        # and the shipped thing are the same bytes.
+        #
+        # No GitHub expression may appear inside this run: block, not even in a
+        # comment. Actions interpolates it there and the whole file is invalid.
+        run: |
+          set -euo pipefail
+          # BEGIN-INSTALL (extracted by scripts/test-workflow-lint.sh)
+          ACTIONLINT_VERSION=1.7.12
+          ACTIONLINT_SHA256=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          tools="${RUNNER_TEMP}/workflow-lint"
+          mkdir -p "$tools"
+          curl -fsSL --retry 3 -o "$tools/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $tools/actionlint.tar.gz" | sha256sum -c - >/dev/null
+          tar -xzf "$tools/actionlint.tar.gz" -C "$tools" actionlint
+          printf '%s\n' 'self-hosted-runner:' '  labels:' '    - "*-ephemeral"' > "$tools/actionlint.yaml"
+          # END-INSTALL
+          # BEGIN-LINT (extracted by scripts/test-workflow-lint.sh)
+          count="$(find .github/workflows -maxdepth 1 \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | wc -l)"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::no workflow file under .github/workflows, so this run linted nothing"
+            exit 1
+          fi
+          if ! "$tools/actionlint" -config-file "$tools/actionlint.yaml" -shellcheck= -pyflakes=; then
+            echo "::error::a workflow file is not a valid workflow. GitHub does not reject these when they merge: it fails the run later, or evaluates the bad reference to an empty string."
+            exit 1
+          fi
+          echo "OK: $count workflow file(s) are valid workflows."
+          # END-LINT
