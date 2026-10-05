@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/zeroroot-ai/.github/compare/v0.11.0...v0.12.0) (2026-10-05)
+
+
+### Features
+
+* **workflow-lint:** one workflow lint for every repo ([#186](https://github.com/zeroroot-ai/.github/issues/186)) ([767302c](https://github.com/zeroroot-ai/.github/commit/767302c65bb0600d58394a61768e7e0df356865e)), closes [#185](https://github.com/zeroroot-ai/.github/issues/185)
+
 ## [0.11.0](https://github.com/zeroroot-ai/.github/compare/v0.10.5...v0.11.0) (2026-10-04)
 
 
