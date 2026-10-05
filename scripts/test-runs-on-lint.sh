@@ -48,7 +48,7 @@ expect allow  '${{ inputs.env }}-ephemeral'
 expect allow  '${{ matrix.env }}-ephemeral'
 
 echo "== forbidden =="
-# The three persistent runners ADR-0060 removed must never come back.
+# The three removed persistent runners must never come back.
 expect reject 'self-hosted'
 expect reject 'workstation-setec-kvm'
 expect reject 'ec2-kind-standup'

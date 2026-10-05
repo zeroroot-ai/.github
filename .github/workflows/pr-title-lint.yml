@@ -50,7 +50,7 @@ jobs:
             didn't match the conventional commits subject pattern. Please ensure
             the subject does not start with an uppercase character.
       # The body must not close an issue with the bare `repo#N` form, which
-      # GitHub ignores (.github#306, deploy ADR-0012): the PR merges and the
+      # GitHub ignores (.github#306, ADR-0080): the PR merges and the
       # issue stays open. The check proves it can fail first.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:

@@ -25,12 +25,9 @@ This file is the per-repo addendum. Workspace-wide concerns live in the workspac
 
 ## Gotchas
 
-<!-- Repo-specific traps. Cross-link to docs/agents/traps.md entries via `// trap: T<NNNN>` references. -->
+<!-- Repo-specific traps. -->
 
 ## Links
 
 - Org-level workflow: [`AGENTS.md`](https://github.com/zeroroot-ai/.github/blob/main/AGENTS.md)
 - Workspace map: workspace `CLAUDE.md`
-- Per-repo ADRs: ``docs/repos/<repo>/adr/`` (local docs → `repos`)
-- Domain glossary: ``docs/glossary.md`` (local docs → `glossary.md`)
-- PR checklist: ``docs/agents/pr-checklist.md`` (local docs → `agents/pr-checklist.md`)

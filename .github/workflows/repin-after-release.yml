@@ -21,7 +21,7 @@
 # re-pin PR opens itself the moment the tag exists.
 #
 # It does NOT push to main. It opens a pull request, which goes through the merge
-# gate like anything else (ADR-0012).
+# gate like anything else (ADR-0080).
 #
 # The second release is unavoidable, not an oversight. A pin to the commit a tag
 # points at can only be written after that commit exists, so the shape is always

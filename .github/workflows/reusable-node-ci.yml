@@ -1,8 +1,7 @@
 name: Reusable Node CI (tiered)
 
 # Canonical three-tier Node/pnpm CI for every Node repo in the workspace.
-# Epic: cicd-efficiency (board #44), slice S11a (dashboard#940). See
-# docs/architecture/CICD-CONTEXT.md decisions 4/8/11 and docs/adr/0060-*.
+# Epic: cicd-efficiency (board #44), slice S11a (dashboard#940).
 # Mirrors reusable-go-ci.yml's tier split 1:1 -- same rationale applies
 # (per-push double-firing of the full suite on both `pull_request` and
 # `push:main` was the dominant per-repo minute cost).
@@ -28,7 +27,7 @@ name: Reusable Node CI (tiered)
 #                                 standalone re-run would just repeat work
 #                                 the build already did.)
 #
-# Callers pin a RELEASE TAG, never @main (ADR-0060 blast-radius):
+# Callers pin a RELEASE TAG, never @main (blast-radius):
 #   uses: zeroroot-ai/.github/.github/workflows/reusable-node-ci.yml@v2
 #
 # CALLER PERMISSIONS CONTRACT: the node-ci job requests `contents: read`.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-pr-body-closer.sh — fail a PR body that closes an issue with the one
-# form GitHub ignores (ADR-0012 "the release loop", § Sign-off merge).
+# form GitHub ignores (ADR-0080 "the release loop", § Sign-off merge).
 #
 # GitHub honours `Closes #N` (same repo) and `Closes owner/repo#N` or the full
 # issue URL (cross-repo). It silently ignores the bare `Closes repo#N`, so the

@@ -6,7 +6,7 @@ name: Reusable version fan-out
 # rewrites every consumer key to the source value, and opens or updates ONE
 # PR per consumer repo (scripts/version-fanout.py). A rerun for the same value
 # edits the PR in place. Auto-merge is never armed: the consumer PR goes
-# through its own merge gate and sign-off (ADR-0012).
+# through its own merge gate and sign-off (ADR-0080).
 #
 # Caller shape (zitadel-login image.yml, after the publish job):
 #
