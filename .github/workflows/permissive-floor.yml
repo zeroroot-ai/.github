@@ -1,0 +1,101 @@
+# Reusable workflow: a permissive (Apache-2.0) repository does not depend on a
+# restrictive first-party repository.
+#
+# WHY THIS EXISTS
+#
+# ADR-0089: "A permissive repo must not depend on a restrictive repo." A
+# permissive repo with a restrictive dependency makes its own license false
+# for its users. The only check of this rule was a script in gibson that
+# clones the Apache repos once a week, so a bad requirement in sdk, adk or
+# setec could merge and stay hidden for seven days (sdk#193, adk#121,
+# setec#163). This runs on the pull request that adds the requirement.
+#
+# THE RULE
+#
+# Default deny. Every go.mod in the calling repository may require a
+# first-party module (github.com/zeroroot-ai/<repo>) only when <repo> is on the
+# permissive floor: sdk, adk, setec, ast-checks. Every other first-party repo
+# is Elastic License 2.0 or closed, and a new repo is restrictive until
+# ADR-0089 says otherwise, so the list here is the short one.
+#
+# The match is the exact repository name. `gibson` as a prefix also names
+# gibson-executor, and both are restrictive, but a rule that is right by
+# accident is not a rule.
+#
+# go.mod lists every direct and indirect requirement (graph pruning, Go 1.17
+# and later), so reading the require lines is exact and needs no Go toolchain
+# and no checkout of any other repository.
+#
+# Called by per-repo workflows via:
+#   uses: zeroroot-ai/.github/.github/workflows/permissive-floor.yml@<sha> # vX.Y.Z
+#
+# Required check name: permissive-floor
+
+name: permissive-floor
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  permissive-floor:
+    name: permissive-floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The CALLER's tree. This is what gets checked.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: No go.mod requires a restrictive first-party module
+        # DELIBERATELY INLINE, for the reason runs-on-lint.yml gives: a reusable
+        # workflow's checkout fetches the caller, so this repo's scripts/ are
+        # not on disk here. scripts/test-permissive-floor.sh extracts the block
+        # below out of this file and runs it against failing fixtures.
+        #
+        # No GitHub expression may appear inside this run: block, not even in a
+        # comment. Actions interpolates it there and the whole file is invalid.
+        run: |
+          set -euo pipefail
+          # BEGIN-CHECK (extracted by scripts/test-permissive-floor.sh)
+          PERMISSIVE="sdk adk setec ast-checks"
+          violations=0
+          checked=0
+          while IFS= read -r modfile; do
+            checked=$((checked+1))
+            lineno=0
+            while IFS= read -r line || [ -n "$line" ]; do
+              lineno=$((lineno+1))
+              # The module's own name is not a requirement.
+              case "$line" in module\ *) continue ;; esac
+              # Drop a trailing comment, so prose about a module is not a hit.
+              code="${line%%//*}"
+              rest="$code"
+              while [[ "$rest" =~ github\.com/zeroroot-ai/([A-Za-z0-9._-]+) ]]; do
+                repo="${BASH_REMATCH[1]}"
+                rest="${rest#*"${BASH_REMATCH[0]}"}"
+                allowed=0
+                for p in $PERMISSIVE; do
+                  if [ "$repo" = "$p" ]; then allowed=1; fi
+                done
+                if [ "$allowed" -eq 0 ]; then
+                  echo "::error file=${modfile#./},line=${lineno}::${modfile#./}:${lineno} requires github.com/zeroroot-ai/${repo}, which is not on the permissive floor (ADR-0089). A permissive repo must not depend on a restrictive repo."
+                  violations=$((violations+1))
+                fi
+              done
+            done < "$modfile"
+          done < <(find . -name go.mod \
+                     -not -path './.git/*' -not -path '*/testdata/*' -not -path '*/.cache/*' \
+                     -not -path '*/node_modules/*' -not -path '*/vendor/*' | sort)
+
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::no go.mod found, so this run checked nothing"
+            exit 1
+          fi
+          if [ "$violations" -gt 0 ]; then
+            echo "::error::${violations} restrictive first-party requirement(s) in ${checked} go.mod file(s)."
+            exit 1
+          fi
+          echo "OK: ${checked} go.mod file(s) require only permissive first-party modules (${PERMISSIVE})."
+          # END-CHECK
