@@ -1,0 +1,131 @@
+# Reusable workflow: an exit test never runs on a pull request, and it runs
+# on a schedule.
+#
+# WHY THIS EXISTS
+#
+# ADR-0080: "An exit test runs on a push to `main`, on a daily schedule and on
+# dispatch. It never runs on a pull request." An exit test is cluster-shaped
+# work of tens of minutes. On a pull request it gates nothing, because the
+# merge gate is the short required set, and it holds a runner that the merge
+# gate needs. Only hosted had a guard for the rule, a script in that private
+# repo, so gibson, charts, dashboard and setec each needed a copy (.github#200).
+#
+# THE RULES
+#
+#   1. A workflow named exit-test-*.yml or exit-test-*.yaml has no
+#      `pull_request`, `pull_request_target` or `merge_group` trigger. No
+#      exemption.
+#   2. It has a `schedule` trigger. An exit test that only a person can start
+#      is a test nobody runs. A repo may exempt a file from THIS rule in
+#      `.exit-tests-no-schedule` at its root: one repo-relative path per line,
+#      under a `# why:` line. An entry that names no exit-test workflow, or one
+#      that has a schedule, fails the run, so the list cannot rot.
+#   3. The repo has at least one exit-test workflow. A caller with none has
+#      nothing to guard and should not call this.
+#
+# Called by per-repo workflows via:
+#   uses: zeroroot-ai/.github/.github/workflows/exit-tests-off-pr.yml@<sha> # vX.Y.Z
+#
+# Required check name: exit-tests-off-pr
+
+name: exit-tests-off-pr
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  exit-tests-off-pr:
+    name: exit-tests-off-pr
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The CALLER's tree. This is what gets checked.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: No exit test runs on a pull request
+        # DELIBERATELY INLINE, for the reason runs-on-lint.yml gives: a reusable
+        # workflow's checkout fetches the caller, so this repo's scripts/ are
+        # not on disk here. scripts/test-exit-tests-off-pr.sh extracts the
+        # program below out of this file and runs it against failing fixtures.
+        #
+        # No GitHub expression may appear inside this run: block, not even in a
+        # comment. Actions interpolates it there and the whole file is invalid.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          # BEGIN-CHECK (extracted by scripts/test-exit-tests-off-pr.sh)
+          import glob, os, sys
+          import yaml
+
+          PR_LANE = ("pull_request", "pull_request_target", "merge_group")
+          ALLOW = ".exit-tests-no-schedule"
+
+          def triggers(path):
+              doc = yaml.safe_load(open(path, encoding="utf-8"))
+              if not isinstance(doc, dict):
+                  return None
+              # PyYAML reads a bare `on:` key as the boolean True.
+              on = doc.get("on", doc.get(True))
+              if isinstance(on, dict):
+                  return set(on)
+              if isinstance(on, list):
+                  return set(on)
+              if isinstance(on, str):
+                  return {on}
+              return None
+
+          def allowlist():
+              entries, why = [], False
+              if not os.path.exists(ALLOW):
+                  return entries, []
+              errors = []
+              for n, raw in enumerate(open(ALLOW, encoding="utf-8"), 1):
+                  line = raw.strip()
+                  if not line:
+                      why = False
+                      continue
+                  if line.startswith("#"):
+                      if line.lower().startswith("# why:") and line[6:].strip():
+                          why = True
+                      continue
+                  if not why:
+                      errors.append("%s:%d: %s has no `# why:` line above it" % (ALLOW, n, line))
+                  entries.append(line)
+              return entries, errors
+
+          files = sorted(glob.glob(".github/workflows/exit-test-*.yml") + glob.glob(".github/workflows/exit-test-*.yaml"))
+          exempt, failures = allowlist()
+          no_schedule = set()
+
+          for path in files:
+              trig = triggers(path)
+              if trig is None:
+                  failures.append("%s: no readable `on:` block, so its triggers were not checked" % path)
+                  continue
+              for t in PR_LANE:
+                  if t in trig:
+                      failures.append("%s: has a `%s` trigger. An exit test never runs on a pull request (ADR-0080)" % (path, t))
+              if "schedule" not in trig:
+                  no_schedule.add(path)
+                  if path not in exempt:
+                      failures.append("%s: has no `schedule` trigger. An exit test runs daily (ADR-0080)" % path)
+
+          for entry in exempt:
+              if entry not in files:
+                  failures.append("%s: %s names no exit-test workflow. Delete the entry" % (ALLOW, entry))
+              elif entry not in no_schedule:
+                  failures.append("%s: %s has a `schedule` trigger now. Delete the entry" % (ALLOW, entry))
+
+          if not files:
+              failures.append("no .github/workflows/exit-test-*.yml file, so this run checked nothing")
+
+          for f in failures:
+              print("::error::" + f)
+          if failures:
+              sys.exit(1)
+          print("OK: %d exit-test workflow(s) run off the pull request lane, %d exempt from the schedule rule." % (len(files), len(exempt)))
+          # END-CHECK
+          PY

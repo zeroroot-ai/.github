@@ -79,6 +79,11 @@ jobs:
       - name: permissive-floor fixtures
         run: bash scripts/test-permissive-floor.sh
 
+      # The check in exit-tests-off-pr.yml is an inline program, so the fixture
+      # extracts it and runs it against workflow trees (ADR-0080).
+      - name: exit-tests-off-pr fixtures
+        run: bash scripts/test-exit-tests-off-pr.sh
+
       - name: action pins are current with the latest release
         run: bash scripts/check-action-pins-are-current.sh
 
