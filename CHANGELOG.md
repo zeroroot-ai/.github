@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/zeroroot-ai/.github/compare/v0.12.1...v0.13.0) (2026-10-05)
+
+
+### Features
+
+* **permissive-floor:** one license boundary check for every apache repo ([#203](https://github.com/zeroroot-ai/.github/issues/203)) ([bb4c48b](https://github.com/zeroroot-ai/.github/commit/bb4c48bba2dee154c62d5e9294bca54631f84fe8)), closes [#202](https://github.com/zeroroot-ai/.github/issues/202)
+
 ## [0.12.1](https://github.com/zeroroot-ai/.github/compare/v0.12.0...v0.12.1) (2026-10-05)
 
 
