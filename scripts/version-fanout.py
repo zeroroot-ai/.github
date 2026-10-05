@@ -21,7 +21,7 @@ Rules (proved by --selftest, which gates this repo's PRs):
   * A missing link, key, or digest is an error. Nothing is pushed for a
     consumer that errored; the run goes red.
   * Auto-merge is never armed. The PR goes through the consumer's own merge
-    gate and sign-off (ADR-0012).
+    gate and sign-off (ADR-0080).
 
 Usage:
   version-fanout.py --link zitadel [--manifest version-links.yaml] [--value v4.17.3]

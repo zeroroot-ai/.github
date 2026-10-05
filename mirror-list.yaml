@@ -96,7 +96,7 @@ mirrors:
   - source: docker.io/minio/minio
     tag: "RELEASE.2024-09-13T20-26-02Z"
     dest: minio
-  # Velero — the umbrella's backup controller (deploy#1734, ADR-0015). The
+  # Velero — the umbrella's backup controller (deploy#1734, ADR-0083). The
   # server image also serves as the restore-helper init container: since
   # Velero 1.16 the pod-volume restore action reuses the server image, so no
   # separate velero-restore-helper entry is needed. The AWS object-store
@@ -249,12 +249,12 @@ mirrors:
   # envoyproxy/ratelimit publishes commit-sha tags only (no release tags on
   # Docker Hub). 8fe6ea42 = master 2026-08-24, "Populate request headers in
   # shouldRateLimit rpc response (#1168)". The shared per-client edge quota
-  # service (deploy#1657, ADR-0011). Immutable sha tag: add a new entry to move.
+  # service (deploy#1657, ADR-0079). Immutable sha tag: add a new entry to move.
   - source: docker.io/envoyproxy/ratelimit
     tag: "8fe6ea42"
     dest: ratelimit
   # Coraza WAF (OWASP Core Rule Set) as an Envoy WASM filter — the Edge WAF
-  # on every substrate (deploy#1658, ADR-0011). The -busybox variant carries a
+  # on every substrate (deploy#1658, ADR-0079). The -busybox variant carries a
   # shell so an init container can cp /plugin.wasm into the Envoy pod.
   - source: ghcr.io/corazawaf/coraza-proxy-wasm
     tag: "0.6.0-busybox"
@@ -326,13 +326,13 @@ mirrors:
     tag: "v1.28.3"
     dest: mailpit
   # CoreDNS serves the kind DNS sub-zone (kind.zeroroot.test) of stage 0, the
-  # substrate bootstrap (deploy ADR-0015, deploy#1736). It runs as a Docker
+  # substrate bootstrap (ADR-0083, deploy#1736). It runs as a Docker
   # container on the workstation's kind network, outside the cluster, so it
   # outlives every kind cluster. preflight proves the zone's NS records resolve.
   - source: docker.io/coredns/coredns
     tag: "1.14.7"
     dest: coredns
-  # Stage 1 on kind (ADR-0015, deploy#1737). Both are rows the substrate
+  # Stage 1 on kind (ADR-0083, deploy#1737). Both are rows the substrate
   # contract requires of every cluster: a LoadBalancer implementation so the
   # Envoy Service gets an address, and metrics-server because HPAs need it.
   # cloud-provider-kind runs on the HOST, beside the kind node containers, and

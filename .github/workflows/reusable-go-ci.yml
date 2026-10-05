@@ -1,8 +1,7 @@
 name: Reusable Go CI (tiered)
 
 # Canonical three-tier Go CI for every Go repo in the workspace.
-# Epic: cicd-efficiency (board #44), slice S2 (gibson#1128). See
-# docs/architecture/CICD-CONTEXT.md and docs/adr/0060-*.
+# Epic: cicd-efficiency (board #44), slice S2 (gibson#1128).
 #
 # ONE reusable, called with a `tier` that maps to the caller's trigger:
 #
@@ -21,7 +20,7 @@ name: Reusable Go CI (tiered)
 # A gate that only passes on a fast day is a defect in the gate. Two jobs run
 # in parallel and each stays inside a 15-minute envelope on a slow runner.
 #
-# Callers pin a RELEASE TAG, never @main (ADR-0060 blast-radius):
+# Callers pin a RELEASE TAG, never @main (blast-radius):
 #   uses: zeroroot-ai/.github/.github/workflows/reusable-go-ci.yml@v2
 #
 # Every first-party module is public: the Go toolchain resolves it through

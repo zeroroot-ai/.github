@@ -1,7 +1,7 @@
 # Reusable workflow that rejects any `runs-on:` label that is not a
 # sanctioned GitHub-hosted runner or the org's ephemeral ARC scale-set.
 #
-# Epic: cicd-efficiency. Rule set by ADR-0060
+# Epic: cicd-efficiency. The rule:
 # ("GitHub-hosted runners are the default for every CI job that does not
 # require bare metal; the only jobs allowed off GitHub-hosted are those
 # needing /dev/kvm, and those run on ephemeral runner pods in staging that

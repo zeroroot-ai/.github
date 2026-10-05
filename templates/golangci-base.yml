@@ -82,7 +82,7 @@ linters:
       - "zz_generated.*\\.go$"
       - "api/gen/.*"
     # Per-rule exclusions go here, NOT in repo-local files. New
-    # exclusions require a tracked issue per ADR-0013.
+    # exclusions require a tracked issue.
     rules: []
 
 issues:
