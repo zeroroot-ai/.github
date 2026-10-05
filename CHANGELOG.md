@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/zeroroot-ai/.github/compare/v0.12.0...v0.12.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **guards:** the guard messages cite no adr that does not exist ([#190](https://github.com/zeroroot-ai/.github/issues/190)) ([29d0080](https://github.com/zeroroot-ai/.github/commit/29d0080586fb34ead36b5215de3cd3340e31e896))
+
 ## [0.12.0](https://github.com/zeroroot-ai/.github/compare/v0.11.0...v0.12.0) (2026-10-05)
 
 
