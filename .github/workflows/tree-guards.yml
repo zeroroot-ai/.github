@@ -63,6 +63,11 @@ jobs:
           repo-root: ${{ github.workspace }}
           scope: changed
 
+  # This repository's own workflows, linted by the version in this checkout so
+  # a pull request that changes the lint tests itself.
+  workflow-lint:
+    uses: ./.github/workflows/workflow-lint.yml
+
   link-check-fixtures:
     name: link-check-fixtures
     runs-on: ubuntu-latest
