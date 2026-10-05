@@ -81,6 +81,14 @@ jobs:
       - name: Mutation-test the required-context guard
         run: bash scripts/test-required-contexts.sh
 
+      # ADR-0168: CI is the gate. The fixtures run first, then the guard reads
+      # the committed ruleset files. Both are offline.
+      - name: Mutation-test the review-rule guard (.github#192)
+        run: bash scripts/test-ruleset-review-rule.sh
+
+      - name: No ruleset requires a review or a signed commit (ADR-0168)
+        run: bash scripts/check-ruleset-review-rule.sh
+
       - name: Mutation-test the ADR-0088 security-features guard
         run: bash scripts/test-security-features-drift.sh
 
