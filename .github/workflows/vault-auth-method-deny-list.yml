@@ -7,15 +7,10 @@
 # fails the PR on any new (non-allowlisted) occurrence.
 #
 # Source of truth for the deny-list:
-#   the local workspace → docs/adr/0009-jwt-spiffe-everywhere.md
-#
-# Parse-stable vendored snapshot in this repo:
 #   actions/vault-auth-deny-list/adr-0009-deny-list.md
 #
-# The scan reads the deny-list from that vendored snapshot. The ADR lives
-# in an internal docs tree that no CI runner can read, so the snapshot is
-# the only copy CI has. It is kept in lockstep with the ADR via the sync
-# contract at the top of `actions/vault-auth-deny-list/adr-0009-deny-list.md`.
+# ADR-0009 states the rule and names that file as the list CI reads. The ADR
+# holds no copy of the list, so the list is changed in that file.
 #
 # Called by per-repo workflows via:
 #   uses: zeroroot-ai/.github/.github/workflows/vault-auth-method-deny-list.yml@<sha> # v0.2.0
