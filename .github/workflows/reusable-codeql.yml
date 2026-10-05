@@ -94,7 +94,7 @@ jobs:
       # output is empty for a language with no custom query.
       - name: Get the custom queries
         id: queries
-        uses: zeroroot-ai/.github/actions/codeql-queries@__PIN__
+        uses: zeroroot-ai/.github/actions/codeql-queries@2267cc2e13bd2afeaa7b8bda466318c5079282d9 # v0.15.0
         with:
           language: ${{ matrix.language }}
 

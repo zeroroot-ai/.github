@@ -50,7 +50,7 @@ jobs:
       # An action, not a checkout of zeroroot-ai/.github. actions/brand-guard
       # states the reason.
       - name: Check each ADR citation against the index
-        uses: zeroroot-ai/.github/actions/adr-citations@__PIN__
+        uses: zeroroot-ai/.github/actions/adr-citations@2267cc2e13bd2afeaa7b8bda466318c5079282d9 # v0.15.0
         with:
           repo-root: ${{ github.workspace }}/caller
           index: ${{ inputs.index }}
