@@ -1,14 +1,2 @@
-edges
-| main.go:14:7:14:17 | call to GetSecret | main.go:15:26:15:26 | s | provenance |  |
-| main.go:15:26:15:26 | s | main.go:15:2:15:27 | []type{args} | provenance | Sink:MaD:1851 |
-| main.go:20:26:20:36 | call to GetSecret | main.go:20:2:20:37 | []type{args} | provenance | Sink:MaD:295 |
-nodes
-| main.go:14:7:14:17 | call to GetSecret | semmle.label | call to GetSecret |
-| main.go:15:2:15:27 | []type{args} | semmle.label | []type{args} |
-| main.go:15:26:15:26 | s | semmle.label | s |
-| main.go:20:2:20:37 | []type{args} | semmle.label | []type{args} |
-| main.go:20:26:20:36 | call to GetSecret | semmle.label | call to GetSecret |
-subpaths
-#select
-| main.go:15:2:15:27 | []type{args} | main.go:14:7:14:17 | call to GetSecret | main.go:15:2:15:27 | []type{args} | secret material from $@ reaches log sink | main.go:14:7:14:17 | call to GetSecret | vault/secret source |
-| main.go:20:2:20:37 | []type{args} | main.go:20:26:20:36 | call to GetSecret | main.go:20:2:20:37 | []type{args} | secret material from $@ reaches log sink | main.go:20:26:20:36 | call to GetSecret | vault/secret source |
+| main.go:15:2:15:27 | []type{args} | secret material from $@ reaches log sink | main.go:14:7:14:17 | call to GetSecret | vault/secret source |
+| main.go:20:2:20:37 | []type{args} | secret material from $@ reaches log sink | main.go:20:26:20:36 | call to GetSecret | vault/secret source |

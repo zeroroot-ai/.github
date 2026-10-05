@@ -3,7 +3,7 @@
  * @description Detects when secret-source values (vault.Read,
  *   zitadel client output, FGA admin output) reach log/printf sinks.
  *   Per slice 4.3 of the zeroroot-ai production-readiness epic.
- * @kind path-problem
+ * @kind problem
  * @id zeroroot-ai/secret-to-log
  * @problem.severity error
  * @security-severity 8.0
@@ -52,8 +52,10 @@ module SecretToLogConfig implements DataFlow::ConfigSig {
 
 module SecretToLogFlow = TaintTracking::Global<SecretToLogConfig>;
 
-import SecretToLogFlow::PathGraph
-
-from SecretToLogFlow::PathNode source, SecretToLogFlow::PathNode sink
-where SecretToLogFlow::flowPath(source, sink)
-select sink.getNode(), source, sink, "secret material from $@ reaches log sink", source.getNode(), "vault/secret source"
+// A `problem` query, not a `path-problem` query. The test of a path query
+// prints the row number of each library model on the path, and that number
+// changes with each CodeQL release. So the expected result needed a new pin
+// after a change that touched no query.
+from DataFlow::Node source, DataFlow::Node sink
+where SecretToLogFlow::flow(source, sink)
+select sink, "secret material from $@ reaches log sink", source, "vault/secret source"
