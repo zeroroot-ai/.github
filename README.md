@@ -43,6 +43,20 @@ requires the guard to go red. A guard that cannot fail is worse than no guard,
 because it gets read as evidence. `ruleset-drift.yml` runs those mutation suites
 on every PR, with no secrets, so they gate.
 
+## CodeQL
+
+`reusable-codeql.yml` is the one CodeQL scan of the organization (ADR-0018).
+Each repo calls it with its list of languages. The suite is
+`security-extended`. A `go` scan also runs the two Go queries of
+[`actions/codeql-queries`](actions/codeql-queries), and a
+`javascript-typescript` scan also runs the four TypeScript queries. No repo
+keeps a CodeQL config file or a query pack of its own.
+
+Each query has a test directory with a fixture that it must flag.
+`codeql-queries-selftest.yml` runs each query on its fixture.
+`codeql-shared-selftest.yml` scans the fixtures through the shared workflow
+and fails when one of the six rules has no result.
+
 ## Tree guards
 
 Two guards read the calling repository's tree. Every repo runs both, from one
@@ -53,6 +67,7 @@ caller workflow.
 | `brand-guard` | A retired brand string anywhere in the tracked tree | [`actions/brand-guard/check-brand.sh`](actions/brand-guard/check-brand.sh) |
 | `link-check` | A broken link in the Markdown a change touched (the whole tree on main), including a relative path and an anchor | [`actions/link-check/lychee.toml`](actions/link-check/lychee.toml) |
 | `workflow-lint` | A workflow file that is valid YAML and an invalid workflow: a reference to a step, a job, a matrix key or a context that does not exist | [`.github/workflows/workflow-lint.yml`](.github/workflows/workflow-lint.yml) |
+| `adr-citations` | A citation of an ADR number that is retired, or that the index `docs/adr-index.md` does not hold | [`actions/adr-citations/check-adr-citations.py`](actions/adr-citations/check-adr-citations.py) |
 
 Copy [`templates/tree-guards.yml`](templates/tree-guards.yml) to
 `.github/workflows/tree-guards.yml` in the repo. It has three jobs and needs no
@@ -67,6 +82,14 @@ is keyed by content:
   the guard, so the list shrinks.
 - `.lychee.toml` adds to the org link policy. lychee merges the configuration
   files, and list keys append, so the caller file never drops an org exclusion.
+
+- `.adr-citations-allow` lists repo-relative paths in the same form. An entry
+  that exempts no finding fails the guard.
+
+The `adr-citations` guard is a fourth job in the same caller workflow. It calls
+`adr-citations.yml` of this repo. The repo keeps a copy of `docs/adr-index.md`
+of `zeroroot-ai/gibson`, which is the one source of the index. The guard never
+fetches the index. To update the copy, copy the file from `gibson` again.
 
 A single line may also carry the marker `brand-guard-exempt:` with a reason. Use
 it for a test that asserts a retired string is absent, because that test has to

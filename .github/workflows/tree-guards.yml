@@ -68,6 +68,20 @@ jobs:
   workflow-lint:
     uses: ./.github/workflows/workflow-lint.yml
 
+  # Each ADR citation in this repo names a live ADR. The index is the copy of
+  # docs/adr-index.md of zeroroot-ai/gibson (gibson#740).
+  adr-citations:
+    name: adr-citations
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prove the guard can fail, then check this tree
+        uses: ./actions/adr-citations
+        with:
+          repo-root: ${{ github.workspace }}
+
   link-check-fixtures:
     name: link-check-fixtures
     runs-on: ubuntu-latest
