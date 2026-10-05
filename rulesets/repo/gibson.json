@@ -52,9 +52,6 @@
             "context": "govulncheck"
           },
           {
-            "context": "Analyze Go"
-          },
-          {
             "context": "policy-guards / vault-auth-method-deny-list"
           },
           {
