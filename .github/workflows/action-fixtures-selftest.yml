@@ -94,6 +94,14 @@ jobs:
       - name: merge-gate-time fixtures
         run: python3 scripts/merge-gate-time.py --selftest
 
+      # The Dependabot rules (.github#214): the sweep arms a patch or a minor
+      # update only, and the drift check refuses a file that ignores or
+      # groups a major update.
+      - name: dependabot sweep and drift fixtures
+        run: |
+          bash scripts/dependabot-automerge.sh --selftest
+          python3 scripts/check-dependabot-drift.py --selftest
+
       - name: action pins are current with the latest release
         run: bash scripts/check-action-pins-are-current.sh
 
