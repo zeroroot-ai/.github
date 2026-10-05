@@ -52,9 +52,10 @@ caller workflow.
 |---|---|---|
 | `brand-guard` | A retired brand string anywhere in the tracked tree | [`actions/brand-guard/check-brand.sh`](actions/brand-guard/check-brand.sh) |
 | `link-check` | A broken link in the Markdown a change touched (the whole tree on main), including a relative path and an anchor | [`actions/link-check/lychee.toml`](actions/link-check/lychee.toml) |
+| `workflow-lint` | A workflow file that is valid YAML and an invalid workflow: a reference to a step, a job, a matrix key or a context that does not exist | [`.github/workflows/workflow-lint.yml`](.github/workflows/workflow-lint.yml) |
 
 Copy [`templates/tree-guards.yml`](templates/tree-guards.yml) to
-`.github/workflows/tree-guards.yml` in the repo. It has two jobs and needs no
+`.github/workflows/tree-guards.yml` in the repo. It has three jobs and needs no
 secret. A repo with a merge queue keeps the `merge_group` trigger, because a
 required check that never runs in the queue lane stalls the queue.
 
