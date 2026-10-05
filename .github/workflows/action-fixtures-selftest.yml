@@ -84,6 +84,11 @@ jobs:
       - name: exit-tests-off-pr fixtures
         run: bash scripts/test-exit-tests-off-pr.sh
 
+      # The ADR citation guard builds one throwaway git repository for each
+      # case. 16 cases must fail and 9 must pass (gibson#740).
+      - name: adr-citations fixtures
+        run: python3 actions/adr-citations/check-adr-citations.py --selftest
+
       - name: action pins are current with the latest release
         run: bash scripts/check-action-pins-are-current.sh
 

@@ -1,0 +1,36 @@
+name: adr-citations
+description: Fail a repository tree that cites an ADR number that is not live
+
+# The guard and its self-test live here, in zeroroot-ai/.github, so that one
+# copy serves each repo (gibson#740). This is an action and not a checkout of
+# this repository: GITHUB_TOKEN of a caller cannot read a second private
+# repository, and the runner fetches the repository of an action by itself.
+# actions/brand-guard has the full reason.
+#
+# The guard reads the index file in the CALLING repository. It never fetches
+# the index. The source copy is docs/adr-index.md in zeroroot-ai/gibson.
+
+inputs:
+  repo-root:
+    description: "Path to the checkout of the calling repository, the tree to scan"
+    required: true
+  index:
+    description: "Path of the ADR index, relative to the repository root"
+    required: false
+    default: docs/adr-index.md
+
+runs:
+  using: composite
+  steps:
+    # The self-test runs BEFORE the scan. A guard that does not catch a known
+    # wrong citation must never report a clean tree.
+    - name: Prove the guard can fail
+      shell: bash
+      run: python3 "${{ github.action_path }}/check-adr-citations.py" --selftest
+
+    - name: Check each ADR citation against the index
+      shell: bash
+      env:
+        REPO_ROOT: ${{ inputs.repo-root }}
+        INDEX: ${{ inputs.index }}
+      run: python3 "${{ github.action_path }}/check-adr-citations.py" --index "$INDEX"
