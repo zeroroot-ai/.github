@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/zeroroot-ai/.github/compare/v0.14.0...v0.14.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **link-check:** the spelling guard passes when each changed file is exempt ([#217](https://github.com/zeroroot-ai/.github/issues/217)) ([9f29bb3](https://github.com/zeroroot-ai/.github/commit/9f29bb32a0eb5c3963b64fff105fe9d362e9cfb9))
+
 ## [0.14.0](https://github.com/zeroroot-ai/.github/compare/v0.13.1...v0.14.0) (2026-10-05)
 
 
