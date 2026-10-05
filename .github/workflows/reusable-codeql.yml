@@ -104,18 +104,20 @@ jobs:
         id: config
         env:
           QUERIES: ${{ steps.queries.outputs.queries }}
-          PACK: ${{ steps.queries.outputs.pack }}
           PATHS_IGNORE: ${{ inputs.paths-ignore }}
         run: |
           set -euo pipefail
-          cfg="$RUNNER_TEMP/codeql-config.yml"
+          # The init step refuses a config file outside the workspace. The
+          # directory .zeroroot-codeql is ignored by the scan below.
+          mkdir -p "$GITHUB_WORKSPACE/.zeroroot-codeql"
+          cfg=".zeroroot-codeql/codeql-config.yml"
           {
             echo 'name: zeroroot-ai shared CodeQL config'
             echo 'queries:'
             echo '  - uses: security-extended'
             if [ -n "$QUERIES" ]; then echo "  - uses: $QUERIES"; fi
-            if [ -n "$PACK" ] || [ -n "$PATHS_IGNORE" ]; then echo 'paths-ignore:'; fi
-            if [ -n "$PACK" ]; then echo "  - '${PACK#./}'"; fi
+            echo 'paths-ignore:'
+            echo "  - '.zeroroot-codeql'"
             while IFS= read -r line; do
               line="${line#"${line%%[![:space:]]*}"}"
               line="${line%"${line##*[![:space:]]}"}"
@@ -124,7 +126,7 @@ jobs:
               echo "  - '$line'"
             done <<<"$PATHS_IGNORE"
           } > "$cfg"
-          echo "path=$cfg" >> "$GITHUB_OUTPUT"
+          echo "path=./$cfg" >> "$GITHUB_OUTPUT"
           echo "The scan uses this config:"
           cat "$cfg"
 
