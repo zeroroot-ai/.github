@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/zeroroot-ai/.github/compare/v0.13.1...v0.14.0) (2026-10-05)
+
+
+### Features
+
+* **exit-tests:** one guard keeps exit tests off the pull request lane ([#209](https://github.com/zeroroot-ai/.github/issues/209)) ([ead0fe3](https://github.com/zeroroot-ai/.github/commit/ead0fe3d74de331b672b0caf4256917c74a36785)), closes [#200](https://github.com/zeroroot-ai/.github/issues/200)
+
+
+### Bug Fixes
+
+* **pins:** re-pin link-check and vault-auth-deny-list to v0.13.1 ([5c180fc](https://github.com/zeroroot-ai/.github/commit/5c180fc9113ce21810ba88987328957e4728d989))
+* **rework:** re-pin link-check and vault-auth-deny-list to v0.13.1 ([#210](https://github.com/zeroroot-ai/.github/issues/210)) ([5c180fc](https://github.com/zeroroot-ai/.github/commit/5c180fc9113ce21810ba88987328957e4728d989))
+
 ## [0.13.1](https://github.com/zeroroot-ai/.github/compare/v0.13.0...v0.13.1) (2026-10-05)
 
 
