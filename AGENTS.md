@@ -100,6 +100,10 @@ gh pr merge <number> --squash --delete-branch
 Some repositories run a merge queue. There, enable auto-merge and let the queue
 land the change.
 
+**Done means merged.** Done means the pull request merged with every required
+check green and a `Closes #N` line that closes its issue. No manual cluster run
+and no local sign-off target is part of done.
+
 **CI is the only merge gate.** No ruleset requires an approving review. Every
 `pull_request` rule in `rulesets/` sets `required_approving_review_count` to 0,
 and that is a recorded owner decision, not an oversight. Agents merge their own
