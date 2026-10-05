@@ -1,0 +1,10 @@
+name: zeroroot-ai/javascript-queries
+version: 0.1.0
+description: Custom CodeQL queries for zeroroot-ai TypeScript / JavaScript code
+library: false
+dependencies:
+  codeql/javascript-all: ^2.10.1
+  codeql/javascript-queries: ^2.4.5
+extractor: javascript
+suites: suites
+defaultSuiteFile: suites/default.qls

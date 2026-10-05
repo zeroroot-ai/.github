@@ -3,8 +3,10 @@
 # Owner decision, 2026-09-16: `hosted` is the SaaS estate and `billing` is the
 # closed seam. Neither is ever published. `www` joined them the same day: the
 # marketing site's SOURCE is private, while the site it builds stays public at
-# www.zeroroot.ai. `testharness` and the two CodeQL query packs joined the row
-# on 2026-09-06 (ADR-0089, third amendment).
+# www.zeroroot.ai. `testharness` joined the row on 2026-09-06 (ADR-0089, third
+# amendment). The two CodeQL query repos left the row on 2026-10-05: their
+# queries moved into actions/codeql-queries of this repo, and the repos are
+# deleted (ADR-0018).
 #
 # `docs` joined on 2026-10-05: it holds the ADRs and the internal documents,
 # and its license is all rights reserved (ADR-0089).
@@ -23,6 +25,4 @@ hosted
 billing
 www
 testharness
-codeql-go-queries
-codeql-ts-queries
 docs

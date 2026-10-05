@@ -1,0 +1,7 @@
+# connectrpc.com/connect v1.21.0
+## explicit; go 1.21
+connectrpc.com/connect
+# google.golang.org/grpc v1.83.2
+## explicit; go 1.21
+google.golang.org/grpc/codes
+google.golang.org/grpc/status

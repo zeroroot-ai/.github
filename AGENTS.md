@@ -175,9 +175,9 @@ There is one public API surface: the Apache-2.0 `sdk`. It carries the
 component-development protos only, which are the agent, tool, plugin, component,
 harness, and mission types. It ships no admin RPCs and no infrastructure
 dependencies, and it must not import the `gibson` daemon. The check
-`make check-no-gibson` enforces that boundary, and a CodeQL deny-list fails CI
-if the SDK's module graph pulls a secrets backend, a database client, or any
-other first-party infrastructure client.
+`make check-no-gibson` of the `sdk` enforces that boundary. It reads each
+import and each `require` directive of `go.mod`, and it fails on a secrets
+backend, a database client, or any other platform back-end client.
 
 Everything that operates the platform lives inside the `gibson` monorepo. The
 admin, operator, and billing protos are daemon-local under
