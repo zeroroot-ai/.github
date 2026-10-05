@@ -123,6 +123,22 @@ prose() {
   ' "$1" | sed -E 's/`[^`]*`//g; s#https?://[^ )>]+##g'
 }
 
+# The one file this check alone exempts. It quotes alert text verbatim.
+SPELLING_EXEMPT_FILE="docs/code-scanning-dismissals.md"
+
+# named_exempt prints each path that the caller named as a file and that this
+# check exempts. main needs it to tell two empty sets apart: a change that
+# touched only an exempt file is a clean result, and a sweep that found no
+# Markdown is a configuration error.
+named_exempt() {
+  local p
+  for p in "$@"; do
+    case "$p" in
+      *.md|*.mdx) [ "$p" != "$SPELLING_EXEMPT_FILE" ] || echo "$p" ;;
+    esac
+  done
+}
+
 collect_files() {
   local root="$1"; shift
   local p f
@@ -131,14 +147,14 @@ collect_files() {
       *.md|*.mdx)
         # A file named by the caller is read even when a sweep would skip it,
         # except the one file this check alone exempts.
-        [ "$p" = "docs/code-scanning-dismissals.md" ] || echo "$p"
+        [ "$p" = "$SPELLING_EXEMPT_FILE" ] || echo "$p"
         ;;
       *)
         find "${root}/${p%/}" -type f \( -name '*.md' -o -name '*.mdx' \) -not -path '*/.git/*' \
         | sed -E "s#^${root}/##; s#^\./##" | sort \
         | while IFS= read -r f; do
             markdown_exempt "$root" "$f" && continue
-            [ "$f" = "docs/code-scanning-dismissals.md" ] && continue
+            [ "$f" = "$SPELLING_EXEMPT_FILE" ] && continue
             echo "$f"
           done
         ;;
@@ -199,13 +215,34 @@ EOF
   if [ "$(collect_files "$tmp" .)" != "$(printf 'clean.md\ndirty.md')" ]; then
     echo "selftest FAILED: the walk should skip docs/adr/ and the changelog"; failures=$((failures + 1))
   fi
+  # A change that touched only the exempt file passes. This is the failing
+  # fixture of dashboard#229: the same call failed with "no Markdown under".
+  mkdir -p "$tmp/docs"; printf '# Dismissals\nthe old behaviour\n' >"$tmp/$SPELLING_EXEMPT_FILE"
+  set +e; out="$(REPO_ROOT="$tmp" PATHS="$SPELLING_EXEMPT_FILE" main 2>&1)"; rc=$?; set -e
+  if [ "$rc" -ne 0 ] || ! grep -q "nothing to check" <<<"$out"; then
+    echo "selftest FAILED: a change that touched only the exempt file should pass, got rc=${rc}:"; echo "$out"
+    failures=$((failures + 1))
+  fi
+  # The exempt file next to a dirty file does not hide the dirty file.
+  set +e; out="$(REPO_ROOT="$tmp" PATHS="$SPELLING_EXEMPT_FILE dirty.md" main 2>&1)"; rc=$?; set -e
+  if [ "$rc" -ne 1 ]; then
+    echo "selftest FAILED: the exempt file next to dirty.md should fail with rc=1, got rc=${rc}:"; echo "$out"
+    failures=$((failures + 1))
+  fi
+  # A path that holds no Markdown is still an error, on a sweep and on a named directory.
+  mkdir -p "$tmp/empty"
+  set +e; out="$(REPO_ROOT="$tmp" PATHS="empty" main 2>&1)"; rc=$?; set -e
+  if [ "$rc" -ne 2 ] || ! grep -q "no Markdown under empty" <<<"$out"; then
+    echo "selftest FAILED: a path with no Markdown should fail with rc=2, got rc=${rc}:"; echo "$out"
+    failures=$((failures + 1))
+  fi
   if [ "$(american_for "Organisation")" != "organization" ] || [ "$(american_for "analysed")" != "analyzed" ]; then
     echo "selftest FAILED: american_for mapping"; failures=$((failures + 1))
   fi
   if [ "$failures" -ne 0 ]; then
     echo "::error::${GUARD_NAME}: selftest FAILED (${failures})" >&2; exit 1
   fi
-  echo "PASS: ${GUARD_NAME} selftest (4 cases, ${#SPELLINGS[@]} stems)"
+  echo "PASS: ${GUARD_NAME} selftest (7 cases, ${#SPELLINGS[@]} stems)"
 }
 
 main() {
@@ -217,10 +254,19 @@ main() {
   local root="${REPO_ROOT:-${GITHUB_WORKSPACE:-.}}"
   local paths="${PATHS:-.}"
   [ -d "$root" ] || fail "REPO_ROOT is not a directory: ${root}"
-  local files
+  local files exempt
   # shellcheck disable=SC2086
   mapfile -t files < <(collect_files "$root" $paths)
-  [ "${#files[@]}" -gt 0 ] || fail "no Markdown under ${paths}"
+  if [ "${#files[@]}" -eq 0 ]; then
+    # shellcheck disable=SC2086
+    mapfile -t exempt < <(named_exempt $paths)
+    # Each named file is exempt, so nothing is left to read. That is a clean
+    # result. Without a named exempt file, an empty set means the paths hold
+    # no Markdown at all, and that stays an error.
+    [ "${#exempt[@]}" -gt 0 ] || fail "no Markdown under ${paths}"
+    echo "PASS: ${GUARD_NAME}: nothing to check, this check exempts ${exempt[*]}"
+    return 0
+  fi
   local out rc
   set +e; out="$(scan "$root" "${files[@]}")"; rc=$?; set -e
   if [ "$rc" -ne 0 ]; then
