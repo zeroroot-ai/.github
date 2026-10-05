@@ -1,0 +1,1 @@
+| bad.ts:5:16:5:23 | req.body | req.body is consumed without a zod parse on any path from this read |

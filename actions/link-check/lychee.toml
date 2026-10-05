@@ -57,7 +57,7 @@ exclude = [
   # The group ends at a name boundary. Without it `docs` also matched
   # `docs-site`, and every link into that public repository would have been
   # excluded from the check without a word.
-  "github\\.com/zeroroot-ai/(?:hosted|billing|www|testharness|codeql-go-queries|codeql-ts-queries|docs)(?:[/#?]|$)",
+  "github\\.com/zeroroot-ai/(?:hosted|billing|www|testharness|docs)(?:[/#?]|$)",
 ]
 
 exclude_path = [

@@ -1,0 +1,3 @@
+# Default suite — all zeroroot-ai custom Go queries.
+- description: zeroroot-ai custom Go queries
+- queries: .

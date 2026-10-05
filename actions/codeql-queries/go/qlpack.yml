@@ -1,0 +1,10 @@
+name: zeroroot-ai/go-queries
+version: 0.1.0
+description: Custom CodeQL queries for zeroroot-ai Go code — codebase-specific data-flow patterns
+library: false
+dependencies:
+  codeql/go-all: ^7.3.1
+  codeql/go-queries: ^1.6.10
+extractor: go
+suites: suites
+defaultSuiteFile: suites/default.qls

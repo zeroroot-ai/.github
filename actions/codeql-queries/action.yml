@@ -1,0 +1,68 @@
+name: codeql-queries
+description: Put the custom CodeQL queries of the organization into the workspace of a scan
+
+# The six custom queries live here, next to the shared workflow
+# reusable-codeql.yml (D38, ADR-0018). `go/` holds two Go queries, and
+# `javascript/` holds four TypeScript queries and one library. Each query has a
+# test directory with a fixture that it must flag. The workflow
+# codeql-queries-selftest.yml runs each test.
+#
+# This is an action for the reason that actions/brand-guard states: the runner
+# fetches the repository of an action by itself, at the pinned commit, with no
+# token.
+#
+# The CodeQL init step refuses a local query path outside the workspace. So
+# this action copies one pack into the workspace: qlpack.yml, the lock file and
+# `src/`. It does not copy the tests, because a Go scan would read their Go
+# files as code of the caller.
+
+inputs:
+  language:
+    description: "The CodeQL language of the scan: go or javascript-typescript"
+    required: true
+  dest:
+    description: "Directory in the workspace that receives the pack"
+    required: false
+    default: .zeroroot-codeql
+
+outputs:
+  queries:
+    description: "Workspace-relative path of the query directory, or empty when the language has no custom query"
+    value: ${{ steps.copy.outputs.queries }}
+  pack:
+    description: "Workspace-relative path of the pack root, or empty"
+    value: ${{ steps.copy.outputs.pack }}
+
+runs:
+  using: composite
+  steps:
+    - name: Copy the query pack into the workspace
+      id: copy
+      shell: bash
+      env:
+        LANGUAGE: ${{ inputs.language }}
+        DEST: ${{ inputs.dest }}
+        SRC: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        case "$LANGUAGE" in
+          go) dir=go ;;
+          javascript-typescript|javascript|typescript) dir=javascript ;;
+          *)
+            echo "codeql-queries: no custom query for language '$LANGUAGE'"
+            echo "queries=" >> "$GITHUB_OUTPUT"
+            echo "pack=" >> "$GITHUB_OUTPUT"
+            exit 0
+            ;;
+        esac
+        count=$(find "$SRC/$dir/src" -name '*.ql' | wc -l)
+        if [ "$count" -lt 1 ]; then
+          echo "::error::codeql-queries: $SRC/$dir/src holds no query"
+          exit 1
+        fi
+        mkdir -p "$GITHUB_WORKSPACE/$DEST/$dir"
+        cp "$SRC/$dir/qlpack.yml" "$SRC/$dir/codeql-pack.lock.yml" "$GITHUB_WORKSPACE/$DEST/$dir/"
+        cp -R "$SRC/$dir/src" "$GITHUB_WORKSPACE/$DEST/$dir/src"
+        echo "queries=./$DEST/$dir/src" >> "$GITHUB_OUTPUT"
+        echo "pack=./$DEST/$dir" >> "$GITHUB_OUTPUT"
+        echo "codeql-queries: copied $count quer(ies) for $LANGUAGE to $DEST/$dir"

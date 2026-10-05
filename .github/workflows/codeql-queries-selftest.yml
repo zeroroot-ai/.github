@@ -1,0 +1,113 @@
+# Runs each custom CodeQL query on its fixture.
+#
+# actions/codeql-queries holds six queries. Each query has a test directory:
+# source files that the query must flag, source files that it must not flag,
+# and the expected result. `codeql test run` extracts the fixture, runs the
+# query and compares the result. A query that stops flagging its fixture fails
+# this workflow (D38, ADR-0018).
+#
+# The CLI comes from the same codeql-action commit that reusable-codeql.yml
+# pins. So a version bump of that action runs the queries on the new CLI here,
+# before a caller gets it.
+name: codeql-queries-selftest
+
+# No `paths:` filter. A bump of the CodeQL action changes the CLI and touches
+# no query file, and the check must run then too.
+on:
+  pull_request:
+  merge_group:
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-queries-selftest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selftest:
+    name: codeql-queries-selftest (${{ matrix.pack }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pack: go
+            language: go
+            floor: 2
+          - pack: javascript
+            language: javascript-typescript
+            floor: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the CodeQL CLI
+        id: codeql
+        uses: github/codeql-action/setup-codeql@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+
+      # A test directory with no query, or a query with no test directory,
+      # is a guard that cannot fail. Count both before the run.
+      - name: Each query has a test directory
+        working-directory: actions/codeql-queries/${{ matrix.pack }}
+        env:
+          FLOOR: ${{ matrix.floor }}
+        run: |
+          set -euo pipefail
+          n=0
+          for q in src/*.ql; do
+            name=$(basename "$q" .ql)
+            if [ ! -f "tests/$name/test.qlref" ] || [ ! -s "tests/$name/test.expected" ]; then
+              echo "::error::$q has no test directory with a non-empty test.expected"
+              exit 1
+            fi
+            if ! grep -q '^| ' "tests/$name/test.expected"; then
+              echo "::error::tests/$name/test.expected holds no result row, so the fixture flags nothing"
+              exit 1
+            fi
+            n=$((n + 1))
+          done
+          if [ "$n" -lt "$FLOOR" ]; then
+            echo "::error::found $n quer(ies), and the floor is $FLOOR"
+            exit 1
+          fi
+          echo "$n quer(ies), each with a fixture that it must flag"
+
+      - name: Install the pack dependencies
+        working-directory: actions/codeql-queries/${{ matrix.pack }}
+        env:
+          CODEQL: ${{ steps.codeql.outputs.codeql-path }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: '"$CODEQL" pack install'
+
+      - name: Run each query on its fixture
+        working-directory: actions/codeql-queries/${{ matrix.pack }}
+        env:
+          CODEQL: ${{ steps.codeql.outputs.codeql-path }}
+        run: '"$CODEQL" test run tests/'
+
+      # The copy step of the action is what a caller runs. Prove that it puts
+      # the queries where the shared workflow reads them.
+      - name: The action copies the pack into the workspace
+        id: copy
+        uses: ./actions/codeql-queries
+        with:
+          language: ${{ matrix.language }}
+
+      - name: The copied pack holds each query and no test
+        env:
+          QUERIES: ${{ steps.copy.outputs.queries }}
+          PACK: ${{ steps.copy.outputs.pack }}
+          FLOOR: ${{ matrix.floor }}
+        run: |
+          set -euo pipefail
+          n=$(find "$QUERIES" -name '*.ql' | wc -l)
+          [ "$n" -ge "$FLOOR" ] || { echo "::error::the copy holds $n quer(ies), floor $FLOOR"; exit 1; }
+          [ -f "$PACK/qlpack.yml" ] && [ -f "$PACK/codeql-pack.lock.yml" ] || { echo "::error::the copy has no pack files"; exit 1; }
+          [ ! -e "$PACK/tests" ] || { echo "::error::the copy holds the tests"; exit 1; }
+          echo "the copy holds $n quer(ies)"

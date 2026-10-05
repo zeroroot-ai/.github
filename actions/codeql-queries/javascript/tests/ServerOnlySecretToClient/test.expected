@@ -1,0 +1,4 @@
+| bad.tsx:8:24:8:42 | process.env.API_KEY | A server-only value from $@ reaches the client here. | bad.tsx:8:24:8:42 | process.env.API_KEY | process.env.API_KEY |
+| bad.tsx:14:44:14:55 | DATABASE_URL | A server-only value from $@ reaches the client here. | bad.tsx:13:11:13:22 | DATABASE_URL | DATABASE_URL |
+| bad.tsx:19:21:19:26 | region | A server-only value from $@ reaches the client here. | bad.tsx:4:10:4:15 | region | region |
+| bad.tsx:24:21:24:31 | process.env | A server-only value from $@ reaches the client here. | bad.tsx:24:21:24:31 | process.env | process.env |

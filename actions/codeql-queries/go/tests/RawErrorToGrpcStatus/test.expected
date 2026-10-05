@@ -1,0 +1,1 @@
+| handlers.go:21:3:21:17 | return statement | $@ returns a raw error; wrap via connect.NewError or status.Error to set the gRPC code | handlers.go:19:1:24:1 | function declaration | GetThing |
