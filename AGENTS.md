@@ -72,6 +72,9 @@ link but leaves the issue open after the merge.
 
 A useful body states the change, the risk, the rollback, and the test plan.
 
+A design change updates the public design page in the same pull request. No
+trailer and no separate docs pull request carries that duty.
+
 ## 4. Rebase and merge
 
 Squash-merge is the only merge style. Org settings disable merge commits and
