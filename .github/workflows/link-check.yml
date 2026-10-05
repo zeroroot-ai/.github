@@ -51,7 +51,7 @@ jobs:
           path: caller
 
       - name: Check every link the change touched
-        uses: zeroroot-ai/.github/actions/link-check@bb464955a3f949898f6b7ef8e576a20e04302302 # v0.10.4
+        uses: zeroroot-ai/.github/actions/link-check@e4639e6e4d29584443c067f2fc97026fef3ddc93 # v0.13.1
         with:
           repo-root: ${{ github.workspace }}/caller
           paths: ${{ inputs.paths }}
