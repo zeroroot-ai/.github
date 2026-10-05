@@ -53,7 +53,11 @@ exclude = [
   # repository must still not link to them: check-org-refs.sh fails that
   # case. This alternation must name exactly the repositories in
   # data/not-distributed.txt; `check-org-refs.sh --check-policy` asserts it.
-  "github\\.com/zeroroot-ai/(?:hosted|billing|www|testharness|codeql-go-queries|codeql-ts-queries)",
+  #
+  # The group ends at a name boundary. Without it `docs` also matched
+  # `docs-site`, and every link into that public repository would have been
+  # excluded from the check without a word.
+  "github\\.com/zeroroot-ai/(?:hosted|billing|www|testharness|codeql-go-queries|codeql-ts-queries|docs)(?:[/#?]|$)",
 ]
 
 exclude_path = [

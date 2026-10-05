@@ -207,12 +207,19 @@ check_policy() {
   # lychee.toml carries the private names as one regex alternation, so lychee
   # does not fail a private repository for linking to another one. That list
   # and data/not-distributed.txt must agree, or one of them is stale.
-  local toml="${HERE}/lychee.toml" want have
+  local toml="${LYCHEE_TOML:-${HERE}/lychee.toml}" want have
   want="$(grep -vE '^\s*(#|$)' "$NOT_DISTRIBUTED" | sort | paste -sd'|')"
   have="$(grep -oE 'github\\\\\.com/'"${ORG}"'/\(\?:[^)]+\)' "$toml" \
           | sed -E 's/.*\(\?://; s/\)$//' | tr '|' '\n' | sort | paste -sd'|')"
   if [ "$want" != "$have" ]; then
     echo "::error::${GUARD_NAME}: lychee.toml excludes (${have}) but data/not-distributed.txt names (${want})" >&2
+    return 1
+  fi
+  # The alternation must end at a name boundary. lychee matches the pattern
+  # anywhere in a URL, so `docs` with no boundary also excludes `docs-site`.
+  # shellcheck disable=SC2016
+  if ! grep -qF ')(?:[/#?]|$)"' "$toml"; then
+    echo "::error::${GUARD_NAME}: the private-repository pattern in lychee.toml has no name boundary after its group, so a name also excludes every repository it is a prefix of" >&2
     return 1
   fi
   echo "PASS: lychee.toml and data/not-distributed.txt name the same private repositories"
@@ -270,10 +277,29 @@ EOF
   if [ "$rc" -ne 1 ]; then
     echo "selftest FAILED: sub/fixture.md named directly should fail"; failures=$((failures + 1))
   fi
+  # 5 to 7. The policy check: lychee.toml and the list agree, and the pattern
+  #    ends at a name boundary.
+  printf 'hosted\ndocs\n' >"$tmp/list.txt"
+  policy() { # policy <toml body>
+    printf '%s\n' "$1" >"$tmp/lychee.toml"
+    ( NOT_DISTRIBUTED="$tmp/list.txt" LYCHEE_TOML="$tmp/lychee.toml" check_policy ) 2>&1
+  }
+  set +e; out="$(policy '  "github\\.com/zeroroot-ai/(?:hosted|docs)(?:[/#?]|$)",')"; rc=$?; set -e
+  if [ "$rc" -ne 0 ]; then
+    echo "selftest FAILED: a matching list with a boundary should pass:"; echo "$out"; failures=$((failures + 1))
+  fi
+  set +e; out="$(policy '  "github\\.com/zeroroot-ai/(?:hosted|docs)",')"; rc=$?; set -e
+  if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q 'no name boundary'; then
+    echo "selftest FAILED: a pattern with no boundary should fail for that reason, got rc=${rc}:"; echo "$out"; failures=$((failures + 1))
+  fi
+  set +e; out="$(policy '  "github\\.com/zeroroot-ai/(?:hosted)(?:[/#?]|$)",')"; rc=$?; set -e
+  if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q 'names (docs|hosted)'; then
+    echo "selftest FAILED: a list that names a repository lychee.toml omits should fail, got rc=${rc}:"; echo "$out"; failures=$((failures + 1))
+  fi
   if [ "$failures" -ne 0 ]; then
     echo "::error::${GUARD_NAME}: selftest FAILED (${failures})" >&2; exit 1
   fi
-  echo "PASS: ${GUARD_NAME} selftest (4 cases)"
+  echo "PASS: ${GUARD_NAME} selftest (7 cases)"
 }
 
 main() {
