@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/zeroroot-ai/.github/compare/v0.15.0...v0.16.0) (2026-10-05)
+
+
+### Features
+
+* **ci:** add the shared CodeQL workflow and the ADR citation workflow ([#228](https://github.com/zeroroot-ai/.github/issues/228)) ([1aa073d](https://github.com/zeroroot-ai/.github/commit/1aa073dcd2200092f86d3b70c56f53f2b13cdc2c))
+
 ## [0.15.0](https://github.com/zeroroot-ai/.github/compare/v0.14.2...v0.15.0) (2026-10-05)
 
 
