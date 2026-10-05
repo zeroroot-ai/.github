@@ -52,6 +52,9 @@
             "context": "govulncheck"
           },
           {
+            "context": "CodeQL / CodeQL (go)"
+          },
+          {
             "context": "policy-guards / vault-auth-method-deny-list"
           },
           {
