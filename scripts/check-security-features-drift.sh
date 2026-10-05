@@ -11,21 +11,27 @@
 #      CodeQL supports.
 #   3. dependabot — every repo with a dependency graph.
 #
-# Only tiers 1 and 2 are enforced here, and deliberately:
+# All three tiers are enforced here:
 #
 #   Tier 1 needs no judgment. It is universal, so there is nothing to decide and
 #   nothing to exempt, which is what makes it enforceable without a config file
 #   that would itself drift.
 #
 #   Tier 2 is decided from the repo's own primary language, which GitHub
-#   reports. Public repos return `null` for code_security because CodeQL there
-#   is configured by workflow rather than by this setting, so they are skipped
-#   rather than guessed at.
+#   reports. A private repo reports it in code_security. A public repo returns
+#   `null` there, because CodeQL is configured by a workflow or by default
+#   setup, so for a public repo the guard reads those two instead: a CodeQL
+#   workflow on the default branch, or default setup in state `configured`.
+#   This tier was skipped on public repos, which is most of them (.github#193).
 #
-#   Tier 3 is NOT enforced. Deciding "has a dependency graph" means reading the
-#   tree for manifests and workflows, and a guard that is wrong about that would
-#   fail builds for repos that legitimately have nothing to scan. A wrong guard
-#   is worse than no guard.
+#   Tier 3 is decided from the tree of the default branch. A repo has a
+#   dependency manifest when the tree holds a file Dependabot reads: go.mod,
+#   package.json, requirements.txt, pyproject.toml, Cargo.toml, Gemfile,
+#   pom.xml, a Dockerfile, or a workflow under .github/workflows. The list is
+#   MANIFEST_RE below, in one place. A repo with none of them has nothing for
+#   Dependabot to update and is not checked.
+#
+#   A value the guard could not read is drift, never a pass.
 #
 # The live fetch is injected through SECURITY_FETCH_CMD so the mutation test can
 # run in the pull_request lane, where an org token is not available.
@@ -39,6 +45,11 @@ ORG="${ORG:-zeroroot-ai}"
 # Languages CodeQL supports. A repo outside this set is not exempt because it is
 # unimportant; the analysis simply cannot run on it.
 CODEQL_LANGS="Go TypeScript JavaScript Python Ruby Java C# C++ C Kotlin Swift"
+
+# A file that Dependabot reads. One list, matched against each path of the
+# default branch tree.
+MANIFEST_RE='(^|/)(go\.mod|package\.json|requirements\.txt|pyproject\.toml|Cargo\.toml|Gemfile|pom\.xml|Dockerfile[^/]*)$|^\.github/workflows/[^/]+\.ya?ml$'
+CODEQL_WORKFLOW_RE='^\.github/workflows/[^/]*codeql[^/]*\.ya?ml$'
 
 fetch() {
   if [ -n "${SECURITY_FETCH_CMD:-}" ]; then
@@ -58,14 +69,41 @@ fetch() {
   # REST, so this leaves the guard on one API surface.
   gh api "/orgs/${ORG}/repos?per_page=100&type=all" --paginate \
     --jq '.[] | select(.archived | not)
-          | [.name, (if .private then "private" else "public" end), (.language // "-")]
+          | [.name, (if .private then "private" else "public" end), (.language // "-"), .default_branch]
           | @tsv' \
-  | while IFS=$'\t' read -r name vis lang; do
+  | while IFS=$'\t' read -r name vis lang branch; do
       sa=$(gh api "repos/${ORG}/${name}" --jq '.security_and_analysis' 2>/dev/null)
       g() { printf '%s' "$sa" | jq -r ".$1.status // \"absent\"" 2>/dev/null; }
-      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+
+      # The tree of the default branch: how many dependency manifests, and
+      # whether a CodeQL workflow is among the workflows.
+      local tree manifests dependabot codescan
+      # A truncated listing is not the tree. GitHub cuts a recursive listing
+      # at 100,000 entries and says so; a guard that read the cut list would
+      # miss a manifest and report a clean repo.
+      if tree=$(gh api "repos/${ORG}/${name}/git/trees/${branch}?recursive=1" \
+                  --jq 'if .truncated then error("truncated") else .tree[].path end' 2>/dev/null); then
+        # A here-string, not a pipe. `grep -q` exits at the first match, the
+        # writer of a pipe then dies of SIGPIPE on a large tree, and under
+        # pipefail the condition reads false: gibson, whose tree is the
+        # largest, was reported with no CodeQL workflow in the first live run.
+        manifests=$(grep -cE "$MANIFEST_RE" <<<"$tree" || true)
+        if grep -qiE "$CODEQL_WORKFLOW_RE" <<<"$tree"; then
+          codescan="workflow"
+        elif [ "$(gh api "repos/${ORG}/${name}/code-scanning/default-setup" --jq '.state' 2>/dev/null)" = "configured" ]; then
+          codescan="default-setup"
+        else
+          codescan="none"
+        fi
+      else
+        manifests="unreadable"; codescan="unreadable"
+      fi
+      dependabot=$(gh api "repos/${ORG}/${name}/automated-security-fixes" --jq '.enabled' 2>/dev/null) || dependabot="unreadable"
+
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$name" "$vis" "$lang" "$(g secret_scanning)" \
-        "$(g secret_scanning_push_protection)" "$(g code_security)"
+        "$(g secret_scanning_push_protection)" "$(g code_security)" \
+        "$manifests" "$dependabot" "$codescan"
     done
 }
 
@@ -94,7 +132,7 @@ fetch_org() {
 drift=0
 checked=0
 
-while IFS=$'\t' read -r name vis lang secret push code; do
+while IFS=$'\t' read -r name vis lang secret push code manifests dependabot codescan; do
   [ -z "${name:-}" ] && continue
   checked=$((checked + 1))
 
@@ -120,6 +158,34 @@ while IFS=$'\t' read -r name vis lang secret push code; do
       fi
     done
   fi
+
+  # --- tier 2: CodeQL-supported languages, public repos -----------------------
+  # A public repo does not report code_security. Its code scanning is a CodeQL
+  # workflow on the default branch or default setup.
+  if [ "$vis" = "public" ]; then
+    for l in $CODEQL_LANGS; do
+      if [ "$l" = "$lang" ] && [ "${codescan:-unreadable}" != "workflow" ] && [ "${codescan:-unreadable}" != "default-setup" ]; then
+        echo "DRIFT ${name}: public, language ${lang}, and code scanning is '${codescan:-unreadable}' (no CodeQL workflow on the default branch and no default setup) — ADR-0088 tier 2" >&2
+        drift=$((drift + 1))
+        break
+      fi
+    done
+  fi
+
+  # --- tier 3: Dependabot security updates, every repo with a manifest ---------
+  case "${manifests:-unreadable}" in
+    0) ;;
+    ''|*[!0-9]*)
+      echo "DRIFT ${name}: the tree of the default branch could not be read, so tier 3 was not decided — ADR-0088 tier 3" >&2
+      drift=$((drift + 1))
+      ;;
+    *)
+      if [ "${dependabot:-unreadable}" != "true" ]; then
+        echo "DRIFT ${name}: ${manifests} dependency manifest(s) and Dependabot security updates is '${dependabot:-unreadable}' — ADR-0088 tier 3" >&2
+        drift=$((drift + 1))
+      fi
+      ;;
+  esac
 done < <(fetch)
 
 # Org-wide Actions settings (#75). One record; any wrong value is drift.
@@ -154,6 +220,9 @@ Fix by turning the feature on, not by adding an exemption:
     -f 'security_and_analysis[secret_scanning][status]=enabled' \
     -f 'security_and_analysis[secret_scanning_push_protection][status]=enabled'
 
+  gh api -X PUT repos/<org>/<repo>/automated-security-fixes        # tier 3
+  gh api -X PATCH repos/<org>/<repo>/code-scanning/default-setup -f state=configured   # tier 2, public
+
 The three org settings are fixed in the org UI (Settings > Actions > General), or:
   gh api -X PUT orgs/<org>/actions/permissions/workflow \
     -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
@@ -165,4 +234,4 @@ MSG
   exit 1
 fi
 
-echo "ok  ${checked} repos match ADR-0088 (tier 1 universal, tier 2 by language); org Actions settings match #75"
+echo "ok  ${checked} repos match ADR-0088 (tier 1 universal, tier 2 by language, tier 3 by manifest); org Actions settings match #75"
