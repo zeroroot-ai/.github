@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/zeroroot-ai/.github/compare/v0.14.2...v0.15.0) (2026-10-05)
+
+
+### Features
+
+* **adr-citations:** add the action that checks each ADR citation ([#221](https://github.com/zeroroot-ai/.github/issues/221)) ([ab7df27](https://github.com/zeroroot-ai/.github/commit/ab7df27018ea424c0adc68ed12338fcfa4417699))
+* **codeql:** move the six custom queries into this repo ([#223](https://github.com/zeroroot-ai/.github/issues/223)) ([e1debcf](https://github.com/zeroroot-ai/.github/commit/e1debcfabb243343380906907b1930d7d9646d78))
+
 ## [0.14.2](https://github.com/zeroroot-ai/.github/compare/v0.14.1...v0.14.2) (2026-10-05)
 
 
