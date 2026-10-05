@@ -170,7 +170,7 @@ jobs:
       # removals below free about 20 GB in seconds, which is the headroom
       # .github#187 needed (.github#122).
       - name: Free up runner disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
