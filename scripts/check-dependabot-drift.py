@@ -58,7 +58,9 @@ MANIFESTS = (
     ("docker", re.compile(r"(^|/)Dockerfile[^/]*$")),
     ("github-actions", re.compile(r"^\.github/workflows/[^/]+\.ya?ml$")),
 )
-SKIP_PATH = re.compile(r"(^|/)(node_modules|vendor|testdata|tests?/fixtures|\.worktrees)/")
+# A test fixture and a scaffold template are not manifests that Dependabot
+# must update: a template holds placeholders, and a fixture pins on purpose.
+SKIP_PATH = re.compile(r"(^|/)(node_modules|vendor|testdata|tests?/fixtures|fixtures?|templates|\.worktrees)/|\.tmpl$")
 
 
 def ecosystems_of(paths: list[str]) -> set[str]:
@@ -193,6 +195,8 @@ def selftest() -> int:
     expect("the template is clean", check_repo("r", paths, template) == [])
     expect("a manifest under node_modules or testdata does not count",
            ecosystems_of(["node_modules/x/package.json", "a/testdata/go.mod"]) == set())
+    expect("a scaffold template and a fixture do not count",
+           ecosystems_of(["x/templates/agent/Dockerfile.tmpl", "tools/knip/fixture/package.json"]) == set())
     cfg = yaml.safe_load(template)
 
     def mutated(change) -> list:
@@ -238,7 +242,7 @@ def selftest() -> int:
         for f in failures:
             print(f"check-dependabot-drift: selftest FAILED: {f}", file=sys.stderr)
         return 1
-    print("check-dependabot-drift: selftest OK (16 cases, 11 must fail)")
+    print("check-dependabot-drift: selftest OK (17 cases, 11 must fail)")
     return 0
 
 
