@@ -6,6 +6,18 @@
       "ecosystem": "gomod",
       "rule": "missing-entry",
       "reason": "The only go.mod files are the fixtures of the CodeQL queries under actions/codeql-queries/go/tests. A fixture pins the module versions that its expected result needs."
+    },
+    {
+      "repo": "zerocool-plugins",
+      "ecosystem": "npm",
+      "rule": "ignore:@anthropic-ai/claude-code",
+      "reason": "The Claude Code version in tools/claude is the one that the stream-json fixtures came from. A bump captures the fixtures again by hand."
+    },
+    {
+      "repo": "zerocool-plugins",
+      "ecosystem": "npm",
+      "rule": "ignore:pnpm",
+      "reason": "pnpm is bumped by hand together with packageManager in the root package.json."
     }
   ]
 }
