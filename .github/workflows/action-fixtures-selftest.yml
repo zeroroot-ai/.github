@@ -74,6 +74,11 @@ jobs:
       - name: workflow-lint fixtures
         run: bash scripts/test-workflow-lint.sh
 
+      # The check in permissive-floor.yml is inline, so the fixture extracts
+      # the shipped block and runs it against go.mod trees (ADR-0089).
+      - name: permissive-floor fixtures
+        run: bash scripts/test-permissive-floor.sh
+
       - name: action pins are current with the latest release
         run: bash scripts/check-action-pins-are-current.sh
 
