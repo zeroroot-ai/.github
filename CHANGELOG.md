@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/zeroroot-ai/.github/compare/v0.13.0...v0.13.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **link-check:** the not-distributed list names docs and its real consumer ([#205](https://github.com/zeroroot-ai/.github/issues/205)) ([e5745a9](https://github.com/zeroroot-ai/.github/commit/e5745a93e69aefbb05d0121eb9cd3bafe7d008e5)), closes [#197](https://github.com/zeroroot-ai/.github/issues/197)
+* **vault-deny-list:** the list is its own source, and a line-keyed exemption is refused ([#207](https://github.com/zeroroot-ai/.github/issues/207)) ([d98b34f](https://github.com/zeroroot-ai/.github/commit/d98b34f44e67244c8db79f0721c401a067687872)), closes [#196](https://github.com/zeroroot-ai/.github/issues/196)
+
 ## [0.13.0](https://github.com/zeroroot-ai/.github/compare/v0.12.1...v0.13.0) (2026-10-05)
 
 
