@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/zeroroot-ai/.github/compare/v0.14.1...v0.14.2) (2026-10-05)
+
+
+### Bug Fixes
+
+* **rework:** the link-check workflow pins the action at v0.14.1 ([#219](https://github.com/zeroroot-ai/.github/issues/219)) ([e67ac49](https://github.com/zeroroot-ai/.github/commit/e67ac4976be5871cd56bd223871024ba3e9a83fd))
+
 ## [0.14.1](https://github.com/zeroroot-ai/.github/compare/v0.14.0...v0.14.1) (2026-10-05)
 
 
