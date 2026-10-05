@@ -12,8 +12,10 @@
     },
     "repository_name": {
       "include": [
+        "billing",
         "hosted",
-        "sdk"
+        "sdk",
+        "testharness"
       ],
       "exclude": [],
       "protected": false
