@@ -34,7 +34,7 @@ TITLE_PREFIX="ci(codeql): code-scanning digest"
 # What actually closes an alert, per tool. The title says "codeql" for every
 # digest, but most alerts come from somewhere else and need a different
 # action. Keyed by the tool name GitHub reports.
-TOOL_REMEDIATION="CodeQL=A code defect. Fix the code, or dismiss with a reason (ADR-0013).\
+TOOL_REMEDIATION="CodeQL=A code defect. Fix the code, or dismiss with a reason.\
 ;Trivy=A CVE in a dependency or base image. Merge the bump, or move the base image.\
 ;Scorecard=A repo-level OpenSSF score, not a distinct defect. \`VulnerabilitiesID\` restates the dependency CVEs above; it clears when they do."
 MAX_RULE_ROWS="${SARIF_TRIAGE_MAX_RULE_ROWS:-25}"
@@ -152,7 +152,7 @@ build_digest() {
   echo
   echo "Full list: ${link}"
   echo
-  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed. Fix alerts to close them, or dismiss them with a reason per slice 4.6 suppression discipline (ADR-0013)._"
+  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed. Fix alerts to close them, or dismiss them with a reason per slice 4.6 suppression discipline._"
 }
 
 # build_digest_summary <repo> <alerts_file> — fallback when the full digest

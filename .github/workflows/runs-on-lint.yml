@@ -83,7 +83,7 @@ jobs:
                 label="$(echo "$raw" | xargs)"
                 [ -z "$label" ] && continue
                 if ! classify "$label"; then
-                  echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or an *-ephemeral ARC scale-set are allowed. A bare GitHub expression with no -ephemeral suffix is an unbounded label and is rejected. See ADR-0060, GitHub-hosted runners are the default."
+                  echo "::error file=$f::runs-on label '$label' is not sanctioned — only ubuntu-* (GitHub-hosted) or an *-ephemeral ARC scale-set are allowed. A bare GitHub expression with no -ephemeral suffix is an unbounded label and is rejected. GitHub-hosted runners are the default."
                   violations=$((violations+1))
                 fi
               done
@@ -93,7 +93,7 @@ jobs:
                          -print0 2>/dev/null)
 
           if [ "$violations" -gt 0 ]; then
-            echo "::error::$violations forbidden runs-on label(s) found — no persistent self-hosted runners are permitted anywhere in the org (ADR-0060)."
+            echo "::error::$violations forbidden runs-on label(s) found — no persistent self-hosted runners are permitted anywhere in the org."
             exit 1
           fi
           echo "OK: every runs-on label is ubuntu-* or an *-ephemeral ARC scale-set."
