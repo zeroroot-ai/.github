@@ -1,6 +1,30 @@
-# ADR-0009 deny-list (vendored snapshot)
+# ADR-0009 deny-list
 
-This file is a vendored, parse-stable snapshot of the `### Deny-list`
+This file is the source of the list. ADR-0009, "JWT + SPIFFE everywhere",
+states the rule: no service uses the Kubernetes auth method of OpenBao or any
+other TokenReview login. The ADR names this file as the list CI reads, and it
+holds no copy of the list. Change the list here.
+
+The reusable workflow at
+`.github/workflows/vault-auth-method-deny-list.yml` reads this file
+directly. The scanner script at `actions/vault-auth-deny-list/vault-auth-deny-list-scan.sh`
+parses the table below (one literal-string row per token) and rejects
+PRs that introduce any of these strings on a non-allowlisted line.
+
+The parser only emits tokens from rows whose first column is exclusively
+one or more backtick-wrapped strings separated by " / ". A row that mixes
+prose and backticks describes a pattern that a literal scan cannot check, and
+the parser skips it. The script header says why.
+
+**Two rules that are not in the table, and why.** ADR-0009 also forbids a
+Zitadel issuer as the bound issuer of the OpenBao JWT auth method. The two
+places are the Helm value `vault.jwtAuth.boundIssuer` and a write to
+`auth/jwt/config` with `bound_issuer`. Both keys are legitimate: the SPIRE
+OIDC issuer is the correct value. The rule forbids one value of the key, not
+the key, so a literal token for the key would fail every correct chart. No
+scan here checks the value. Review is the only control for these two.
+
+### Deny-list`
 section in ADR-0009, "JWT + SPIFFE everywhere". The ADR lives in the
 internal docs tree at `docs/adr/0009-jwt-spiffe-everywhere.md`.
 

@@ -3,9 +3,16 @@
 #
 # Scans the calling-repo's source tree for ADR-0009 deny-list tokens.
 #
-# Source of truth: ADR-0009, "JWT + SPIFFE everywhere", vendored next to this
-# script as adr-0009-deny-list.md. The "### Deny-list" Markdown table is
-# parsed at run time so the scanner and the deny-list cannot diverge.
+# Source of truth: adr-0009-deny-list.md, next to this script. ADR-0009 states
+# the rule and names that file as the list CI reads; the ADR holds no copy.
+# The "### Deny-list" Markdown table is parsed at run time, so the scanner and
+# the list cannot diverge.
+#
+# COMMENTS ARE MATCHED, ON PURPOSE. The scan is text matching over Go, YAML,
+# Helm templates, shell and Markdown. It cannot tell a comment from code
+# without one parser for each language, and a commented-out
+# `auth/kubernetes` mount is one keystroke from a live one. A comment that
+# must name a token gets an allowlist entry with a reason.
 #
 # Tokens are extracted from the first column of the deny-list table:
 # every backtick-wrapped string in a `|` row becomes a deny-list entry.
@@ -27,22 +34,22 @@
 #   REPO_ROOT     Path to the calling repo's checkout (defaults to $GITHUB_WORKSPACE or .)
 #   ALLOWLIST     Path to the allowlist JSON (defaults to $REPO_ROOT/.github/.vault-auth-deny-list-allowlist.json)
 #
-# The allowlist file is a JSON array of objects. Two entry shapes:
+# The allowlist file is a JSON array of objects with one shape:
 #
-#   {file, line, token}        — line-number-based (classic)
-#   {file, content, token}     — content-based (preferred for CHANGELOG entries)
+#   {file, content, token, reason}
 #
-# Content-based entries match any occurrence of `token` in `file` whose
-# source line contains the exact string `content`. This is stable across
-# release-please CHANGELOG prepends that shift line numbers.
-# Staleness check for content-based entries: grep -qF content file.
-# If the content string is no longer in the file, the entry is stale.
+# An entry matches any occurrence of `token` in `file` whose source line
+# contains the exact string `content`. An unrelated edit above the line never
+# changes the match.
 #
-# Monotonic-shrink: any line-number entry whose source line no longer
-# contains the token is treated as stale and fails the run (with a hint to
-# remove it). New violations are never auto-allowlisted; reviewers must
-# hand-edit the JSON to add an entry (forcing a conversation about why the
-# exception is legitimate).
+# An entry keyed by line number, {file, line, token}, is REFUSED (ADR-0094:
+# no exemption uses a line number). A line-keyed entry needs a re-pin after
+# every edit above it, and after such an edit it exempts whatever now sits on
+# that line.
+#
+# Monotonic-shrink: an entry whose `content` is no longer in the file is stale
+# and fails the run. New violations are never auto-allowlisted; a reviewer
+# adds the entry by hand, with the reason.
 
 set -euo pipefail
 
@@ -212,16 +219,26 @@ scan_repo() {
 diff_against_allowlist() {
   local allow_entries
   if [ -f "$ALLOWLIST" ]; then
-    # Validate the JSON parses, then turn line-based entries into "file\tline\ttoken" keys.
+    # jq reads the allowlist.
     if ! command -v jq >/dev/null 2>&1; then
       echo "::error::jq is required to read the allowlist; it is preinstalled on ubuntu-latest GitHub runners"
       exit 2
     fi
-    # Line-based entries: have a .line field and no .content field (or content is null/empty).
-    allow_entries=$(jq -r '.[] | select((.content == null or .content == "") and .line != null) | [.file, (.line|tostring), .token] | @tsv' "$ALLOWLIST" 2>/dev/null || true)
-  else
-    allow_entries=""
+    if ! jq -e 'type == "array"' "$ALLOWLIST" >/dev/null 2>&1; then
+      echo "::error::$ALLOWLIST is not a JSON array, so no entry in it can be trusted"
+      exit 1
+    fi
+    # An entry with no `content` is keyed by line number, or by nothing.
+    local line_keyed
+    line_keyed=$(jq -r '.[] | select(.content == null or .content == "") | "  \(.file // "?"):\(.line // "?")  \(.token // "?")"' "$ALLOWLIST")
+    if [ -n "$line_keyed" ]; then
+      echo "::error::$ALLOWLIST holds allowlist entries keyed by line number. An exemption is keyed by content (ADR-0094):"
+      printf '%s\n' "$line_keyed"
+      echo "Replace each one with {\"file\", \"content\", \"token\", \"reason\"}, where content is a verbatim part of the source line."
+      exit 1
+    fi
   fi
+  allow_entries=""
 
   # Build sets of violations and allowlist entries keyed by file\tline\ttoken.
   : >"$STALE_FILE"
@@ -294,8 +311,6 @@ diff_against_allowlist() {
     echo
     echo "Fix: remove the forbidden token. The ADR documents the canonical replacement pattern at $ADR_URL."
     echo "If the token is legitimate (rare — e.g. a documentation cross-reference), add an entry to $ALLOWLIST:"
-    echo "  {\"file\": \"<path>\", \"line\": <line>, \"token\": \"<token>\", \"reason\": \"<one sentence>\"}"
-    echo "  OR use content-based (preferred for CHANGELOG entries — stable across line-number shifts):"
     echo "  {\"file\": \"<path>\", \"content\": \"<verbatim substring of the line>\", \"token\": \"<token>\", \"reason\": \"<one sentence>\"}"
     rc=1
   fi
@@ -378,6 +393,51 @@ selftest() {
     return 1
   fi
   echo "[selftest] all $total deny-list tokens caught."
+
+  # ---- the allowlist rules --------------------------------------------------
+  # One source file with one token in a comment, and three allowlists for it.
+  local al="$SCAN_TMPDIR/selftest-allowlist"
+  mkdir -p "$al/.github"
+  printf 'package fake\n\n// the old mount was auth/kubernetes, removed in 2026\nfunc Use() {}\n' >"$al/doc.go"
+  local out rc
+
+  # allowlist_case <json> runs the scan and the diff against one allowlist.
+  allowlist_case() {
+    printf '%s\n' "$1" >"$al/.github/.vault-auth-deny-list-allowlist.json"
+    ( REPO_ROOT="$al"; ALLOWLIST="$al/.github/.vault-auth-deny-list-allowlist.json"; scan_repo >/dev/null 2>&1; diff_against_allowlist ) 2>&1
+  }
+
+  # 1. A token in a comment is a violation with no allowlist entry.
+  set +e; out="$(allowlist_case '[]')"; rc=$?; set -e
+  if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q "deny-list violation: 'auth/kubernetes'"; then
+    echo "::error::selftest FAILED: a token in a comment must be reported, got rc=$rc: $out"; failed=$((failed + 1))
+  fi
+  # 2. A content-keyed entry with a reason tolerates it.
+  set +e; out="$(allowlist_case '[{"file": "doc.go", "content": "the old mount was", "token": "auth/kubernetes", "reason": "history note"}]')"; rc=$?; set -e
+  if [ "$rc" -ne 0 ]; then
+    echo "::error::selftest FAILED: a content-keyed entry must tolerate the line, got rc=$rc: $out"; failed=$((failed + 1))
+  fi
+  # 3. THE CASE .github#196 IS ABOUT. A line-keyed entry is refused, and named.
+  set +e; out="$(allowlist_case '[{"file": "doc.go", "line": 3, "token": "auth/kubernetes", "reason": "history note"}]')"; rc=$?; set -e
+  if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q 'keyed by line number' || ! printf '%s' "$out" | grep -q 'doc.go:3'; then
+    echo "::error::selftest FAILED: a line-keyed entry must be refused and named, got rc=$rc: $out"; failed=$((failed + 1))
+  fi
+  # 4. A content-keyed entry whose content left the file is stale.
+  set +e; out="$(allowlist_case '[{"file": "doc.go", "content": "text that is not in the file", "token": "auth/kubernetes", "reason": "old"}]')"; rc=$?; set -e
+  if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q 'stale'; then
+    echo "::error::selftest FAILED: a stale content-keyed entry must fail, got rc=$rc: $out"; failed=$((failed + 1))
+  fi
+  # 5. An allowlist that is not a JSON array is refused.
+  set +e; out="$(allowlist_case '{"file": "doc.go"}')"; rc=$?; set -e
+  if [ "$rc" -ne 1 ] || ! printf '%s' "$out" | grep -q 'not a JSON array'; then
+    echo "::error::selftest FAILED: a non-array allowlist must be refused, got rc=$rc: $out"; failed=$((failed + 1))
+  fi
+
+  if [ "$failed" -gt 0 ]; then
+    echo "[selftest] $failed allowlist case(s) FAILED."
+    return 1
+  fi
+  echo "[selftest] all 5 allowlist cases passed."
   return 0
 }
 
@@ -401,29 +461,8 @@ case "$MODE" in
     scan_repo
     diff_against_allowlist
     ;;
-  --dump-violations|dump-violations)
-    # Bootstrap-only helper: emit current violations as a JSON allowlist
-    # to stdout. Useful for seeding .vault-auth-deny-list-allowlist.json.
-    # CI never invokes this mode.
-    scan_repo >/dev/null 2>&1
-    awk -F'\t' '
-      NF >= 3 && $1 != "" {
-        # Escape quotes in the line content
-        gsub(/\\/, "\\\\", $4)
-        gsub(/"/, "\\\"", $4)
-        entries[NR] = sprintf("  {\"file\": \"%s\", \"line\": %s, \"token\": \"%s\", \"reason\": \"pre-ADR-0009 cross-reference\"}", $1, $2, $3)
-      }
-      END {
-        printf "[\n"
-        for (i = 1; i <= NR; i++) {
-          printf "%s%s\n", entries[i], (i < NR ? "," : "")
-        }
-        printf "]\n"
-      }
-    ' "$VIOL_FILE" | jq 'sort_by(.file, .line, .token) | unique_by([.file, .line, .token])'
-    ;;
   *)
-    echo "usage: $0 [scan|--selftest|--dump-violations]" >&2
+    echo "usage: $0 [scan|--selftest]" >&2
     exit 2
     ;;
 esac
