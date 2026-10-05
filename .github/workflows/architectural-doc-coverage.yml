@@ -183,7 +183,7 @@ jobs:
           set -euo pipefail
           # Match: Docs-PR: https://github.com/zeroroot-ai/docs-site/pull/<N>
           # docs-site is the one public home for contributor procedures
-          # (ADR-0067 "docs-site owns contributor documentation", 2026-08-24).
+          # (owner decision "docs-site owns contributor documentation", 2026-08-24).
           # The internal docs repository was deleted on 2026-09-05, so a URL
           # into it can never resolve and is no longer accepted here.
           # $body comes from $GITHUB_ENV — never template-substituted.
