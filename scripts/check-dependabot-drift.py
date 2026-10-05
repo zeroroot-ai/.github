@@ -10,6 +10,9 @@ RULES FOR ONE `updates` ENTRY
 
   weekly          schedule.interval is weekly.
   prefix          commit-message.prefix is chore(deps).
+  scope-twice     commit-message.include is not scope. The prefix already
+                  holds the scope, and `include: scope` adds a second one:
+                  "chore(deps)(deps): bump ...".
   group           one group has the pattern "*" and exactly the update types
                   minor and patch.
   major-in-group  no group holds a major update. The one exception is the
@@ -81,6 +84,8 @@ def check_entry(entry: dict) -> list[str]:
         broken.append("weekly")
     if (entry.get("commit-message") or {}).get("prefix") != "chore(deps)":
         broken.append("prefix")
+    if (entry.get("commit-message") or {}).get("include") == "scope":
+        broken.append("scope-twice")
     groups = entry.get("groups") or {}
     has_group = False
     for name, group in groups.items():
@@ -213,6 +218,7 @@ def selftest() -> int:
     def one_pin(c): c["updates"][0]["ignore"] = [{"dependency-name": "google.golang.org/grpc", "versions": [">=1.80"]}]
     def no_prefix(c): del c["updates"][1]["commit-message"]
     def no_npm(c): del c["updates"][1]
+    def scope_twice(c): c["updates"][0]["commit-message"]["include"] = "scope"
     expect("a daily schedule fails", ("r", "gomod", "weekly") in mutated(daily))
     expect("an entry with no group fails", ("r", "gomod", "group") in mutated(no_group))
     expect("an ignore of each major update fails", ("r", "gomod", "ignore-major") in mutated(major_ignored))
@@ -220,6 +226,7 @@ def selftest() -> int:
     expect("an ignore of one dependency is a named difference",
            ("r", "gomod", "ignore:google.golang.org/grpc") in mutated(one_pin))
     expect("an entry with no commit prefix fails", ("r", "npm", "prefix") in mutated(no_prefix))
+    expect("a second scope in the subject fails", ("r", "gomod", "scope-twice") in mutated(scope_twice))
     expect("a manifest with no entry fails", ("r", "npm", "missing-entry") in mutated(no_npm))
     expect("a repo with a manifest and no file fails",
            check_repo("r", ["go.mod"], None) == [("r", "gomod", "missing-file")])

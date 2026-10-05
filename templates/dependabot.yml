@@ -35,7 +35,6 @@ updates:
     # The Conventional Commit prefix that pr-title-lint expects.
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
 
   # npm: each repo with a package.json.
   - package-ecosystem: "npm"
@@ -54,7 +53,6 @@ updates:
           - "patch"
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
 
   # GitHub Actions: each repo with a workflow.
   - package-ecosystem: "github-actions"
@@ -81,7 +79,6 @@ updates:
           - "patch"
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
 
   # Docker base images: each repo with a Dockerfile.
   - package-ecosystem: "docker"
@@ -100,4 +97,3 @@ updates:
           - "patch"
     commit-message:
       prefix: "chore(deps)"
-      include: "scope"
