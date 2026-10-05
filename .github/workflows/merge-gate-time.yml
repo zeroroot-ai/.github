@@ -1,0 +1,45 @@
+# Reports the time of the merge gate for each repo (.github#199, ADR-0080).
+#
+# The merge gate has a budget of ten minutes. This workflow reads the required
+# check runs of the pull requests that merged in the last seven days, and
+# writes one table to the summary of its run: the median and the longest time
+# for each repo, with a mark on each repo above the budget.
+#
+# It is a report. It opens no issue, and it does not run on a pull request
+# (owner decision of 2026-10-05). scripts/merge-gate-time.py states how it
+# measures. action-fixtures-selftest.yml runs its fixtures on each pull request.
+#
+# The read token GH_PAT_PLATFORM_RO has read access only. It lets the report
+# read the private repos.
+name: merge-gate-time
+
+on:
+  schedule:
+    # Mondays 07:47 UTC. Off the hour, away from the peak of the scheduler.
+    - cron: "47 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Number of days that the report covers
+        required: false
+        default: "7"
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: merge-gate-time
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prove that the report marks a slow repo
+        run: python3 scripts/merge-gate-time.py --selftest
+
+      - name: Write the report to the run summary
+        env:
+          READ_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
+          DAYS: ${{ inputs.days || '7' }}
+        run: python3 scripts/merge-gate-time.py --days "$DAYS"
