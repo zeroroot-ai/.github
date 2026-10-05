@@ -16,6 +16,13 @@
 # why repo-settings/merge.json declares it and the drift guard checks it. It
 # was off on eight of sixteen repos.
 #
+# Only a patch or a minor update is armed (owner decision of 2026-10-05, D44).
+# A major update waits for a person. The update type of each dependency comes
+# from the commit message that Dependabot writes (`update-type:
+# version-update:semver-minor`). A pull request is armed only when it states
+# an update type for each update and each one is patch or minor. A pull
+# request that states no update type is not armed: the sweep does not guess.
+#
 # Policy lives in repo-settings/automerge.json, not here.
 #
 #   dependabot-automerge.sh             arm every eligible PR
@@ -46,7 +53,7 @@ excluded() {
     'any(.[]; (. | ascii_downcase) == $v)' >/dev/null 2>&1
 }
 
-# eligible <repo> <title> — exit 0 when this PR should be armed.
+# eligible <repo> <title> — exit 0 when policy does not exclude this PR.
 eligible() {
   local repo="$1" title="$2"
   local ex_repos ex_deps
@@ -54,6 +61,25 @@ eligible() {
   ex_deps=$(jq -c '.exclude_dependencies // []' "$POLICY")
   excluded "$ex_repos" "$repo" && return 1
   excluded "$ex_deps" "$(dependency_of "$title")" && return 1
+  return 0
+}
+
+# patch_or_minor <types> — exit 0 when each update of the PR is a patch or a
+# minor update. <types> is the comma-joined list of the `update-type:` values
+# of the Dependabot commit message, one for each updated dependency.
+#
+# An empty list fails. So does any value that is not exactly semver-patch or
+# semver-minor: a major update, and a value this script does not know.
+patch_or_minor() {
+  local types="$1" t
+  [ -n "$types" ] || return 1
+  local IFS=','
+  for t in $types; do
+    case "$t" in
+      version-update:semver-patch|version-update:semver-minor) ;;
+      *) return 1 ;;
+    esac
+  done
   return 0
 }
 
@@ -83,6 +109,18 @@ arm() {
   esac
 }
 
+# disarm <repo> <number> — take auto-merge off a PR that must wait for a person.
+disarm() {
+  local repo="$1" number="$2"
+  if [ -n "${AUTOMERGE_DISARM_CMD:-}" ]; then eval "$AUTOMERGE_DISARM_CMD"; return 0; fi
+  if [ "$DRY_RUN" = 1 ]; then echo "disarm   ${repo}#${number} (dry run)"; return 0; fi
+  if gh pr merge "$number" -R "${ORG}/${repo}" --disable-auto >/dev/null 2>&1; then
+    echo "disarm   ${repo}#${number}"
+  else
+    echo "::warning::could not take auto-merge off ${repo}#${number}"
+  fi
+}
+
 sweep() {
   if [ "$(jq -r '.enabled' "$POLICY")" != "true" ]; then
     echo "::notice::auto-merge is disabled in $(basename "$POLICY") — nothing armed"
@@ -90,9 +128,19 @@ sweep() {
   fi
 
   local armed=0 skipped=0 already=0 failed=0 seen=0 outcome
-  while IFS=$'\t' read -r repo number title auto; do
+  local major=0
+  while IFS=$'\t' read -r repo number title auto types; do
     [ -n "${repo:-}" ] || continue
     seen=$((seen + 1))
+    # The update type comes first. A major update is never armed, and a PR
+    # that was armed before this rule existed is not counted as correct.
+    if ! patch_or_minor "${types:-}"; then
+      echo "wait     ${repo}#${number} — not only patch and minor updates (${types:-no update type}); it waits for a person"
+      # A PR that an earlier sweep armed would still merge alone. Take the
+      # arm off, so that the statement above is true.
+      if [ "$auto" = "true" ]; then disarm "$repo" "$number"; fi
+      major=$((major + 1)); continue
+    fi
     # `auto` is authoritative only when true. A QUEUED pull request reports
     # autoMergeRequest: null, so a false here means "unarmed OR queued" and
     # arm() settles which.
@@ -118,16 +166,19 @@ sweep() {
 
   echo
   if [ "$DRY_RUN" = 1 ]; then
-    echo "${seen} open Dependabot PR(s): ${armed} would be armed (upper bound: a queued PR is indistinguishable here), ${already} already armed, ${skipped} excluded"
+    echo "${seen} open Dependabot PR(s): ${armed} would be armed (upper bound: a queued PR is indistinguishable here), ${already} already armed, ${skipped} excluded, ${major} wait for a person"
   else
-    echo "${seen} open Dependabot PR(s): ${armed} armed, ${already} already armed, ${skipped} excluded, ${failed} refused"
+    echo "${seen} open Dependabot PR(s): ${armed} armed, ${already} already armed, ${skipped} excluded, ${major} wait for a person, ${failed} refused"
   fi
   # A refusal is a real condition worth a red run: it means a repo setting or
   # a ruleset is blocking the policy, and silence would hide it.
   [ "$failed" -eq 0 ]
 }
 
-# open_dependabot_prs — repo<TAB>number<TAB>title<TAB>autoMergeRequestIsSet
+# open_dependabot_prs — repo<TAB>number<TAB>title<TAB>autoMergeRequestIsSet<TAB>updateTypes
+#
+# updateTypes is the comma-joined list of each `update-type:` value in the
+# commit messages of the PR. Dependabot writes one for each updated dependency.
 open_dependabot_prs() {
   if [ -n "${AUTOMERGE_FETCH_CMD:-}" ]; then
     eval "$AUTOMERGE_FETCH_CMD"
@@ -138,8 +189,8 @@ open_dependabot_prs() {
     --jq '.items[] | [(.repository_url | split("/") | last), (.number | tostring)] | @tsv' \
   | while IFS=$'\t' read -r repo number; do
       gh pr view "$number" -R "${ORG}/${repo}" \
-        --json number,title,autoMergeRequest \
-        --jq "[\"${repo}\", (.number|tostring), .title, (.autoMergeRequest != null | tostring)] | @tsv" 2>/dev/null
+        --json number,title,autoMergeRequest,commits \
+        --jq "[\"${repo}\", (.number|tostring), .title, (.autoMergeRequest != null | tostring), ([.commits[].messageBody | scan(\"update-type: (version-update:semver-[a-z]+)\") | .[0]] | join(\",\"))] | @tsv" 2>/dev/null
     done
 }
 
@@ -181,12 +232,12 @@ CASES
 
   # --- the kill switch, and the already-armed path
   printf '%s' '{"enabled":false,"exclude_repos":[],"exclude_dependencies":[]}' >"$POLICY"
-  out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\n'" DRY_RUN=1 sweep 2>&1)
+  out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\tversion-update:semver-minor\n'" DRY_RUN=1 sweep 2>&1)
   case "$out" in *"disabled"*) ok "enabled:false arms nothing" ;; *) bad "enabled:false still swept" ;; esac
 
   printf '%s' '{"enabled":true,"exclude_repos":[],"exclude_dependencies":[]}' >"$POLICY"
   DRY_RUN=1
-  out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\ttrue\n'" sweep 2>&1)
+  out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\ttrue\tversion-update:semver-patch\n'" sweep 2>&1)
   case "$out" in *"1 already armed"*) ok "an already-armed PR is left alone" ;; *) bad "re-armed a PR: $out" ;; esac
 
   # A QUEUED pull request reports autoMergeRequest: null, so it reaches the
@@ -195,7 +246,7 @@ CASES
   # the queue — which on a merge-queue repo is every PR, for days. arm() has
   # to settle it from what gh actually said.
   out=$(AUTOMERGE_ARM_CMD="echo already" \
-        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\n'" sweep 2>&1)
+        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\tversion-update:semver-minor\n'" sweep 2>&1)
   case "$out" in
     *"1 already armed"*) ok "a QUEUED PR reporting autoMergeRequest:null counts as already armed" ;;
     *) bad "a queued PR was counted as newly armed: $out" ;;
@@ -207,7 +258,7 @@ CASES
 
   # A refusal must stay loud and must turn the run red.
   out=$(AUTOMERGE_ARM_CMD="echo failed" \
-        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\n'" sweep 2>&1)
+        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\tversion-update:semver-minor\n'" sweep 2>&1)
   rc=$?
   case "$out" in
     *"could not arm"*)
@@ -215,7 +266,7 @@ CASES
     *) bad "a refusal was swallowed: $out" ;;
   esac
 
-  out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\ngibson\t2\tchore(deps): bump y from 1 to 2\tfalse\n'" sweep 2>&1)
+  out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\tversion-update:semver-minor\ngibson\t2\tchore(deps): bump y from 1 to 2\tfalse\tversion-update:semver-patch\n'" sweep 2>&1)
   case "$out" in *"2 would be armed"*) ok "two unarmed PRs are both armed" ;; *) bad "wrong arm count: $out" ;; esac
 
   # The dry-run summary must not claim it distinguished a queued PR, because
@@ -223,6 +274,42 @@ CASES
   case "$out" in
     *"upper bound"*) ok "the dry-run summary says its count is an upper bound" ;;
     *) bad "the dry run presented a count it cannot know as exact: $out" ;;
+  esac
+
+  # --- the update type (D44): a major update waits for a person
+  if patch_or_minor "version-update:semver-minor,version-update:semver-patch"; then ok "a grouped minor and patch update is armed"; else bad "a grouped minor update was refused"; fi
+  if patch_or_minor "version-update:semver-major"; then bad "a major update was armed"; else ok "a major update is not armed"; fi
+  if patch_or_minor "version-update:semver-minor,version-update:semver-major"; then bad "a group with one major update was armed"; else ok "a group with one major update is not armed"; fi
+  if patch_or_minor ""; then bad "a PR with no update type was armed"; else ok "a PR with no update type is not armed"; fi
+  if patch_or_minor "version-update:semver-other"; then bad "an unknown update type was armed"; else ok "an unknown update type is not armed"; fi
+
+  out=$(AUTOMERGE_ARM_CMD="echo armed" \
+        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\tversion-update:semver-major\ngibson\t2\tchore(deps): bump the go-deps group with 2 updates\tfalse\tversion-update:semver-minor,version-update:semver-patch\n'" sweep 2>&1)
+  case "$out" in
+    *"wait     gibson#1"*) ok "the sweep leaves a major update for a person" ;;
+    *) bad "the sweep did not hold a major update: $out" ;;
+  esac
+  case "$out" in
+    *"armed    gibson#2"*"1 would be armed"*"1 wait for a person"*) ok "the sweep arms the grouped minor update next to it" ;;
+    *) bad "the sweep did not arm the grouped minor update: $out" ;;
+  esac
+  # A major update that was armed before this rule is still reported.
+  out=$(AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\ttrue\tversion-update:semver-major\n'" sweep 2>&1)
+  case "$out" in
+    *"wait     gibson#1"*"0 already armed"*) ok "an armed major update is reported, not counted as correct" ;;
+    *) bad "an armed major update was counted as correct: $out" ;;
+  esac
+  out=$(AUTOMERGE_DISARM_CMD='echo "DISARMED $repo#$number"' \
+        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\ttrue\tversion-update:semver-major\n'" sweep 2>&1)
+  case "$out" in
+    *"DISARMED gibson#1"*) ok "an armed major update loses its arm" ;;
+    *) bad "an armed major update kept its arm: $out" ;;
+  esac
+  out=$(AUTOMERGE_DISARM_CMD='echo "DISARMED $repo#$number"' AUTOMERGE_ARM_CMD="echo armed" \
+        AUTOMERGE_FETCH_CMD="printf 'gibson\t1\tchore(deps): bump x from 1 to 2\tfalse\tversion-update:semver-major\n'" sweep 2>&1)
+  case "$out" in
+    *"DISARMED"*) bad "an unarmed major update got a disarm call: $out" ;;
+    *) ok "an unarmed major update gets no disarm call" ;;
   esac
 
   out=$(AUTOMERGE_FETCH_CMD="printf ''" sweep 2>&1)

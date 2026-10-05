@@ -1,16 +1,23 @@
 # Shared Dependabot config template for zeroroot-ai repos.
-# Slice 1.5 (interim path while Renovate marketplace install is pending).
 #
-# Per-repo .github/dependabot.yml copies this template, adapting only
-# the ecosystem mix (Go vs npm vs gomod-only). Drift detector (forthcoming)
-# asserts per-repo files conform.
+# The rule (owner decision of 2026-10-05, D44):
+#
+#   - Dependabot opens grouped pull requests each week.
+#   - A patch or minor update is in one group for each ecosystem. The sweep
+#     scripts/dependabot-automerge.sh arms it, and it merges alone on a green
+#     merge gate.
+#   - A major update opens as its own pull request and waits for a person.
+#     So no entry ignores major updates, and no group holds them.
+#
+# The .github/dependabot.yml of a repo copies the entries for the ecosystems
+# that it has, and adapts only `directory`. scripts/check-dependabot-drift.py
+# compares each repo with these rules each day. A difference needs an entry
+# with a reason in repo-settings/dependabot-exceptions.json.
 
 version: 2
 updates:
-  # Go modules — any repo with go.mod at the root. Verified 2026-10-02:
-  # gibson, sdk, setec, gibson-executor, billing, cve-triage, ast-checks,
-  # testfixtures, testharness. adk is a Go module too, rooted at gibson/
-  # rather than at the repo root, so it adapts the directory below.
+  # Go modules: each repo with a go.mod. A repo whose module is not at the
+  # root adapts the directory (adk: /gibson).
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
@@ -25,18 +32,12 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # PRs go through release-please / standard flow. Conventional Commit
-    # prefix matches what pr-title-lint expects.
+    # The Conventional Commit prefix that pr-title-lint expects.
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
-    # No major-version bumps — those require manual review.
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
 
-  # npm — dashboard only
+  # npm: each repo with a package.json.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -54,12 +55,8 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-major"
 
-  # GitHub Actions — all repos with workflows
+  # GitHub Actions: each repo with a workflow.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -68,14 +65,25 @@ updates:
       time: "09:00"
     open-pull-requests-limit: 5
     groups:
+      # The sub-actions of codeql-action (init, analyze, upload-sarif) must
+      # move together, also for a major update. A run with two versions of
+      # them fails. This is the one group that holds each update type.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
       actions-deps:
         patterns:
           - "*"
+        exclude-patterns:
+          - "github/codeql-action*"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
 
-  # Docker base images — image-producing repos
+  # Docker base images: each repo with a Dockerfile.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
@@ -83,6 +91,13 @@ updates:
       day: "monday"
       time: "09:00"
     open-pull-requests-limit: 3
+    groups:
+      docker-deps:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     commit-message:
       prefix: "chore(deps)"
       include: "scope"

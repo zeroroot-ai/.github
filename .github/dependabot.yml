@@ -19,3 +19,17 @@ updates:
       codeql-action:
         patterns:
           - "github/codeql-action*"
+      # A patch or a minor update of each other action is in one pull request,
+      # and the sweep arms it. A major update opens alone and waits for a
+      # person (templates/dependabot.yml).
+      actions-deps:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github/codeql-action*"
+        update-types:
+          - "minor"
+          - "patch"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"

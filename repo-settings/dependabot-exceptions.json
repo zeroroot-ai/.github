@@ -1,0 +1,23 @@
+{
+  "_comment": "Named differences from the Dependabot rules of templates/dependabot.yml, read by scripts/check-dependabot-drift.py. Each entry names one repo, one ecosystem, one rule and a reason. The rule is the id that the drift check prints, for example 'ignore:google.golang.org/grpc' or 'missing-entry'. An entry that exempts no finding fails the check, so this list cannot rot.",
+  "exceptions": [
+    {
+      "repo": ".github",
+      "ecosystem": "gomod",
+      "rule": "missing-entry",
+      "reason": "The only go.mod files are the fixtures of the CodeQL queries under actions/codeql-queries/go/tests. A fixture pins the module versions that its expected result needs."
+    },
+    {
+      "repo": "zerocool-plugins",
+      "ecosystem": "npm",
+      "rule": "ignore:@anthropic-ai/claude-code",
+      "reason": "The Claude Code version in tools/claude is the one that the stream-json fixtures came from. A bump captures the fixtures again by hand."
+    },
+    {
+      "repo": "zerocool-plugins",
+      "ecosystem": "npm",
+      "rule": "ignore:pnpm",
+      "reason": "pnpm is bumped by hand together with packageManager in the root package.json."
+    }
+  ]
+}

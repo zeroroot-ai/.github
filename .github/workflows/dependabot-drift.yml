@@ -1,0 +1,56 @@
+# Compares the dependabot.yml of each repo with the rules of the template
+# (.github#214, D44).
+#
+# scripts/check-dependabot-drift.py states the rules. A difference needs an
+# entry with a reason in repo-settings/dependabot-exceptions.json.
+#
+# Two jobs, split by the token:
+#
+#   dependabot-drift-fixtures  the fixtures of the check, offline, on each
+#                              pull request that touches the check.
+#   dependabot-drift           the real comparison, each Monday and on demand.
+#                              It reads each repo with GH_PAT_PLATFORM_RO,
+#                              which has read access only. It opens no issue.
+name: dependabot-drift
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/dependabot-drift.yml"
+      - "scripts/check-dependabot-drift.py"
+      - "templates/dependabot.yml"
+      - "repo-settings/dependabot-exceptions.json"
+  schedule:
+    # Mondays 08:11 UTC, before the weekly Dependabot run at 09:00.
+    - cron: "11 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-drift-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixtures:
+    name: dependabot-drift-fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Prove that the check can fail
+        run: python3 scripts/check-dependabot-drift.py --selftest
+
+  drift:
+    name: dependabot-drift
+    if: github.event_name != 'pull_request'
+    needs: fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Compare each repo with the template
+        env:
+          READ_TOKEN: ${{ secrets.GH_PAT_PLATFORM_RO }}
+        run: python3 scripts/check-dependabot-drift.py
