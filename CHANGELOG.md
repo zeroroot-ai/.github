@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.17.0](https://github.com/zeroroot-ai/.github/compare/v0.16.0...v0.17.0) (2026-10-05)
+
+
+### Features
+
+* **ci:** add the weekly report of the merge gate time ([#225](https://github.com/zeroroot-ai/.github/issues/225)) ([bda560f](https://github.com/zeroroot-ai/.github/commit/bda560fa317ef803feb92d6b2e771320fae66331))
+* **codeql:** a caller can run the shared job with no scan ([#238](https://github.com/zeroroot-ai/.github/issues/238)) ([2f06eb8](https://github.com/zeroroot-ai/.github/commit/2f06eb856de650eff14f72bc315f7e32a334702c))
+* **dependabot:** a major update opens alone and waits for a person ([#226](https://github.com/zeroroot-ai/.github/issues/226)) ([c334ad3](https://github.com/zeroroot-ai/.github/commit/c334ad3804f1a9d6773c8fd12e2354c1629de805))
+* **rulesets:** a guard fails a ruleset that requires a review or a signed commit ([#224](https://github.com/zeroroot-ai/.github/issues/224)) ([51157db](https://github.com/zeroroot-ai/.github/commit/51157dbcf0c555ce5c8f9ff3605658aa44fa3d66))
+* **rulesets:** six more repos get the pull request rule ([#237](https://github.com/zeroroot-ai/.github/issues/237)) ([3d742c3](https://github.com/zeroroot-ai/.github/commit/3d742c394875dcdc933cf6fa1ebc817ff97e50ac))
+
+
+### Bug Fixes
+
+* **security-drift:** the guard checks dependabot and code scanning on public repos ([#208](https://github.com/zeroroot-ai/.github/issues/208)) ([a737a5d](https://github.com/zeroroot-ai/.github/commit/a737a5d58f7992169c83911216d3672a147a2cb7)), closes [#193](https://github.com/zeroroot-ai/.github/issues/193)
+
 ## [0.16.0](https://github.com/zeroroot-ai/.github/compare/v0.15.0...v0.16.0) (2026-10-05)
 
 
