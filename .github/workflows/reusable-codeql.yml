@@ -25,6 +25,12 @@
 # `upload: never`, and reads the result from the artifact.
 #
 # Check names: `CodeQL (<language>)`, one for each language.
+#
+# A caller that filters its scan by path sets `scan: false` when no path
+# matched. The job then runs, skips each step, and reports success under the
+# same check name. Do not skip the calling job instead: a skipped calling job
+# reports only its own name, and a ruleset that requires
+# `<caller> / CodeQL (<language>)` then waits for ever.
 
 name: reusable-codeql
 
@@ -54,6 +60,11 @@ on:
         type: string
         required: false
         default: ""
+      scan:
+        description: "false runs the job with no scan, so that the check name still reports success"
+        type: boolean
+        required: false
+        default: true
       upload:
         description: "always sends the result to code scanning, never keeps it in the artifact only"
         type: string
@@ -82,10 +93,15 @@ jobs:
       # checksum database still verifies it.
       GOPROXY: https://proxy.golang.org|direct
     steps:
+      - name: The caller skips the scan
+        if: ${{ !inputs.scan }}
+        run: echo "The caller set scan to false. No path of the scan changed."
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.scan
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: matrix.language == 'go'
+        if: inputs.scan && matrix.language == 'go'
         with:
           go-version-file: ${{ inputs.go-version-file }}
           cache: true
@@ -94,6 +110,7 @@ jobs:
       # output is empty for a language with no custom query.
       - name: Get the custom queries
         id: queries
+        if: inputs.scan
         uses: zeroroot-ai/.github/actions/codeql-queries@2267cc2e13bd2afeaa7b8bda466318c5079282d9 # v0.15.0
         with:
           language: ${{ matrix.language }}
@@ -102,6 +119,7 @@ jobs:
       # ignored paths of the caller. No repo keeps a CodeQL config file.
       - name: Write the CodeQL config
         id: config
+        if: inputs.scan
         env:
           QUERIES: ${{ steps.queries.outputs.queries }}
           PATHS_IGNORE: ${{ inputs.paths-ignore }}
@@ -132,6 +150,7 @@ jobs:
 
       - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         id: init
+        if: inputs.scan
         with:
           languages: ${{ matrix.language }}
           config-file: ${{ steps.config.outputs.path }}
@@ -140,7 +159,7 @@ jobs:
       # The pack has a lock file. This step gets the library versions that
       # the lock file states, so each repo compiles the queries the same way.
       - name: Install the dependencies of the custom queries
-        if: steps.queries.outputs.pack != ''
+        if: inputs.scan && steps.queries.outputs.pack != ''
         env:
           CODEQL: ${{ steps.init.outputs.codeql-path }}
           PACK: ${{ steps.queries.outputs.pack }}
@@ -148,12 +167,13 @@ jobs:
         run: '"$CODEQL" pack install "$PACK"'
 
       - name: Build
-        if: matrix.language == 'go' && inputs.go-build-command != ''
+        if: inputs.scan && matrix.language == 'go' && inputs.go-build-command != ''
         env:
           BUILD: ${{ inputs.go-build-command }}
         run: bash -euo pipefail -c "$BUILD"
 
       - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        if: inputs.scan
         with:
           category: /language:${{ matrix.language }}
           upload: ${{ inputs.upload }}
@@ -162,7 +182,7 @@ jobs:
       # The result as a file. A repo with `upload: never` reads it here, and
       # codeql-shared-selftest.yml asserts on it.
       - name: Keep the result as an artifact
-        if: always()
+        if: always() && inputs.scan
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: codeql-sarif-${{ matrix.language }}

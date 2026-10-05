@@ -6,6 +6,10 @@
 # only Go and TypeScript code is the fixtures of the queries, and then reads
 # the result file. Each of the six rule ids must have a result.
 #
+# The job `skip` calls the workflow with `scan: false`. That call must
+# succeed and must upload no result file. A caller with a path filter uses
+# it, so that its required check name still reports.
+#
 # The scan uses `upload: never`. The fixtures are wrong on purpose, and their
 # findings do not belong in the Security tab of this repo.
 name: codeql-shared-selftest
@@ -37,9 +41,21 @@ jobs:
         (cd actions/codeql-queries/go/tests/RawErrorToGrpcStatus && go build -mod=vendor ./...)
       upload: never
 
+  skip:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/reusable-codeql.yml
+    with:
+      languages: '["actions"]'
+      scan: false
+      upload: never
+
   assert:
     name: codeql-shared-selftest
-    needs: scan
+    needs: [scan, skip]
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -47,6 +63,22 @@ jobs:
         with:
           pattern: codeql-sarif-*
           path: sarif
+
+      - name: The scan and the skipped scan succeeded
+        env:
+          SCAN: ${{ needs.scan.result }}
+          SKIP: ${{ needs.skip.result }}
+        run: |
+          set -euo pipefail
+          echo "scan=$SCAN skip=$SKIP"
+          if [ "$SCAN" != success ] || [ "$SKIP" != success ]; then
+            echo "::error::each call of reusable-codeql.yml must succeed"
+            exit 1
+          fi
+          if [ -d sarif/codeql-sarif-actions ]; then
+            echo "::error::the call with scan false uploaded a result file"
+            exit 1
+          fi
 
       - name: Each custom query has a result on its fixture
         run: |
