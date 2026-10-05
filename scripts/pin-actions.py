@@ -26,8 +26,8 @@ FIRST-PARTY REFERENCES COUNT TOO (.github#66). This used to skip
 `zeroroot-ai/*` on the grounds that those were "re-pinned by
 repin-github-consumers.sh". No such script has ever existed in this
 repository, so nothing enforced it, and the convention held only where
-somebody remembered: every caller of reusable-image-build.yml,
-architectural-doc-coverage.yml and the policy guards pins a SHA, while
+somebody remembered: every caller of reusable-image-build.yml and the
+policy guards pins a SHA, while
 templates/tree-guards.yml shipped `@main` and was copied verbatim into 19
 repositories. Scorecard and CodeQL each raised it in every repository that
 scans one — 24 alerts, one root cause.

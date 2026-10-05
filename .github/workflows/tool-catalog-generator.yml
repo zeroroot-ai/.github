@@ -108,7 +108,6 @@ jobs:
             echo "| \`makefile-contract.yml\` | monthly, 1st 11:30 UTC | audit Makefile contract per repo | 1.4 |"
             echo "| \`failure-mode-aggregator.yml\` | monthly, 1st 12:00 UTC | aggregate failure-mode.yaml manifests | 6.5 |"
             echo "| \`tool-catalog-generator.yml\` | monthly, 1st 12:30 UTC | regenerate this file | 6.4 |"
-            echo "| \`architectural-doc-coverage.yml\` | every PR | Docs-PR trailer check | (existing) |"
             echo "| \`no-monorepo-shortcuts.yml\` | every PR | go.work / replace / .gitmodules deny-list | (existing) |"
             echo "| \`vault-auth-method-deny-list.yml\` | every PR | per ADR-0009 amendment | (existing) |"
             echo "| \`ci-failure-triage.yml\` | every CI failure | auto-open ci-failure issue | (existing) |"
