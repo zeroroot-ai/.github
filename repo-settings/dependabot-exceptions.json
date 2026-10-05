@@ -18,6 +18,18 @@
       "ecosystem": "npm",
       "rule": "ignore:pnpm",
       "reason": "pnpm is bumped by hand together with packageManager in the root package.json."
+    },
+    {
+      "repo": "sdk",
+      "ecosystem": "gomod",
+      "rule": "ignore:google.golang.org/grpc",
+      "reason": "A grpc release line inside the range of a reachable advisory is held back. The comment above the entry in the Dependabot file of the repo states the range and when the entry leaves."
+    },
+    {
+      "repo": "setec",
+      "ecosystem": "gomod",
+      "rule": "ignore:google.golang.org/grpc",
+      "reason": "A grpc release line inside the range of a reachable advisory is held back. The comment above the entry in the Dependabot file of the repo states the range and when the entry leaves."
     }
   ]
 }
