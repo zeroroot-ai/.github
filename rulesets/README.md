@@ -32,6 +32,13 @@ first.
    guard that cannot go red is worse than no guard, because its green gets read
    as evidence.
 
+## No review and no signed commit
+
+No ruleset requires an approving review, and no ruleset requires a signed
+commit (ADR-0168). The owner works alone with agents, so the required checks
+are the gate. `scripts/check-ruleset-review-rule.sh` fails a pull request that
+adds a review count above 0 or a `required_signatures` rule to a file here.
+
 ## Required-check contexts: the two traps
 
 A required status check is only a gate if the context can actually be produced,
