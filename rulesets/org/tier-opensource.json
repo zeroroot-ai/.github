@@ -13,10 +13,14 @@
     "repository_name": {
       "include": [
         "adk",
+        "ast-checks",
         "charts",
+        "cve-triage",
         "gibson-executor",
         "sdk-ts",
         "setec",
+        "testfixtures",
+        "zero-day-ai.github.io",
         "zerocool-plugins"
       ],
       "exclude": [],
