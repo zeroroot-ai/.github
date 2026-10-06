@@ -96,7 +96,14 @@ where
   not errExpr.toString() = "nil" and
   // ...and no coded-error constructor reaches it, in this function or in a
   // function that it calls.
-  not CodedErrorFlow::flowTo(DataFlow::exprNode(errExpr))
+  not CodedErrorFlow::flowTo(DataFlow::exprNode(errExpr)) and
+  // ...and it does not come from a call through a function value. The
+  // query cannot see which function that value names, so it cannot know
+  // whether the error carries a code.
+  not exists(DataFlow::CallNode c |
+    not exists(c.getTarget()) and
+    DataFlow::localFlow(c.getAResult(), DataFlow::exprNode(errExpr))
+  )
 select ret,
   "$@ returns a raw error; wrap via connect.NewError or status.Error to set the gRPC code",
   handler, handler.getName()

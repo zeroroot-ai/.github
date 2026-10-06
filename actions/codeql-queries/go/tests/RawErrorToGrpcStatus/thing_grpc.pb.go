@@ -21,6 +21,7 @@ type ThingServiceServer interface {
 	GetStatusErr(context.Context, *Request) (*Response, error)
 	GetHelperCoded(context.Context, *Request) (*Response, error)
 	GetSentinel(context.Context, *Request) (*Response, error)
+	GetByScope(context.Context, *Request) (*Response, error)
 	mustEmbedUnimplementedThingServiceServer()
 }
 
@@ -47,6 +48,9 @@ func (UnimplementedThingServiceServer) GetHelperCoded(context.Context, *Request)
 }
 func (UnimplementedThingServiceServer) GetSentinel(context.Context, *Request) (*Response, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSentinel not implemented")
+}
+func (UnimplementedThingServiceServer) GetByScope(context.Context, *Request) (*Response, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetByScope not implemented")
 }
 func (UnimplementedThingServiceServer) mustEmbedUnimplementedThingServiceServer() {}
 
