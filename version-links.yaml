@@ -243,3 +243,257 @@ links:
         regenerate:
           - ./scripts/golden.sh update
           - ./airgap/generate-image-list.py
+
+  # ---- charts#400: subchart images from the install registry mirror, by digest ----
+  - name: mirror-cert-manager-cainjector
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: cert-manager.cainjector.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: cert-manager
+  - name: mirror-cert-manager
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: cert-manager.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: cert-manager
+  - name: mirror-cert-manager-webhook
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: cert-manager.webhook.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: cert-manager
+  - name: mirror-cnpg
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: cnpg.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: cnpg
+  - name: mirror-external-dns
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: external-dns.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: external-dns
+  - name: mirror-external-secrets-certcontroller
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: external-secrets.certController.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: external-secrets
+  - name: mirror-external-secrets
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: external-secrets.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: external-secrets
+  - name: mirror-external-secrets-webhook
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: external-secrets.webhook.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: external-secrets
+  - name: mirror-spire-spiffe-csi-driver
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-csi-driver.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+  - name: mirror-spire-spiffe-csi-driver-nodedriverregistrar
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-csi-driver.nodeDriverRegistrar.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spiffe-oidc-discovery-provider
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-oidc-discovery-provider.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+  - name: mirror-spire-spiffe-oidc-discovery-provider-spiffehelper
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-oidc-discovery-provider.spiffeHelper.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spiffe-oidc-discovery-provider-tests-agent
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-oidc-discovery-provider.tests.agent.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spiffe-oidc-discovery-provider-tests-bash
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-oidc-discovery-provider.tests.bash.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spiffe-oidc-discovery-provider-tests-busybox
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-oidc-discovery-provider.tests.busybox.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spiffe-oidc-discovery-provider-tests-step
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-oidc-discovery-provider.tests.step.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spiffe-oidc-discovery-provider-tests-toolkit
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spiffe-oidc-discovery-provider.tests.toolkit.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spire-agent-fsgroupfix
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spire-agent.fsGroupFix.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spire-agent-hostcert
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spire-agent.hostCert.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spire-agent
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spire-agent.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+  - name: mirror-spire-spire-agent-socketalternate
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spire-agent.socketAlternate.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spire-server-controllermanager
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spire-server.controllerManager.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
+  - name: mirror-spire-spire-server
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spire-server.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+  - name: mirror-spire-spire-server-tests-bash
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: spire.spire-server.tests.bash.image.tag
+      format: yaml
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: spire
+      tool: true
