@@ -4,6 +4,9 @@ package codes
 type Code uint32
 
 const (
-	NotFound Code = 5
-	Internal Code = 13
+	NotFound         Code = 5
+	PermissionDenied Code = 7
+	Unimplemented    Code = 12
+	Internal         Code = 13
+	Unavailable      Code = 14
 )
