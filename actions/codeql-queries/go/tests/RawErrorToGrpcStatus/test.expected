@@ -1,1 +1,2 @@
-| handlers.go:21:3:21:17 | return statement | $@ returns a raw error; wrap via connect.NewError or status.Error to set the gRPC code | handlers.go:19:1:24:1 | function declaration | GetThing |
+| handlers.go:29:3:29:17 | return statement | $@ returns a raw error; wrap via connect.NewError or status.Error to set the gRPC code | handlers.go:27:1:32:1 | function declaration | GetThing |
+| handlers.go:46:3:46:17 | return statement | $@ returns a raw error; wrap via connect.NewError or status.Error to set the gRPC code | handlers.go:43:1:49:1 | function declaration | GetDeep |

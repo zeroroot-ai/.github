@@ -33,10 +33,60 @@ class CodedErrorCall extends DataFlow::CallNode {
   }
 }
 
-from FuncDecl handler, ReturnStmt ret, Expr errExpr
+/**
+ * A server interface of a gRPC service: an interface type that
+ * protoc-gen-go-grpc declares in a `_grpc.pb.go` file, with a name that
+ * ends in `Server`.
+ */
+class GrpcServerInterface extends DefinedType {
+  GrpcServerInterface() {
+    this.getUnderlyingType() instanceof InterfaceType and
+    this.getName().matches("%Server") and
+    this.getEntity().getDeclaration().getFile().getBaseName().matches("%\\_grpc.pb.go")
+  }
+}
+
+/**
+ * A gRPC handler: a method, outside generated code, whose receiver type
+ * implements a gRPC server interface, and whose name is a method of that
+ * interface. A helper function, a library method and a generated client
+ * method are not handlers.
+ */
+class GrpcHandler extends FuncDecl {
+  GrpcHandler() {
+    not this.getFile().getBaseName().matches("%.pb.go") and
+    exists(Method m, GrpcServerInterface srv, Type recv |
+      m = this.getFunction() and
+      recv = m.getReceiverType() and
+      (
+        recv.implements(srv.getUnderlyingType()) or
+        recv.getPointerType().implements(srv.getUnderlyingType())
+      ) and
+      exists(srv.getMethod(m.getName()))
+    )
+  }
+}
+
+/**
+ * Flow from a coded-error constructor to an error that a handler returns.
+ * The flow crosses calls, so an error that a helper coded, or a
+ * package-level coded error, is not a raw error.
+ */
+module CodedErrorConfig implements DataFlow::ConfigSig {
+  predicate isSource(DataFlow::Node n) { n instanceof CodedErrorCall }
+
+  predicate isSink(DataFlow::Node n) {
+    exists(GrpcHandler h, ReturnStmt ret |
+      ret.getEnclosingFunction() = h and
+      n = DataFlow::exprNode(ret.getExpr(1))
+    )
+  }
+}
+
+module CodedErrorFlow = DataFlow::Global<CodedErrorConfig>;
+
+from GrpcHandler handler, ReturnStmt ret, Expr errExpr
 where
-  // Heuristic: handler returns (*pb.X, error), the typical gRPC handler shape
-  handler.getName().regexpMatch("[A-Z][a-zA-Z]+") and
   handler.getType().getNumResult() = 2 and
   handler.getType().getResultType(1).getName() = "error" and
   ret.getEnclosingFunction() = handler and
@@ -44,8 +94,9 @@ where
   // The error is a variable, not a literal nil and not a wrapping call...
   errExpr instanceof Ident and
   not errExpr.toString() = "nil" and
-  // ...and nothing that reaches it was produced by a coded-error constructor.
-  not exists(CodedErrorCall c | DataFlow::localFlow(c, DataFlow::exprNode(errExpr)))
+  // ...and no coded-error constructor reaches it, in this function or in a
+  // function that it calls.
+  not CodedErrorFlow::flowTo(DataFlow::exprNode(errExpr))
 select ret,
   "$@ returns a raw error; wrap via connect.NewError or status.Error to set the gRPC code",
   handler, handler.getName()
