@@ -26,6 +26,18 @@
           },
           {
             "context": "link-check / link-check"
+          },
+          {
+            "context": "vault-auth-method-deny-list / vault-auth-method-deny-list"
+          },
+          {
+            "context": "exit-tests-off-pr / exit-tests-off-pr"
+          },
+          {
+            "context": "CodeQL / CodeQL (python)"
+          },
+          {
+            "context": "CodeQL / CodeQL (actions)"
           }
         ]
       }
