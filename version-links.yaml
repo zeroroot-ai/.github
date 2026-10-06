@@ -192,8 +192,7 @@ links:
 
   - name: wait4x
     # The init-container tool image of the zitadel subchart's login
-    # Deployment. `3.6` is a floating minor tag on purpose: the mirror
-    # refresh picks up patches. The upstream compare runs at minor precision.
+    # Deployment. The chart pins a patch tag with a digest, from the mirror.
     source:
       repo: zeroroot-ai/charts
       file: helm/gibson/values.yaml

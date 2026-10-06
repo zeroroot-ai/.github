@@ -293,7 +293,7 @@ mirrors:
     dest: openbao
   # wait4x — init container on the upstream zitadel chart's login Deployment.
   - source: docker.io/wait4x/wait4x
-    tag: "3.7.1"          # charts zitadel.tools.wait4x.image.tag (version-drift tracker .github#28)
+    tag: "3.7.2"          # charts zitadel.tools.wait4x.image.tag (version-drift tracker .github#116)
     dest: wait4x
 
   # Observability (chart-gated, but the images must exist when it is on)
