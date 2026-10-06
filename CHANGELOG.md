@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/zeroroot-ai/.github/compare/v0.17.5...v0.18.0) (2026-10-06)
+
+
+### Features
+
+* end-phase integration of .github ([#255](https://github.com/zeroroot-ai/.github/issues/255)) ([a053333](https://github.com/zeroroot-ai/.github/commit/a05333322722a9d3afec5a6b5eb35ae3244c77ec))
+
 ## [0.17.5](https://github.com/zeroroot-ai/.github/compare/v0.17.4...v0.17.5) (2026-10-06)
 
 
