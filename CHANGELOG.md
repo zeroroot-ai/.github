@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.4](https://github.com/zeroroot-ai/.github/compare/v0.17.3...v0.17.4) (2026-10-06)
+
+
+### Bug Fixes
+
+* **rework:** raw-error-to-grpc-status skips an error from a function value ([#250](https://github.com/zeroroot-ai/.github/issues/250)) ([2b76158](https://github.com/zeroroot-ai/.github/commit/2b761581e168240c2c9b6c64c64117b67730d3eb))
+
 ## [0.17.3](https://github.com/zeroroot-ai/.github/compare/v0.17.2...v0.17.3) (2026-10-06)
 
 
