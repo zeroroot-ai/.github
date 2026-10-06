@@ -48,6 +48,12 @@
       "ecosystem": "gomod",
       "rule": "missing-file",
       "reason": "The repo is deleted under zeroroot-ai/gibson#791 after its plugins move to gibson (gibson#790). When the repo is gone, this entry exempts nothing and the check fails, so the entry leaves with the repo."
+    },
+    {
+      "repo": "docs-site",
+      "ecosystem": "npm",
+      "rule": "ignore:pnpm",
+      "reason": "tools/pnpm installs the pnpm of the Docker build, and the build fails when it differs from packageManager in package.json. A person moves both in one commit (docs-site#92)."
     }
   ]
 }
