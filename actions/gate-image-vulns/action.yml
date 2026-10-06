@@ -79,8 +79,8 @@ runs:
         #   continue-on-error: ${{ github.event_name == 'pull_request' }}
         # so on a PR the gate runs, prints BLOCKED, and the job goes green anyway.
         # The result is a PR that passes having said no, and the first push to the
-        # default branch then fails on a verdict the PR already knew. docs-site,
-        # dashboard and integrations all hit that on 2026-10-02, and so did setec:
+        # default branch then fails on a verdict the PR already knew. docs-site
+        # and dashboard both hit that on 2026-10-02, and so did setec:
         # its installer gate printed BLOCKED on the PR, merged green, and broke
         # main.
         #

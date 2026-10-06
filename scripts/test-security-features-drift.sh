@@ -74,7 +74,7 @@ assert_fails "code scanning off on a private TypeScript repo" \
 
 # One bad repo in an otherwise clean fleet must still fail.
 assert_fails "one drifted repo among four clean ones" \
-  "$(printf '%s\n%s\n' "$CLEAN" 'integrations	private	Go	enabled	disabled	enabled	3	true	workflow')"
+  "$(printf '%s\n%s\n' "$CLEAN" 'billing	private	Go	enabled	disabled	enabled	3	true	workflow')"
 
 # Vacuous input must never pass.
 assert_fails "an empty fleet (a vacuous scan is not a pass)" ""
