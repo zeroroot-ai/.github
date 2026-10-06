@@ -37,9 +37,6 @@
             "context": "npm audit"
           },
           {
-            "context": "Analyze TypeScript"
-          },
-          {
             "context": "brand-guard / brand-guard"
           },
           {
