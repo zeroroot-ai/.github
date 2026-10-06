@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/zeroroot-ai/.github/compare/v0.17.2...v0.17.3) (2026-10-06)
+
+
+### Bug Fixes
+
+* **codeql:** the shared scan runs the query that reads only gRPC handlers ([#248](https://github.com/zeroroot-ai/.github/issues/248)) ([7247310](https://github.com/zeroroot-ai/.github/commit/7247310cc11f13fd8a3cca1a52877add7bc34dd3))
+
 ## [0.17.2](https://github.com/zeroroot-ai/.github/compare/v0.17.1...v0.17.2) (2026-10-06)
 
 
