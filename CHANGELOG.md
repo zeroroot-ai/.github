@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/zeroroot-ai/.github/compare/v0.17.1...v0.17.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **rework:** raw-error-to-grpc-status reads only gRPC handlers ([#246](https://github.com/zeroroot-ai/.github/issues/246)) ([439b619](https://github.com/zeroroot-ai/.github/commit/439b619880e8b1614657c6ec39fddde5e76c9910))
+
 ## [0.17.1](https://github.com/zeroroot-ai/.github/compare/v0.17.0...v0.17.1) (2026-10-06)
 
 
