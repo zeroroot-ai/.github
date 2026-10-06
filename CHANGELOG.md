@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.5](https://github.com/zeroroot-ai/.github/compare/v0.17.4...v0.17.5) (2026-10-06)
+
+
+### Bug Fixes
+
+* **codeql:** the shared scan runs the query of v0.17.4 ([#252](https://github.com/zeroroot-ai/.github/issues/252)) ([0506c50](https://github.com/zeroroot-ai/.github/commit/0506c50188e48c48666095764bd2989d381a602e))
+
 ## [0.17.4](https://github.com/zeroroot-ai/.github/compare/v0.17.3...v0.17.4) (2026-10-06)
 
 
