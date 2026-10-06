@@ -65,11 +65,9 @@ jobs:
           fi
           echo "PASS: unpinned composite-action fixture rejected"
       - name: the fixture with a FIRST-PARTY RAW FETCH at a branch must fail
-        # reusable-coverage-gate.yml curled scripts/coverage-compare.sh from
-        # `main`, so a caller's SHA pin bound the workflow and not the script
-        # it ran. A `uses:` scanner cannot see a curl, so the guard reads raw
-        # URLs too. That workflow was deleted in #146 as uncalled; the guard
-        # stays, because the class it catches does not depend on it.
+        # A workflow that curls a script from `main` makes a caller's SHA pin
+        # bind the workflow and not the script it runs. A `uses:` scanner
+        # cannot see a curl, so the guard reads raw URLs too.
         run: |
           set -uo pipefail
           if python3 scripts/pin-actions.py tests/fixtures/unpinned-raw-fetch --check; then

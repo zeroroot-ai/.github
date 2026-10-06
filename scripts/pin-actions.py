@@ -12,12 +12,11 @@ The tag is resolved with the GitHub API (annotated tags are dereferenced).
 attic#24.
 
 RAW FETCHES COUNT. A `uses:` pin is not the only way a workflow loads code
-from this organization: reusable-coverage-gate.yml curled
-`scripts/coverage-compare.sh` from `raw.githubusercontent.com/zeroroot-ai/
-.github/main/`, so a caller that pinned the workflow by SHA still ran
-whatever was on `main` at run time. The pin bought nothing. A first-party
-raw URL must name a 40-hex commit or a `${{ github.*sha }}` expression
-(`github.job_workflow_sha` is the commit the caller pinned). Only
+from this organization: a workflow that curls a script from
+`raw.githubusercontent.com/zeroroot-ai/.github/main/` makes a caller that
+pinned the workflow by SHA still run whatever is on `main` at run time.
+The pin buys nothing. A first-party raw URL must name a 40-hex commit or
+a `${{ github.*sha }}` expression (`github.job_workflow_sha` is the commit the caller pinned). Only
 `zeroroot-ai/*` URLs are checked here: a third-party raw fetch at a moving
 ref is the same hazard, but the org still installs helm that way in three
 places, and that is a separate root cause.
