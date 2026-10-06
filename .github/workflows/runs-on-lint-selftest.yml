@@ -8,8 +8,7 @@
 # on this repo it would lint zeroroot-ai/.github rather than a caller. A
 # reusable workflow legitimately writes `runs-on: ${{ inputs.runs-on }}`,
 # because the CALLER supplies the value and the caller is what gets linted, so
-# scanning this repo would flag a construct that is correct here. (The concrete
-# example used to be reusable-test.yml, deleted in #146 as uncalled.)
+# scanning this repo would flag a construct that is correct here.
 #
 # So this runs the assertions only. scripts/test-runs-on-lint.sh extracts the
 # shipped classifier out of runs-on-lint.yml between its BEGIN/END-CLASSIFIER

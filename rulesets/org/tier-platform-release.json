@@ -14,8 +14,7 @@
       "include": [
         "billing",
         "hosted",
-        "sdk",
-        "testharness"
+        "sdk"
       ],
       "exclude": [],
       "protected": false

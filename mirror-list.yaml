@@ -18,6 +18,11 @@
 #     tag:     <tag>              upstream tag to mirror
 #     dest:    <name>             local name under ghcr.io/zeroroot-ai/mirror/
 #                                 (omit to default to the last path segment of source)
+#     digest:  sha256:<hex>       copy this exact manifest instead of the tag.
+#                                 Use it when upstream only publishes a moving
+#                                 tag (for example `latest`). `tag` then names a
+#                                 tag that does not move, such as the short
+#                                 digest. Never combine it with `refresh`.
 #     refresh: true|false         re-copy on every run instead of skip-if-exists.
 #                                 Set true for FLOATING tags (no patch component);
 #                                 omit/false for fully-pinned, immutable tags.
@@ -293,7 +298,7 @@ mirrors:
     dest: openbao
   # wait4x — init container on the upstream zitadel chart's login Deployment.
   - source: docker.io/wait4x/wait4x
-    tag: "3.7.1"          # charts zitadel.tools.wait4x.image.tag (version-drift tracker .github#28)
+    tag: "3.7.2"          # charts zitadel.tools.wait4x.image.tag (version-drift tracker .github#116)
     dest: wait4x
 
   # Observability (chart-gated, but the images must exist when it is on)
@@ -343,3 +348,73 @@ mirrors:
   - source: registry.k8s.io/metrics-server/metrics-server
     tag: "v0.8.0"
     dest: metrics-server
+
+  # ---------------------------------------------------------------------------
+  # Images that the charts render names from upstream (.github#227, charts#400).
+  # ADR-0165 rule 5: each rendered image comes from the install registry and
+  # carries a digest. charts points each value at the mirror.
+  # ---------------------------------------------------------------------------
+  - source: quay.io/jetstack/cert-manager-controller
+    tag: "v1.21.1"
+    dest: cert-manager-controller
+  - source: quay.io/jetstack/cert-manager-cainjector
+    tag: "v1.21.1"
+    dest: cert-manager-cainjector
+  - source: quay.io/jetstack/cert-manager-webhook
+    tag: "v1.21.1"
+    dest: cert-manager-webhook
+  - source: ghcr.io/external-secrets/external-secrets
+    tag: "v2.10.0"
+    dest: external-secrets
+  - source: registry.k8s.io/external-dns/external-dns
+    tag: "v0.21.0"
+    dest: external-dns
+  - source: ghcr.io/cloudnative-pg/cloudnative-pg
+    tag: "1.30.0"
+    dest: cloudnative-pg
+  - source: ghcr.io/stakater/reloader
+    tag: "v1.4.6"
+    dest: reloader
+  - source: ghcr.io/zitadel/zitadel
+    tag: "v4.19.4"
+    dest: zitadel
+  - source: ghcr.io/spiffe/spire-server
+    tag: "1.14.5"
+    dest: spire-server
+  - source: ghcr.io/spiffe/spire-agent
+    tag: "1.14.5"
+    dest: spire-agent
+  - source: ghcr.io/spiffe/spire-agent
+    tag: "1.10.4"
+    dest: spire-agent
+  - source: ghcr.io/spiffe/spire-controller-manager
+    tag: "0.6.4"
+    dest: spire-controller-manager
+  - source: ghcr.io/spiffe/oidc-discovery-provider
+    tag: "1.14.5"
+    dest: oidc-discovery-provider
+  - source: ghcr.io/spiffe/spiffe-csi-driver
+    tag: "0.2.7"
+    dest: spiffe-csi-driver
+  - source: ghcr.io/spiffe/spiffe-helper
+    tag: "0.11.0"
+    dest: spiffe-helper
+  - source: registry.k8s.io/sig-storage/csi-node-driver-registrar
+    tag: "v2.9.4"
+    dest: csi-node-driver-registrar
+  - source: docker.io/library/busybox
+    tag: "1.37.0-uclibc"
+    dest: busybox
+  - source: docker.io/smallstep/step-cli
+    tag: "0.30.2"
+    dest: step-cli
+  # The SPIRE chart names these two as `latest` with a digest. The mirror
+  # copies that digest under a tag that does not move: the short digest.
+  - source: cgr.dev/chainguard/bash
+    digest: "sha256:ef209fd7d231ead12bf24287db24991bdd979669f4df2e037698f94545816d3e"
+    tag: "sha256-ef209fd7d231"
+    dest: chainguard-bash
+  - source: cgr.dev/chainguard/min-toolkit-debug
+    digest: "sha256:6ba4fb1b19bb35fa0b7e6bf08b308379a5b865727e50b7b3068efb824b39ebba"
+    tag: "sha256-6ba4fb1b19bb"
+    dest: chainguard-min-toolkit-debug

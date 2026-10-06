@@ -65,8 +65,8 @@ tree submodule go.mod '\tgithub.com/zeroroot-ai/gibson/pkg/billing v0.1.0'
 red submodule 'requires github.com/zeroroot-ai/gibson,'
 
 # 7. A replace directive is a requirement too.
-tree replace go.mod '\tgithub.com/zeroroot-ai/ast-checks v0.6.0\n)\n\nreplace github.com/zeroroot-ai/ast-checks => github.com/zeroroot-ai/testharness v0.1.0\n\nrequire ('
-red replace 'requires github.com/zeroroot-ai/testharness,'
+tree replace go.mod '\tgithub.com/zeroroot-ai/ast-checks v0.6.0\n)\n\nreplace github.com/zeroroot-ai/ast-checks => github.com/zeroroot-ai/hosted v0.1.0\n\nrequire ('
+red replace 'requires github.com/zeroroot-ai/hosted,'
 
 # 8. A second go.mod in the repository (an example, a tool) is checked.
 tree nested go.mod '\tgithub.com/zeroroot-ai/ast-checks v0.6.0'

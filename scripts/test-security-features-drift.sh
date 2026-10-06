@@ -89,7 +89,7 @@ assert_passes "public repo reporting code_security absent" \
 
 echo "tier 3, Dependabot security updates (.github#193):"
 assert_fails "a repo with manifests and Dependabot security updates off" \
-  "$(printf '%s\n' 'testharness	private	Go	enabled	enabled	enabled	2	false	none')"
+  "$(printf '%s\n' 'billing	private	Go	enabled	enabled	enabled	2	false	none')"
 assert_fails "one workflow file is a manifest too" \
   "$(printf '%s\n' 'site	public	CSS	enabled	enabled	absent	1	false	none')"
 assert_fails "Dependabot state unreadable is not a pass" \

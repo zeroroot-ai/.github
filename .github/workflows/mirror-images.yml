@@ -51,13 +51,20 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y skopeo
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+          # The SHA-256 of yq_linux_amd64 v4.53.2, from the checksums file of
+          # that release. The binary runs only after it matches.
+          yq_sha256=d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b
+          wget -qO /tmp/yq https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64
+          echo "${yq_sha256}  /tmp/yq" | sha256sum -c -
+          sudo install -m 0755 /tmp/yq /usr/local/bin/yq
           yq --version
           skopeo --version
 
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | skopeo login --username "${{ github.actor }}" --password-stdin ghcr.io
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | skopeo login --username "$ACTOR" --password-stdin ghcr.io
 
       - name: Mirror images
         env:
@@ -83,8 +90,14 @@ jobs:
             source=$(jq -r '.source' <<<"$entry")
             tag=$(jq -r '.tag' <<<"$entry")
             dest=$(jq -r '.dest // (.source | split("/") | last)' <<<"$entry")
+            digest=$(jq -r '.digest // ""' <<<"$entry")
             target="${dest_registry}/${dest}:${tag}"
             from="docker://${source}:${tag}"
+            # digest: upstream publishes only a moving tag. Copy the exact
+            # manifest, and store it under the fixed tag the entry names.
+            if [[ -n "${digest}" ]]; then
+              from="docker://${source}@${digest}"
+            fi
             to="docker://${target}"
 
             # Optional filter
@@ -102,6 +115,12 @@ jobs:
             # digests already match, so re-copying is cheap. Pinned entries omit
             # the flag and keep the immutable skip. See .github#175 / #173.
             refresh=$(jq -r '.refresh // false' <<<"$entry")
+            if [[ -n "${digest}" && "${refresh}" == "true" ]]; then
+              echo "FAIL: ${source} sets digest and refresh. A digest never moves."
+              failed=$((failed + 1))
+              failed_refs+=("${source}@${digest}")
+              continue
+            fi
 
             # Skip if target tag already exists (immutable, non-refresh entries).
             if [[ "${refresh}" != "true" ]] && skopeo inspect "${to}" >/dev/null 2>&1; then

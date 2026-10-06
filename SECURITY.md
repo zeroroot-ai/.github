@@ -118,8 +118,10 @@ a repository adopts a longer maintenance window, it will say so in its own
 
 So you know what to expect from the code you are looking at:
 
-- Secret scanning with push protection, Dependabot security updates, CodeQL, and
-  container scanning run on every repository in the organization.
+- Secret scanning with push protection and Dependabot security updates run on
+  every repository in the organization.
+- CodeQL runs on each public repository except `setec`.
+- Container scanning runs on each repository that publishes an image.
 - Private vulnerability reporting is enabled on every public repository.
 - Every published image is built in CI from a pinned base and scanned before
   release; findings are tracked publicly as issues rather than suppressed.
