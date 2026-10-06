@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/zeroroot-ai/.github/compare/v0.17.0...v0.17.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **dependabot:** the commit subject holds one scope ([#239](https://github.com/zeroroot-ai/.github/issues/239)) ([61fe312](https://github.com/zeroroot-ai/.github/commit/61fe312a914543516359f4021ab5744fa5118f6f))
+
 ## [0.17.0](https://github.com/zeroroot-ai/.github/compare/v0.16.0...v0.17.0) (2026-10-05)
 
 
