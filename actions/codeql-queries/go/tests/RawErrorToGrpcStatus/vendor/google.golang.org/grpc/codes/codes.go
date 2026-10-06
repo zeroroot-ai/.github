@@ -4,6 +4,7 @@ package codes
 type Code uint32
 
 const (
+	InvalidArgument  Code = 3
 	NotFound         Code = 5
 	PermissionDenied Code = 7
 	Unimplemented    Code = 12

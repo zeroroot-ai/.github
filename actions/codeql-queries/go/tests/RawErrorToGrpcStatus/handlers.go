@@ -110,6 +110,27 @@ func (s *thingServer) GetSentinel(ctx context.Context, req *Request) (*Response,
 	return resp, nil
 }
 
+// scope holds a function value. The query cannot see which function a
+// value names.
+type scope struct {
+	ref func(id string) (string, error)
+}
+
+var scopes = map[string]scope{
+	"team": {ref: func(id string) (string, error) {
+		return "", status.Error(codes.InvalidArgument, "bad team id")
+	}},
+}
+
+// Negative: the error comes from a call through a function value.
+func (s *thingServer) GetByScope(ctx context.Context, req *Request) (*Response, error) {
+	_, err := scopes["team"].ref("t-1")
+	if err != nil {
+		return nil, err
+	}
+	return &Response{}, nil
+}
+
 // Negative: an exported function with the handler shape that is not a
 // method of a gRPC server. A library returns its own errors.
 func Load(ctx context.Context, req *Request) (*Response, error) {
