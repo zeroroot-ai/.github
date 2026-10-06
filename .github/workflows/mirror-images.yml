@@ -51,13 +51,20 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y skopeo
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+          # The SHA-256 of yq_linux_amd64 v4.53.2, from the checksums file of
+          # that release. The binary runs only after it matches.
+          yq_sha256=d56bf5c6819e8e696340c312bd70f849dc1678a7cda9c2ad63eebd906371d56b
+          wget -qO /tmp/yq https://github.com/mikefarah/yq/releases/download/v4.53.2/yq_linux_amd64
+          echo "${yq_sha256}  /tmp/yq" | sha256sum -c -
+          sudo install -m 0755 /tmp/yq /usr/local/bin/yq
           yq --version
           skopeo --version
 
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | skopeo login --username "${{ github.actor }}" --password-stdin ghcr.io
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | skopeo login --username "$ACTOR" --password-stdin ghcr.io
 
       - name: Mirror images
         env:

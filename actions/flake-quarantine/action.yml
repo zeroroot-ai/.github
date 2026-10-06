@@ -28,18 +28,30 @@ inputs:
 runs:
   using: composite
   steps:
+    # Each input reaches the script through env, never through ${{ }} in the
+    # script body: an input is caller text, and text placed in the body runs
+    # as shell code.
     - shell: bash
+      env:
+        CMD: ${{ inputs.cmd }}
+        MAX: ${{ inputs.max-attempts }}
+        LOG: ${{ inputs.flake-log-path }}
+        REPO: ${{ github.repository }}
+        REF: ${{ github.ref }}
+        SHA: ${{ github.sha }}
       run: |
         set -uo pipefail
+        if ! [[ "$MAX" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::max-attempts must be a positive integer"
+          exit 1
+        fi
         ATTEMPT=1
-        MAX=${{ inputs.max-attempts }}
-        LOG=${{ inputs.flake-log-path }}
         SUCCESS=0
         FAILURES=()
 
-        while [ $ATTEMPT -le $MAX ]; do
+        while [ "$ATTEMPT" -le "$MAX" ]; do
           echo "::group::attempt $ATTEMPT of $MAX"
-          if bash -c "${{ inputs.cmd }}"; then
+          if bash -c "$CMD"; then
             SUCCESS=$ATTEMPT
             echo "::endgroup::"
             break
@@ -50,30 +62,26 @@ runs:
           ATTEMPT=$((ATTEMPT + 1))
         done
 
-        # Emit flake event log (machine-readable).
-        # Avoid heredoc so YAML doesn't get confused by column-0 terminators.
+        # Emit flake event log (machine-readable). jq builds the JSON, so a
+        # quote in the command cannot break the record.
         FAILED_LIST=""
         if [ ${#FAILURES[@]} -gt 0 ]; then
           FAILED_LIST=$(IFS=,; echo "${FAILURES[*]}")
         fi
         IS_FLAKE="false"
-        if [ $SUCCESS -gt 1 ]; then IS_FLAKE="true"; fi
-        printf '{"repo":"%s","ref":"%s","sha":"%s","cmd":"%s","max_attempts":%s,"success_on_attempt":%s,"failed_attempts":[%s],"is_flake":%s}\n' \
-          "${{ github.repository }}" \
-          "${{ github.ref }}" \
-          "${{ github.sha }}" \
-          "${{ inputs.cmd }}" \
-          "$MAX" \
-          "$SUCCESS" \
-          "$FAILED_LIST" \
-          "$IS_FLAKE" \
+        if [ "$SUCCESS" -gt 1 ]; then IS_FLAKE="true"; fi
+        jq -nc \
+          --arg repo "$REPO" --arg ref "$REF" --arg sha "$SHA" --arg cmd "$CMD" \
+          --argjson max "$MAX" --argjson success "$SUCCESS" \
+          --argjson failed "[$FAILED_LIST]" --argjson flake "$IS_FLAKE" \
+          '{repo: $repo, ref: $ref, sha: $sha, cmd: $cmd, max_attempts: $max, success_on_attempt: $success, failed_attempts: $failed, is_flake: $flake}' \
           > "$LOG"
 
-        if [ $SUCCESS -eq 0 ]; then
+        if [ "$SUCCESS" -eq 0 ]; then
           echo "::error::test failed after $MAX attempts"
           exit 1
         fi
-        if [ $SUCCESS -gt 1 ]; then
+        if [ "$SUCCESS" -gt 1 ]; then
           echo "::warning::test passed but flaked — succeeded on attempt $SUCCESS"
         fi
 
