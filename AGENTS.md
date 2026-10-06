@@ -130,6 +130,19 @@ Root-cause a failure. Never rerun a failed job blind, and never silence a check.
 Never pass `--no-verify`, never disable a required check, and never add
 `continue-on-error: true` to hide a failure.
 
+The reusable workflow `reusable-image-build.yml` holds the allowed
+exceptions. Each one hides nothing:
+
+- The step "Block the push on a fixable vulnerability" sets
+  `continue-on-error` on a pull request only. The action writes its verdict to
+  the step summary and raises an annotation. The push to `main` still fails on
+  the verdict.
+- The job `vuln-scan` and its SARIF upload are reports, not gates. The job
+  writes its findings table to the step summary on each run.
+
+Name a new exception here, with its reason, in the same pull request that adds
+it.
+
 ## 6. Releases
 
 You do not cut releases by hand. The release tool runs on every push to `main`.
