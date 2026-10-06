@@ -111,7 +111,7 @@ jobs:
       - name: Get the custom queries
         id: queries
         if: inputs.scan
-        uses: zeroroot-ai/.github/actions/codeql-queries@83a1c4482c4f0bf6185002601d83742d8c9deb1a # v0.17.2
+        uses: zeroroot-ai/.github/actions/codeql-queries@10921ffdcab2483db39a3e59e7b709c3dfee362f # v0.17.4
         with:
           language: ${{ matrix.language }}
 
