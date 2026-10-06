@@ -136,7 +136,6 @@ jobs:
             echo "| Module | Purpose | Latest | Slice |"
             echo "|---|---|---|---|"
             echo "| [\`zeroroot-ai/ast-checks\`](https://github.com/zeroroot-ai/ast-checks) | shared AST walker primitives + harness | v0.1.1 | 3.1 |"
-            echo "| [\`zeroroot-ai/testharness\`](https://github.com/zeroroot-ai/testharness) | goldenfile (v0.1) + planned testcontainers | v0.1.0 | 5.13 |"
             echo "| [\`zeroroot-ai/testfixtures\`](https://github.com/zeroroot-ai/testfixtures) | 5 shared fakes (authz/audit/fga/tenant/spiffe) | v0.1.0 | 5.4 |"
           } >> "$OUT"
 
