@@ -8,8 +8,7 @@ name: Reusable Go CI (tiered)
 #   pull_request  -> tier: fast   (quick contributor signal; no images, no race)
 #   merge_group   -> tier: heavy  (authoritative gate; race + coverage + govulncheck)
 #
-# The old all-in-one reusable-go-check (deleted in #146, uncalled) ran every
-# step on every call; splitting
+# One workflow that ran every step on every call cost the most. Splitting
 # by tier is what removes the per-push redundancy that dominated the bill.
 #
 # The heavy tier is TWO jobs, `go-ci` (race) and `govulncheck`, not one. They
