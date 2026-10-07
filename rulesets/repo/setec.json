@@ -38,6 +38,9 @@
           },
           {
             "context": "link-check / link-check"
+          },
+          {
+            "context": "adr-citations / adr-citations"
           }
         ]
       }

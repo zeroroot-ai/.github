@@ -44,6 +44,9 @@
           },
           {
             "context": "exit-tests-off-pr / exit-tests-off-pr"
+          },
+          {
+            "context": "adr-citations / adr-citations"
           }
         ]
       }
