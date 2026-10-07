@@ -31,6 +31,9 @@
           },
           {
             "context": "codeql / CodeQL (actions)"
+          },
+          {
+            "context": "adr-citations / adr-citations"
           }
         ]
       }
