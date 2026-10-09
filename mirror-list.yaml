@@ -76,6 +76,15 @@ mirrors:
   - source: docker.io/library/golang
     tag: "1.27.1"          # debian-based; the setec builders
     dest: golang
+  # 1.27.2 carries the standard library fixes of 2026-10-08 (gibson#1052).
+  # Mirrored before any go.mod moves, for the same reason as 1.27.1. The
+  # 1.27.1 pair stays until the last repo is off it.
+  - source: docker.io/library/golang
+    tag: "1.27.2-alpine"   # the alpine builders of 1.27.1, one patch on
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.27.2"          # debian-based; the setec builders
+    dest: golang
 
   # ---------------------------------------------------------------------------
   # Data plane images
