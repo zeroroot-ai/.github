@@ -196,7 +196,7 @@ links:
     # the source). One more copy lives in the same values file: the
     # masterkey-guard init container of each Zitadel workload, a plain string
     # the upstream zitadel chart takes verbatim, so it is drift-only
-    # (ADR-0171, charts#572). No upstream feed: the image is a mirror, moved
+    # (D83, charts#572). No upstream feed: the image is a mirror, moved
     # with the platform Postgres major.
     source:
       repo: zeroroot-ai/charts
