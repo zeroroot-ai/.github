@@ -20,6 +20,15 @@
         "required_status_checks": [
           {
             "context": "ci-required"
+          },
+          {
+            "context": "codeql / CodeQL (python)"
+          },
+          {
+            "context": "codeql / CodeQL (actions)"
+          },
+          {
+            "context": "adr-citations / adr-citations"
           }
         ]
       }
