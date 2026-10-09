@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0](https://github.com/zeroroot-ai/.github/compare/v0.18.0...v0.19.0) (2026-10-09)
+
+
+### Features
+
+* **version-links:** declare the Postgres client image of the Zitadel masterkey guard ([#262](https://github.com/zeroroot-ai/.github/issues/262)) ([c4a77e9](https://github.com/zeroroot-ai/.github/commit/c4a77e937512f2066e60a88aba348dae61488d6f))
+
+
+### Bug Fixes
+
+* **rulesets:** hosted requires the CodeQL and ADR citation checks ([#263](https://github.com/zeroroot-ai/.github/issues/263)) ([39c786a](https://github.com/zeroroot-ai/.github/commit/39c786a017e6da6168076fde00dc6d9a648f190c)), closes [#259](https://github.com/zeroroot-ai/.github/issues/259)
+
 ## [0.18.0](https://github.com/zeroroot-ai/.github/compare/v0.17.5...v0.18.0) (2026-10-06)
 
 
