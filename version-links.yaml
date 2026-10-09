@@ -190,6 +190,31 @@ links:
       name: zitadel
       tool: true
 
+  - name: postgres-client
+    # The Postgres client image (psql and openssl) of the postgres-setup Jobs
+    # and the Zitadel masterkey rotation CronJob (charts `postgresSetup.image`,
+    # the source). One more copy lives in the same values file: the
+    # masterkey-guard init container of each Zitadel workload, a plain string
+    # the upstream zitadel chart takes verbatim, so it is drift-only
+    # (ADR-0171, charts#572). No upstream feed: the image is a mirror, moved
+    # with the platform Postgres major.
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: postgresSetup.image.tag
+      format: yaml
+    consumers:
+      - repo: zeroroot-ai/charts
+        file: helm/gibson/values.yaml
+        key: zitadel.zitadel.initContainers.0.image
+        format: yaml
+        after: ":"
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: zitadel
+      tool: true
+
   - name: wait4x
     # The init-container tool image of the zitadel subchart's login
     # Deployment. The chart pins a patch tag with a digest, from the mirror.
