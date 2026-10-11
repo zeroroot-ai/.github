@@ -29,3 +29,16 @@ export async function getServerSideProps({ req }: { req: any }) {
   const sessionToken = req.cookies.session;
   return { props: { sessionToken } };
 }
+
+// Positive: a token field of a decoded cookie becomes a client prop.
+export async function Decoded() {
+  const store = await cookies();
+  const decoded = JSON.parse(store.get("s")?.value ?? "{}");
+  return <Panel token={decoded.token} />;
+}
+
+// Positive: a cookie value goes through an object literal into a page prop.
+export async function getStaticProps({ req }: { req: any }) {
+  const box = { t: req.cookies.session };
+  return { props: { x: box.t } };
+}

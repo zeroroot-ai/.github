@@ -27,3 +27,15 @@ export function Mode() {
   const dev = process.env.NODE_ENV !== "production";
   return <Panel name={dev ? "development" : "production"} />;
 }
+
+// Negative: DOCS_URL is the public origin of the docs site. It is a link.
+export function DocsLink() {
+  return <Panel name={`${process.env.DOCS_URL}/docs/missions`} />;
+}
+
+// Negative: WWW_URL is the public origin of the marketing site. The read goes
+// through a parameter whose default value is the environment.
+export function MarketingLink(source: Record<string, string | undefined> = process.env) {
+  const marketingUrl = source["WWW_URL"];
+  return <Panel name={marketingUrl} />;
+}
