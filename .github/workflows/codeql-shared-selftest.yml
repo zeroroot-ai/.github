@@ -111,4 +111,3 @@ jobs:
           check javascript-typescript zeroroot-ai/server-action-no-zod zeroroot-ai/server-only-secret-to-client \
             zeroroot-ai/session-token-to-client zeroroot-ai/xss-without-sanitize
           exit "$fail"
-
