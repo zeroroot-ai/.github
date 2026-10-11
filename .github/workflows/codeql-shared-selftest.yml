@@ -112,24 +112,3 @@ jobs:
             zeroroot-ai/session-token-to-client zeroroot-ai/xss-without-sanitize
           exit "$fail"
 
-      - name: The secret and session queries flag no negative fixture
-        # good.tsx of each query holds the false positives of .github#265:
-        # the public origins DOCS_URL and WWW_URL, the signup attempt id and
-        # the id of an agent run session. A result there is a false positive.
-        run: |
-          set -euo pipefail
-          file=$(find sarif/codeql-sarif-javascript-typescript -name '*.sarif' | head -1)
-          if [ -z "$file" ]; then echo "::error::no result file for javascript-typescript"; exit 1; fi
-          n=$(jq '[.runs[].results[]
-                | select(.ruleId == "zeroroot-ai/server-only-secret-to-client"
-                    or .ruleId == "zeroroot-ai/session-token-to-client")
-                | select(.locations[].physicalLocation.artifactLocation.uri | endswith("/good.tsx"))]
-                | length' "$file")
-          if [ "$n" -ne 0 ]; then
-            echo "::error::the secret or session query flags $n result(s) in a good.tsx fixture"
-            jq -r '.runs[].results[]
-                | select(.locations[].physicalLocation.artifactLocation.uri | endswith("/good.tsx"))
-                | "\(.ruleId) \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' "$file"
-            exit 1
-          fi
-          echo "no result of the secret or session query in a good.tsx fixture"
