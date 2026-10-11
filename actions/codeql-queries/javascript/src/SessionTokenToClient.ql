@@ -66,15 +66,48 @@ predicate authHeader(DataFlow::Node n) {
   )
 }
 
+/**
+ * Holds if the property name `name` says that its value authenticates. An id
+ * such as `sessionId` names a record, for example an agent run session, and
+ * does not authenticate.
+ */
+bindingset[name]
+private predicate credentialName(string name) {
+  name.regexpMatch("(?i)(session|access|refresh|id|auth|bearer|csrf|api)[_-]?token|jwt")
+}
+
 /** A property read whose name says it holds a session token. */
 predicate sessionTokenRead(DataFlow::Node n) {
-  n.(DataFlow::PropRead)
-      .getPropertyName()
-      .regexpMatch("(?i)(session|access|refresh|id|auth|bearer|csrf|api)[_-]?token|jwt|session[_-]?id")
+  credentialName(n.(DataFlow::PropRead).getPropertyName())
+}
+
+/** Holds if `n` is a cookie value or a credential header. */
+private predicate credentialSource(DataFlow::Node n) { cookieValue(n) or authHeader(n) }
+
+/**
+ * Holds if `n` reads a field out of a value that a cookie or a credential
+ * header decodes to, and the field name says nothing about a credential: the
+ * `attemptId` of a decoded signup cookie. The field is not the value that
+ * authenticates, so the taint stops there.
+ *
+ * A read that is itself a cookie value (`req.cookies`), a read directly on a
+ * cookie store (`req.cookies.session`), the `value` of a cookie entry and an
+ * index read (`parts[0]`) keep the taint.
+ */
+predicate nonCredentialField(DataFlow::PropRead n) {
+  exists(string name | name = n.getPropertyName() |
+    name.regexpMatch("[A-Za-z_$][A-Za-z0-9_$]*") and
+    name != "value" and
+    not credentialName(name)
+  ) and
+  not credentialSource(n) and
+  not credentialSource(n.getBase().getALocalSource())
 }
 
 module SessionTokenToClientConfig implements DataFlow::ConfigSig {
-  predicate isSource(DataFlow::Node n) { cookieValue(n) or authHeader(n) or sessionTokenRead(n) }
+  predicate isSource(DataFlow::Node n) { credentialSource(n) or sessionTokenRead(n) }
+
+  predicate isBarrier(DataFlow::Node n) { nonCredentialField(n) }
 
   predicate isSink(DataFlow::Node n) { clientVisible(n, _) }
 }

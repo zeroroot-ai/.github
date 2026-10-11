@@ -3,8 +3,8 @@
  * @description A value read from `process.env` or from a module that
  *   imports `server-only` flows into a value the client receives: a
  *   prop of a `"use client"` component, a serialized page prop, or a
- *   response body. `NEXT_PUBLIC_*` variables and `NODE_ENV` are public
- *   by contract and do not count.
+ *   response body. `NEXT_PUBLIC_*` variables, `NODE_ENV` and the public
+ *   site origins in `publicOrigin` are public and do not count.
  * @kind problem
  * @id zeroroot-ai/server-only-secret-to-client
  * @problem.severity error
@@ -27,9 +27,21 @@ private predicate envRead(DataFlow::PropRead n, string name) {
   name = n.getPropertyName()
 }
 
-/** Holds if Next.js ships the variable `name` to the browser by contract. */
+/**
+ * Holds if the variable `name` holds the public origin of a site. The page
+ * renders it as a link, so it is not a secret. The list is explicit: add a
+ * name here only when each install sets it to a public URL.
+ */
+private predicate publicOrigin(string name) { name = ["DOCS_URL", "WWW_URL"] }
+
+/**
+ * Holds if the variable `name` is public: Next.js ships it to the browser by
+ * contract, or it is a public site origin.
+ */
 bindingset[name]
-private predicate publicVariable(string name) { name.matches("NEXT_PUBLIC_%") or name = "NODE_ENV" }
+private predicate publicVariable(string name) {
+  name.matches("NEXT_PUBLIC_%") or name = "NODE_ENV" or publicOrigin(name)
+}
 
 /** Holds if the prologue of module `m` imports `server-only`. */
 predicate isServerOnlyModule(Module m) {
