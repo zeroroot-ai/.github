@@ -181,7 +181,11 @@ links:
           - ./airgap/generate-image-list.py
       - repo: zeroroot-ai/charts
         file: helm/gibson/values.yaml
-        key: zitadel.initContainers.0.image
+        # wait-for-system-key, the second init container of each Zitadel
+        # workload (charts#576). The Zitadel chart reads only
+        # zitadel.zitadel.initContainers. Entry 0 is masterkey-guard
+        # (postgres-client below).
+        key: zitadel.zitadel.initContainers.1.image
         format: yaml
         after: ":"
     subchart:
