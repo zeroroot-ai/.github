@@ -2,3 +2,5 @@
 | bad.tsx:18:24:18:42 | session.accessToken | A session token from $@ reaches the client here. | bad.tsx:18:24:18:42 | session.accessToken | session.accessToken |
 | bad.tsx:24:40:24:43 | auth | A session token from $@ reaches the client here. | bad.tsx:23:16:23:45 | headers ... ation") | headers ... ation") |
 | bad.tsx:30:21:30:32 | sessionToken | A session token from $@ reaches the client here. | bad.tsx:29:24:29:34 | req.cookies | req.cookies |
+| bad.tsx:37:24:37:36 | decoded.token | A session token from $@ reaches the client here. | bad.tsx:36:30:36:43 | store.get("s") | store.get("s") |
+| bad.tsx:43:24:43:28 | box.t | A session token from $@ reaches the client here. | bad.tsx:42:20:42:30 | req.cookies | req.cookies |
