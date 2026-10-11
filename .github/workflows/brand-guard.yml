@@ -48,6 +48,6 @@ jobs:
       # every call once the org goes private. The runner fetches an action's
       # repository itself.
       - name: Scan for retired brand strings
-        uses: zeroroot-ai/.github/actions/brand-guard@534026f4a8ed977a3c04ad1a69e572fd7d92e7a2 # v0.18.0
+        uses: zeroroot-ai/.github/actions/brand-guard@921fad62b026bd330c77cdd18a72e29a7b1cae43 # v0.19.0
         with:
           repo-root: ${{ github.workspace }}/caller

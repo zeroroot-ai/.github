@@ -111,3 +111,25 @@ jobs:
           check javascript-typescript zeroroot-ai/server-action-no-zod zeroroot-ai/server-only-secret-to-client \
             zeroroot-ai/session-token-to-client zeroroot-ai/xss-without-sanitize
           exit "$fail"
+
+      - name: The secret and session queries flag no negative fixture
+        # good.tsx of each query holds the false positives of .github#265:
+        # the public origins DOCS_URL and WWW_URL, the signup attempt id and
+        # the id of an agent run session. A result there is a false positive.
+        # The scan runs the queries of the release that reusable-codeql.yml
+        # pins, so this step needs a pin at v0.19.0 or later.
+        run: |
+          set -euo pipefail
+          file=$(find sarif/codeql-sarif-javascript-typescript -name '*.sarif' | head -1)
+          if [ -z "$file" ]; then echo "::error::no result file for javascript-typescript"; exit 1; fi
+          bad='[.runs[].results[]
+                | select(.ruleId == "zeroroot-ai/server-only-secret-to-client"
+                    or .ruleId == "zeroroot-ai/session-token-to-client")
+                | select(any(.locations[]; .physicalLocation.artifactLocation.uri | endswith("/good.tsx")))]'
+          n=$(jq "$bad | length" "$file")
+          if [ "$n" -ne 0 ]; then
+            echo "::error::the secret or session query flags $n result(s) in a good.tsx fixture"
+            jq -r "$bad | .[] | \"\(.ruleId) \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)\"" "$file"
+            exit 1
+          fi
+          echo "no result of the secret or session query in a good.tsx fixture"
