@@ -2,9 +2,15 @@
 # check-brand.sh - the org-wide brand guard.
 #
 # The org is zeroroot-ai, the domain is zeroroot.ai, the CRD group is
-# gibson.zeroroot.ai and the company name is Zero Root AI. Four strings from
-# before the rename still leak into new files. Each one is a public artifact
-# once it reaches main, so this guard rejects all four.
+# gibson.zeroroot.ai and the company name is Zero Root AI. One string from
+# before the rename, the old product domain gibson.io, still leaks into new
+# files. It is a public artifact once it reaches main, so this guard rejects
+# it.
+#
+# zero-day.ai is NOT a retired string. It was retired on 2026-09-05 and came
+# back on 2026-09-14 as Zero Day AI Labs, the training and research sibling
+# of zeroroot.ai. A repository in this org may link to it. The guard matched
+# it until 2026-10-13, which blocked every such link.
 #
 # The guard runs against the CALLING repository's tree. It lives in
 # zeroroot-ai/.github so that one copy serves every repo, and it replaces the
@@ -13,13 +19,10 @@
 #
 # MATCHING
 #
-# All four patterns match case-insensitively. The retired domain and the
-# retired slug appear in lower case, in title case in prose and in upper case
-# in environment variable values, and one guard that catches every spelling is
-# easier to reason about than four rules with four case policies. The cost is
-# that the company-name pattern also matches the lower-case spelling of the
-# same three words, which ordinary prose about a zero day does not produce:
-# "zero-day vulnerability" carries a hyphen and no third word.
+# The pattern matches case-insensitively. The retired domain appears in lower
+# case in manifests, in title case in prose and in upper case in environment
+# variable values, and one rule that catches every spelling is easier to
+# reason about than three.
 #
 # SCOPE
 #
@@ -60,15 +63,12 @@ REPO_ROOT="${REPO_ROOT:-${GITHUB_WORKSPACE:-.}}"
 # The retired strings, as extended regular expressions. Read the header for why
 # every one of them is matched case-insensitively.
 PATTERNS=(
-  'zero-day\.ai'
-  'zero-day-ai'
-  'Zero Day AI'
   'gibson\.io'
 )
 
 # One alternation for the sweep. Per-pattern greps run only on the lines the
 # sweep returns, so a repository with thousands of files costs one grep pass.
-COMBINED='zero-day\.ai|zero-day-ai|Zero Day AI|gibson\.io'
+COMBINED='gibson\.io'
 
 # Paths that are exempt in every repository. Keep this list at three entries:
 # each one is a place the guard cannot protect.
@@ -259,9 +259,6 @@ selftest() {
   # One failing fixture per pattern, each in its own repository, so a guard
   # that lost a pattern fails here instead of passing by finding nothing.
   local fixtures=(
-    'apiVersion: gibson.zero-day.ai/v1'
-    'image: ghcr.io/zeroroot-ai/zero-day-ai-daemon:v1'
-    '// Copyright 2026 Zero Day AI'
     'label: gibson.io/sandbox-host=true'
   )
   local i=0 pattern
@@ -274,7 +271,7 @@ selftest() {
 
   # Case-insensitive matching, which the header explains.
   new_repo "$tmp/upper"
-  put_file "$tmp/upper" "docs/notes.md" 'See https://ZERO-DAY.AI/pricing for the old page.'
+  put_file "$tmp/upper" "docs/notes.md" 'See https://GIBSON.IO/pricing for the old page.'
   assert_scan 1 "$tmp/upper" "an upper-case spelling is rejected"
 
   # A clean tree passes.
@@ -283,16 +280,23 @@ selftest() {
   put_file "$tmp/clean" "LICENSE" '// Copyright 2026 Zero Root AI'
   assert_scan 0 "$tmp/clean" "a clean tree is accepted"
 
+  # The sibling brand is live, so a link to it passes. This fixture is here
+  # so that nobody puts zero-day.ai back into PATTERNS without reading why.
+  new_repo "$tmp/sibling"
+  put_file "$tmp/sibling" "src/Footer.astro" '<a href="https://www.zero-day.ai/">Training and research: Zero Day AI Labs</a>'
+  put_file "$tmp/sibling" "README.md" 'The repo zero-day-ai.github.io serves the Labs site.'
+  assert_scan 0 "$tmp/sibling" "a link to the sibling brand zero-day.ai is accepted"
+
   # The allow file exempts a listed path.
   new_repo "$tmp/allow"
-  put_file "$tmp/allow" "legacy/notes.md" 'The old site was at zero-day.ai until 2026-08.'
-  put_file "$tmp/allow" "$ALLOW_FILE" '# why: this note records the retirement of the old site
+  put_file "$tmp/allow" "legacy/notes.md" 'The old product site was at gibson.io until 2026-08.'
+  put_file "$tmp/allow" "$ALLOW_FILE" '# why: this note records the retirement of the old product site
 legacy/notes.md'
   assert_scan 0 "$tmp/allow" "the allow file exempts a listed path"
 
   # An allow-file entry with no reason above it fails.
   new_repo "$tmp/nowhy"
-  put_file "$tmp/nowhy" "legacy/notes.md" 'The old site was at zero-day.ai until 2026-08.'
+  put_file "$tmp/nowhy" "legacy/notes.md" 'The old product site was at gibson.io until 2026-08.'
   put_file "$tmp/nowhy" "$ALLOW_FILE" 'legacy/notes.md'
   assert_scan 1 "$tmp/nowhy" "an allow-file entry with no '# why:' comment fails" "has no '# why:' comment"
 
@@ -306,13 +310,13 @@ ok.yaml'
 
   # The inline marker exempts the line that carries it.
   new_repo "$tmp/marker"
-  put_file "$tmp/marker" "assert_absent_test.go" 'const retired = "gibson.zero-day.ai" // brand-guard-exempt: this test asserts the retired group is gone'
+  put_file "$tmp/marker" "assert_absent_test.go" 'const retired = "gibson.io" // brand-guard-exempt: this test asserts the retired domain is gone'
   assert_scan 0 "$tmp/marker" "the inline marker exempts its line"
 
   # The marker exempts one line only, never the whole file.
   new_repo "$tmp/markerline"
-  put_file "$tmp/markerline" "assert_absent_test.go" 'const retired = "gibson.zero-day.ai" // brand-guard-exempt: this test asserts the retired group is gone
-const leaked = "gibson.zero-day.ai"'
+  put_file "$tmp/markerline" "assert_absent_test.go" 'const retired = "gibson.io" // brand-guard-exempt: this test asserts the retired domain is gone
+const leaked = "gibson.io"'
   assert_scan 1 "$tmp/markerline" "the marker exempts one line, not the file"
 
   if [ "$SELFTEST_FAILURES" -gt 0 ]; then

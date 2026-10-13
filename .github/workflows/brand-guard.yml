@@ -1,12 +1,13 @@
 # Reusable workflow: the org-wide brand guard.
 #
 # The org is zeroroot-ai, the domain is zeroroot.ai and the company name is
-# Zero Root AI. Four strings from before the rename still leak into new files,
-# and each one is a public artifact once it reaches main. This workflow scans
-# the calling repository's tracked tree and fails the run on any occurrence
-# outside an exemption.
+# Zero Root AI. One string from before the rename, the old product domain,
+# still leaks into new files, and it is a public artifact once it reaches
+# main. This workflow scans the calling repository's tracked tree and
+# fails the run on any occurrence outside an exemption. zero-day.ai is the
+# live sibling brand, Zero Day AI Labs, and is not matched.
 #
-# The four strings, the exemption rules and the self-test all live in
+# The string, the exemption rules and the self-test all live in
 # actions/brand-guard/check-brand.sh. Read that file for the contract.
 #
 # One guard for the whole org. It replaces the per-repo copies that used to
