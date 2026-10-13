@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.3](https://github.com/zeroroot-ai/.github/compare/v0.19.2...v0.19.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* **version-fanout:** a chart pin moves its env reader contract, and a stale fan-out PR is rebuilt ([#276](https://github.com/zeroroot-ai/.github/issues/276)) ([a352d0e](https://github.com/zeroroot-ai/.github/commit/a352d0ecdddb197509d5ce72d4328f7e42526236))
+
 ## [0.19.2](https://github.com/zeroroot-ai/.github/compare/v0.19.1...v0.19.2) (2026-10-13)
 
 
