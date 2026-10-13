@@ -265,13 +265,18 @@ diff_against_allowlist() {
       e_token=$(printf '%s' "$entry_json" | jq -r '.token')
 
       # Expand to file+line+token keys for any violation row matching file+token+content.
-      awk -F'\t' -v f="$e_file" -v t="$e_token" -v c="$e_content" \
-        '$1 == f && $3 == t && index($4, c) > 0 { print $1 "\t" $2 "\t" $3 }' \
+      # The content goes through the environment: awk expands escape
+      # sequences in a -v value, so a content with a backslash would not
+      # match its line (.github#269).
+      DENY_CONTENT="$e_content" awk -F'\t' -v f="$e_file" -v t="$e_token" \
+        '$1 == f && $3 == t && index($4, ENVIRON["DENY_CONTENT"]) > 0 { print $1 "\t" $2 "\t" $3 }' \
         "$VIOL_FILE" >>"$ALLOW_KEYS"
 
       # Stale check: content string no longer present anywhere in the file.
       local actual_file="$REPO_ROOT/$e_file"
-      if [ -f "$actual_file" ] && ! grep -qF "$e_content" "$actual_file" 2>/dev/null; then
+      # `--` ends the options: a content that starts with a dash is a
+      # pattern, not an option (.github#269).
+      if [ -f "$actual_file" ] && ! grep -qF -- "$e_content" "$actual_file" 2>/dev/null; then
         printf 'content-based allowlist entry stale — content not found in %s (token: %s):\n  %s\n' \
           "$e_file" "$e_token" "$e_content" >>"$CONTENT_STALE_FILE"
       fi
@@ -433,11 +438,24 @@ selftest() {
     echo "::error::selftest FAILED: a non-array allowlist must be refused, got rc=$rc: $out"; failed=$((failed + 1))
   fi
 
+  # 6. A content that starts with a dash matches its line (.github#269).
+  printf 'package fake\n\n// -o "$d/auth" auth/kubernetes login\nfunc Use() {}\n' >"$al/doc.go"
+  set +e; out="$(allowlist_case '[{"file": "doc.go", "content": "-o \"$d/auth\" auth/kubernetes", "token": "auth/kubernetes", "reason": "login call"}]')"; rc=$?; set -e
+  if [ "$rc" -ne 0 ]; then
+    echo "::error::selftest FAILED: a content that starts with a dash must match its line, got rc=$rc: $out"; failed=$((failed + 1))
+  fi
+  # 7. A content with a backslash matches its line (.github#269).
+  printf 'package fake\n\n// C:\\new\\table auth/kubernetes\nfunc Use() {}\n' >"$al/doc.go"
+  set +e; out="$(allowlist_case '[{"file": "doc.go", "content": "C:\\new\\table auth/kubernetes", "token": "auth/kubernetes", "reason": "a path"}]')"; rc=$?; set -e
+  if [ "$rc" -ne 0 ]; then
+    echo "::error::selftest FAILED: a content with a backslash must match its line, got rc=$rc: $out"; failed=$((failed + 1))
+  fi
+
   if [ "$failed" -gt 0 ]; then
     echo "[selftest] $failed allowlist case(s) FAILED."
     return 1
   fi
-  echo "[selftest] all 5 allowlist cases passed."
+  echo "[selftest] all 7 allowlist cases passed."
   return 0
 }
 
