@@ -59,6 +59,9 @@ REGISTRY = "ghcr.io/zeroroot-ai"
 BOT_NAME = "zeroday-sdk-fanout[bot]"
 BOT_MAIL = "zeroday-sdk-fanout[bot]@users.noreply.github.com"
 EPIC = "zeroroot-ai/.github#20"
+# The login `gh` reports for a PR the fan-out App opened. --refresh rebuilds
+# only those: a PR from another author or a fork is not the fan-out's to push.
+APP_AUTHOR = "app/zeroday-sdk-fanout"
 
 
 class FanoutError(Exception):
@@ -221,12 +224,18 @@ class Gateway:
         raise FanoutError(f"source {repo} has no tag {tag} or {name}-{tag}")
 
     def open_fanout_prs(self, repo: str, prefix: str) -> list[tuple[int, str]]:
-        out = sh("gh", "pr", "list", "-R", repo, "--state", "open", "--json", "number,headRefName", env=self.env)
-        return [(int(p["number"]), p["headRefName"]) for p in json.loads(out or "[]") if p["headRefName"].startswith(prefix)]
+        """Open PRs on a fan-out branch that the fan-out App opened in the repo itself."""
+        out = sh("gh", "pr", "list", "-R", repo, "--state", "open", "--json",
+                 "number,headRefName,author,isCrossRepository", env=self.env)
+        return [(int(p["number"]), p["headRefName"]) for p in json.loads(out or "[]")
+                if fanout_owned(p, prefix)]
 
     def behind_main(self, repo: str, branch: str) -> int:
-        out = sh("gh", "api", f"repos/{repo}/compare/main...{branch}", "--jq", ".behind_by", env=self.env)
-        return int(out.strip() or 0)
+        r = subprocess.run(["gh", "api", f"repos/{repo}/compare/main...{branch}", "--jq", ".behind_by"],
+                           env=self.env, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise FanoutError(f"compare main...{branch}: {(r.stderr or r.stdout).strip()[-300:]}")
+        return int(r.stdout.strip() or 0)
 
 
 # --------------------------------------------------------------------------
@@ -381,6 +390,12 @@ def manifest_problems(manifest: dict) -> list[str]:
     return out
 
 
+def fanout_owned(pr: dict, prefix: str) -> bool:
+    """A PR the refresh may rebuild: on a fan-out branch, opened by the App, not from a fork."""
+    return (pr.get("headRefName", "").startswith(prefix) and not pr.get("isCrossRepository")
+            and (pr.get("author") or {}).get("login") == APP_AUTHOR)
+
+
 class PinnedDigests:
     """A gateway whose digests come from an open fan-out PR, not the registry."""
 
@@ -415,11 +430,11 @@ def refresh(manifest: dict, gw, dry_run: bool, work: str) -> int:
         for repo, consumers in by_repo.items():
             for number, branch in gw.open_fanout_prs(repo, prefix):
                 value = branch[len(prefix):]
-                behind = gw.behind_main(repo, branch)
-                if behind == 0:
-                    continue
-                print(f"{repo}#{number}: {branch} is {behind} commit(s) behind main; rebuilding on main")
                 try:
+                    behind = gw.behind_main(repo, branch)
+                    if behind == 0:
+                        continue
+                    print(f"{repo}#{number}: {branch} is {behind} commit(s) behind main; rebuilding on main")
                     digests = {}
                     for c in consumers:
                         if c.get("image"):
@@ -557,7 +572,10 @@ class FixtureGateway:
         return [(n, b) for (r, b), n in self.open_prs.items() if r == repo and b.startswith(prefix)]
 
     def behind_main(self, repo, branch):
-        return self.behind.get((repo, branch), 0)
+        n = self.behind.get((repo, branch), 0)
+        if n < 0:
+            raise FanoutError(f"compare main...{branch}: mocked 404")
+        return n
 
 
 VALUES = ('zitadel:\n  # server\n  image:\n    tag: "v4.14.0"  # pinned, see note\n  login:\n    image:\n'
@@ -773,6 +791,23 @@ def selftest() -> int:
         gw = FixtureGateway(contract_files, {}, sources=site_v2, open_prs={("o/charts", fanout_branch): 7})
         rc = refresh(contract_manifest([image_list, "sh gen.sh"], ["o/site"], ["sh check.sh"]), gw, False, w)
         check(rc == 0 and not gw.calls, "a fan-out PR at main is left as it is")
+    # 15. refresh rebuilds only the App's own PRs, and one failing compare does not stop the run
+    p = "chore/version-fanout-docs-site-"
+    check(fanout_owned({"headRefName": p + "v2", "author": {"login": APP_AUTHOR}, "isCrossRepository": False}, p),
+          "a fan-out PR the App opened is the refresh's to rebuild")
+    check(not fanout_owned({"headRefName": p + "v2", "author": {"login": "someone"}, "isCrossRepository": False}, p),
+          "a PR by another author on a fan-out branch name is left alone")
+    check(not fanout_owned({"headRefName": p + "v2", "author": {"login": APP_AUTHOR}, "isCrossRepository": True}, p),
+          "a PR from a fork is left alone")
+    with tempfile.TemporaryDirectory() as w:
+        gone = "chore/version-fanout-docs-site-v1"
+        gw = FixtureGateway(contract_files, {}, sources=site_v2,
+                            open_prs={("o/charts", gone): 6, ("o/charts", fanout_branch): 7},
+                            behind={("o/charts", gone): -1, ("o/charts", fanout_branch): 3},
+                            branch_files={("o/charts", "helm/values.yaml", fanout_branch): pr_values})
+        rc = refresh(contract_manifest([image_list, "sh gen.sh"], ["o/site"], ["sh check.sh"]), gw, False, w)
+        check(rc == 1 and ("push", fanout_branch) in gw.calls,
+              "a failing compare for one PR is loud, and the next PR is still rebuilt")
     # 7. unknown link / unsafe value are errors
     try:
         fanout(MANIFEST, "nope", FixtureGateway(files, {}), None, "main", True, tempfile.mkdtemp()); check(False, "unknown link raises")
