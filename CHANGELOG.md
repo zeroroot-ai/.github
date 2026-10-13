@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.1](https://github.com/zeroroot-ai/.github/compare/v0.19.0...v0.19.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **brand-guard:** zero-day.ai is a live sibling brand, not a retired string ([#271](https://github.com/zeroroot-ai/.github/issues/271)) ([fa6efde](https://github.com/zeroroot-ai/.github/commit/fa6efde78b36c8c62ebe091406f55ab0e509ff11))
+* **vault-auth-deny-list:** match an allowlist content that starts with a dash or holds a backslash ([#270](https://github.com/zeroroot-ai/.github/issues/270)) ([cc8f04e](https://github.com/zeroroot-ai/.github/commit/cc8f04e9439044d7f6eb33942c77b239ae42aabf)), closes [#269](https://github.com/zeroroot-ai/.github/issues/269)
+
 ## [0.19.0](https://github.com/zeroroot-ai/.github/compare/v0.18.0...v0.19.0) (2026-10-11)
 
 
