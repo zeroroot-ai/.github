@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/zeroroot-ai/.github/compare/v0.19.1...v0.19.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* re-pin brand-guard and vault-auth-deny-list to v0.19.1 ([#273](https://github.com/zeroroot-ai/.github/issues/273)) ([b0c80d3](https://github.com/zeroroot-ai/.github/commit/b0c80d3dd63012d5782a0c5b8f38763015325b25))
+
 ## [0.19.1](https://github.com/zeroroot-ai/.github/compare/v0.19.0...v0.19.1) (2026-10-13)
 
 
