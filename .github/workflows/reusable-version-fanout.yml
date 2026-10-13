@@ -77,7 +77,8 @@ jobs:
         id: consumers
         run: |
           set -euo pipefail
-          repos=$(yq -r '.links[] | select(.name == "${{ inputs.link }}") | .consumers[].repo' org-dot-github/version-links.yaml | sed 's|^zeroroot-ai/||' | sort -u | paste -sd,)
+          # The consumers, plus the `sources` the fan-out clones beside them (.github#275).
+          repos=$(yq -r '.links[] | select(.name == "${{ inputs.link }}") | .consumers[] | (.repo, (.sources // [])[])' org-dot-github/version-links.yaml | sed 's|^zeroroot-ai/||' | sort -u | paste -sd,)
           [ -n "$repos" ] || { echo "::error::link ${{ inputs.link }} has no consumers in version-links.yaml"; exit 1; }
           echo "repos=$repos" >> "$GITHUB_OUTPUT"
           echo "consumers: $repos"

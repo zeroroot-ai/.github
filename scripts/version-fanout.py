@@ -22,10 +22,21 @@ Rules (proved by --selftest, which gates this repo's PRs):
     consumer that errored; the run goes red.
   * Auto-merge is never armed. The PR goes through the consumer's own merge
     gate (ADR-0080).
+  * A consumer may name `sources`: repos the fan-out clones at the released
+    tag beside the consumer clone, so a `regenerate` command can read them as
+    sibling checkouts (.github#275: the charts env reader contract). The
+    clones keep no token.
+  * A consumer may name `verify` commands. They run after `regenerate`, with
+    no token. A failing one pushes nothing: the fan-out does not open a PR
+    that the consumer's gate would refuse.
+  * `--refresh` rebuilds each open fan-out PR that fell behind the consumer's
+    main: the same value, rewritten on current main and regenerated again.
+    The digest comes from the open PR, so no registry read is needed.
 
 Usage:
   version-fanout.py --link zitadel [--manifest version-links.yaml] [--value v4.17.3]
                     [--source-ref main] [--dry-run] [--work DIR]
+  version-fanout.py --refresh [--manifest version-links.yaml] [--dry-run]
   version-fanout.py --selftest
 Env: GH_TOKEN (pushes and PRs on the consumers), GHCR_TOKEN (registry reads;
      defaults to GH_TOKEN).
@@ -48,6 +59,9 @@ REGISTRY = "ghcr.io/zeroroot-ai"
 BOT_NAME = "zeroday-sdk-fanout[bot]"
 BOT_MAIL = "zeroday-sdk-fanout[bot]@users.noreply.github.com"
 EPIC = "zeroroot-ai/.github#20"
+# The login `gh` reports for a PR the fan-out App opened. --refresh rebuilds
+# only those: a PR from another author or a fork is not the fan-out's to push.
+APP_AUTHOR = "app/zeroday-sdk-fanout"
 
 
 class FanoutError(Exception):
@@ -196,6 +210,33 @@ class Gateway:
     def close_pr(self, repo: str, number: int, comment: str) -> None:
         sh("gh", "pr", "close", str(number), "-R", repo, "--delete-branch", "--comment", comment, env=self.env)
 
+    def clone_source(self, repo: str, tag: str, dest: str) -> None:
+        """Clone `repo` at `tag` (or `<name>-<tag>`) with the tag ref, then drop the token from its remote."""
+        name = repo.split("/", 1)[1]
+        for ref in (tag, f"{name}-{tag}"):
+            r = subprocess.run(["git", "clone", "--quiet", "--depth", "1", "--branch", ref,
+                                f"https://x-access-token:{self.token}@github.com/{repo}.git", dest],
+                               env=self.env, capture_output=True, text=True)
+            if r.returncode == 0:
+                sh("git", "remote", "set-url", "origin", f"https://github.com/{repo}.git", cwd=dest)
+                return
+            shutil.rmtree(dest, ignore_errors=True)
+        raise FanoutError(f"source {repo} has no tag {tag} or {name}-{tag}")
+
+    def open_fanout_prs(self, repo: str, prefix: str) -> list[tuple[int, str]]:
+        """Open PRs on a fan-out branch that the fan-out App opened in the repo itself."""
+        out = sh("gh", "pr", "list", "-R", repo, "--state", "open", "--json",
+                 "number,headRefName,author,isCrossRepository", env=self.env)
+        return [(int(p["number"]), p["headRefName"]) for p in json.loads(out or "[]")
+                if fanout_owned(p, prefix)]
+
+    def behind_main(self, repo: str, branch: str) -> int:
+        r = subprocess.run(["gh", "api", f"repos/{repo}/compare/main...{branch}", "--jq", ".behind_by"],
+                           env=self.env, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise FanoutError(f"compare main...{branch}: {(r.stderr or r.stdout).strip()[-300:]}")
+        return int(r.stdout.strip() or 0)
+
 
 # --------------------------------------------------------------------------
 def find_link(manifest: dict, name: str) -> dict:
@@ -302,8 +343,114 @@ def regenerate(dest: str, repo: str, consumers: list[dict]) -> list[str]:
     return [f"{f} (regenerated)" for f in touched if f not in consumer_files]
 
 
+def clone_sources(work: str, consumers: list[dict], value: str, gw) -> None:
+    """Clone each `sources` repo at the released tag, beside the consumer clone.
+
+    A consumer's generator reads a service at the tag the consumer pins, from a
+    sibling checkout (charts scripts/pinned_source.py). The runner has none, so
+    the fan-out provides it. The directory is the repo name, which is where a
+    sibling lookup finds it; the clone keeps no token.
+    """
+    for repo in dict.fromkeys(r for c in consumers for r in c.get("sources", []) or []):
+        dest = os.path.join(work, repo.split("/", 1)[1])
+        shutil.rmtree(dest, ignore_errors=True)
+        gw.clone_source(repo, value, dest)
+
+
+def verify(dest: str, repo: str, consumers: list[dict]) -> None:
+    """Run the consumer's `verify` commands after `regenerate`, with no token. A failure pushes nothing."""
+    cmds = list(dict.fromkeys(cmd for c in consumers for cmd in c.get("verify", []) or []))
+    env = regenerate_env()
+    for cmd in cmds:
+        print(f"{repo}: verify: {cmd}")
+        r = subprocess.run(["sh", "-c", cmd], cwd=dest, env=env, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise FanoutError(f"verify `{cmd}` failed ({r.returncode}), so the consumer gate would refuse the PR: "
+                              f"{(r.stdout + r.stderr).strip()[-800:]}")
+
+
+def manifest_problems(manifest: dict) -> list[str]:
+    """Rules on the manifest itself.
+
+    A chart image pin moves the tag that a vendored contract must name
+    (charts `contract-pins`). So every image-pin consumer in charts runs that
+    check as `verify`, and a consumer whose service has a contract clones the
+    service through `sources` and regenerates the contract (.github#275).
+    """
+    out = []
+    for link in manifest.get("links", []):
+        for c in link.get("consumers", []) or []:
+            if c.get("repo") == "zeroroot-ai/charts" and c.get("image"):
+                if not any("pinned_source.py --check-headers" in v for v in c.get("verify", []) or []):
+                    out.append(f"{link['name']}: the charts image pin `{c['key']}` declares no verify that runs "
+                               "scripts/pinned_source.py --check-headers")
+            for r in c.get("sources", []) or []:
+                if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+", r):
+                    out.append(f"{link['name']}: source `{r}` is not owner/name")
+    return out
+
+
+def fanout_owned(pr: dict, prefix: str) -> bool:
+    """A PR the refresh may rebuild: on a fan-out branch, opened by the App, not from a fork."""
+    return (pr.get("headRefName", "").startswith(prefix) and not pr.get("isCrossRepository")
+            and (pr.get("author") or {}).get("login") == APP_AUTHOR)
+
+
+class PinnedDigests:
+    """A gateway whose digests come from an open fan-out PR, not the registry."""
+
+    def __init__(self, gw, digests: dict):
+        self._gw, self._digests = gw, digests
+
+    def __getattr__(self, name):
+        return getattr(self._gw, name)
+
+    def resolve_digest(self, image: str, ref: str) -> str:
+        if (image, ref) not in self._digests:
+            raise FanoutError(f"refresh: the open PR holds no digest for {image}:{ref}")
+        return self._digests[(image, ref)]
+
+
+def refresh(manifest: dict, gw, dry_run: bool, work: str) -> int:
+    """Rebuild every open fan-out PR whose branch is behind the consumer's main (.github#275).
+
+    A fan-out PR is built from the main of its moment. When main moves, the
+    generated files it regenerated (goldens, the image list) conflict. A rerun
+    of the same value on current main is the rebase: it rewrites, regenerates
+    and verifies again, and pushes the branch with a lease. The digest of an
+    image pin is read from the open PR, so the image stays the one reviewed.
+    """
+    failures = 0
+    for link in manifest.get("links", []):
+        name = link["name"]
+        prefix = f"chore/version-fanout-{name}-"
+        by_repo: dict[str, list[dict]] = {}
+        for c in link.get("consumers", []) or []:
+            by_repo.setdefault(c["repo"], []).append(c)
+        for repo, consumers in by_repo.items():
+            for number, branch in gw.open_fanout_prs(repo, prefix):
+                value = branch[len(prefix):]
+                try:
+                    behind = gw.behind_main(repo, branch)
+                    if behind == 0:
+                        continue
+                    print(f"{repo}#{number}: {branch} is {behind} commit(s) behind main; rebuilding on main")
+                    digests = {}
+                    for c in consumers:
+                        if c.get("image"):
+                            pinned = read_key(gw.file_text(repo, c["file"], branch), "yaml", c["key"])
+                            if "@" in pinned:
+                                digests[(c["image"], value)] = pinned.split("@", 1)[1]
+                    failures += fanout(manifest, name, PinnedDigests(gw, digests), value, "main", dry_run, work,
+                                       only_repo=repo)
+                except FanoutError as e:
+                    failures += 1
+                    print(f"::error::{repo}#{number}: {e}", file=sys.stderr)
+    return 1 if failures else 0
+
+
 def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: str,
-           dry_run: bool, work: str) -> int:
+           dry_run: bool, work: str, only_repo: str | None = None) -> int:
     link = find_link(manifest, link_name)
     src = link["source"]
     if not value:
@@ -313,7 +460,8 @@ def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: st
     branch = f"chore/version-fanout-{link_name}-{value}"
     by_repo: dict[str, list[dict]] = {}
     for c in link.get("consumers", []):
-        by_repo.setdefault(c["repo"], []).append(c)
+        if only_repo is None or c["repo"] == only_repo:
+            by_repo.setdefault(c["repo"], []).append(c)
     print(f"link {link_name}: source {src['repo']} = {value}; consumers in {len(by_repo)} repo(s)")
     failures = 0
     for repo, consumers in by_repo.items():
@@ -321,6 +469,7 @@ def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: st
         shutil.rmtree(dest, ignore_errors=True)
         try:
             gw.clone(repo, dest)
+            clone_sources(work, consumers, value, gw)
             sh("git", "checkout", "-q", "-B", branch, cwd=dest)
             changes = [apply_consumer(dest, c, value, gw) for c in consumers]
             if not sh("git", "status", "--porcelain", cwd=dest).strip():
@@ -329,6 +478,7 @@ def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: st
             for c in consumers:
                 sh("git", "add", "--", c["file"], cwd=dest)
             changes += regenerate(dest, repo, consumers)
+            verify(dest, repo, consumers)
             title = f"fix({link_name}): bump to {value}"
             body = pr_body(link_name, value, src, changes)
             sh("git", "commit", "-q", "-m", title, "-m", f"Automated by zeroroot-ai/.github reusable-version-fanout ({EPIC}).",
@@ -355,12 +505,18 @@ def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: st
 
 # --------------------------------------------------------------------------
 class FixtureGateway:
-    def __init__(self, files: dict, digests: dict, open_prs: dict | None = None, fail_digest: bool = False):
+    def __init__(self, files: dict, digests: dict, open_prs: dict | None = None, fail_digest: bool = False,
+                 sources: dict | None = None, behind: dict | None = None, branch_files: dict | None = None):
         self.files, self.digests, self.open_prs = files, digests, open_prs or {}
         self.fail_digest = fail_digest
+        self.sources = sources or {}          # (repo, tag) -> {path: text}
+        self.behind = behind or {}            # (repo, branch) -> commits behind main
+        self.branch_files = branch_files or {}  # (repo, path, ref) -> text
         self.calls: list[tuple] = []
 
     def file_text(self, repo, path, ref):
+        if (repo, path, ref) in self.branch_files:
+            return self.branch_files[(repo, path, ref)]
         try:
             return self.files[(repo, path)]
         except KeyError:
@@ -398,6 +554,28 @@ class FixtureGateway:
 
     def close_pr(self, repo, number, comment):
         self.calls.append(("close", repo, number, comment))
+
+    def clone_source(self, repo, tag, dest):
+        if (repo, tag) not in self.sources:
+            raise FanoutError(f"source {repo} has no tag {tag}")
+        os.makedirs(dest, exist_ok=True)
+        sh("git", "init", "-q", dest)
+        sh("git", "config", "user.name", "t", cwd=dest); sh("git", "config", "user.email", "t@t", cwd=dest)
+        for path, text in self.sources[(repo, tag)].items():
+            full = os.path.join(dest, path); os.makedirs(os.path.dirname(full), exist_ok=True)
+            open(full, "w").write(text)
+        sh("git", "add", "-A", cwd=dest); sh("git", "commit", "-q", "-m", tag, cwd=dest); sh("git", "tag", tag, cwd=dest)
+        sh("git", "remote", "add", "origin", f"https://github.com/{repo}.git", cwd=dest)
+        self.calls.append(("clone_source", repo, tag))
+
+    def open_fanout_prs(self, repo, prefix):
+        return [(n, b) for (r, b), n in self.open_prs.items() if r == repo and b.startswith(prefix)]
+
+    def behind_main(self, repo, branch):
+        n = self.behind.get((repo, branch), 0)
+        if n < 0:
+            raise FanoutError(f"compare main...{branch}: mocked 404")
+        return n
 
 
 VALUES = ('zitadel:\n  # server\n  image:\n    tag: "v4.14.0"  # pinned, see note\n  login:\n    image:\n'
@@ -552,6 +730,84 @@ def selftest() -> int:
         wrong = sh("git", "rev-parse", "HEAD~1", cwd=d3).strip()
         r = subprocess.run(["git", "push", "--force-with-lease=refs/heads/chore/version-fanout-x-v1:" + wrong, "-q", "origin", "chore/version-fanout-x-v1"], cwd=d3, capture_output=True, text=True)
         check(r.returncode != 0 and "stale info" in (r.stderr + r.stdout).lower(), "a lease that names the wrong tip is refused")
+    # 11-13. .github#275: a chart pin whose service has a vendored contract.
+    #     The fixture chart pins docs-site in values.yaml, derives the pinned
+    #     tag into images.txt, and holds a contract that must name that tag.
+    #     check.sh is the consumer gate (charts `contract-pins`).
+    contract_files = {
+        ("o/site", "image-tag.env"): "TAG=v2\n",
+        ("o/charts", "helm/values.yaml"): 'docs:\n  image:\n    tag: "v1@' + "sha256:" + "c" * 64 + '"\n',
+        ("o/charts", "images.txt"): "docs-site:v1\n",
+        ("o/charts", "contracts/docs-site.txt"): "# Source: o/site @ v1\nDOCS_A\n",
+        ("o/charts", "check.sh"): 'pin=$(sed "s/.*://" images.txt); grep -q "@ $pin\\$" contracts/docs-site.txt\n',
+        ("o/charts", "gen.sh"): 'pin=$(sed "s/.*://" images.txt); { echo "# Source: o/site @ $pin"; cat ../site/readers.txt; } > contracts/docs-site.txt\n',
+    }
+    site_v2 = {("o/site", "v2"): {"readers.txt": "DOCS_A\nDOCS_B\n"}}
+    def contract_manifest(regen, sources, verify_cmds):
+        return {"version": 1, "links": [{"name": "docs-site",
+            "source": {"repo": "o/site", "file": "image-tag.env", "key": "TAG", "format": "env"},
+            "consumers": [{"repo": "o/charts", "file": "helm/values.yaml", "key": "docs.image.tag", "format": "yaml",
+                           "before": "@", "image": "docs-site", "regenerate": regen, "sources": sources,
+                           "verify": verify_cmds}]}]}
+    image_list = "sed -n 's/.*tag: \"\\(v[0-9]*\\)@.*/docs-site:\\1/p' helm/values.yaml > images.txt"
+    # 11. no contract regeneration: the verify step fails, and nothing is pushed or opened
+    with tempfile.TemporaryDirectory() as w:
+        gw = FixtureGateway(contract_files, {("docs-site", "v2"): DIG}, sources=site_v2)
+        rc = fanout(contract_manifest([image_list], [], ["sh check.sh"]), "docs-site", gw, None, "main", False, w)
+        check(rc == 1 and not any(c[0] in ("push", "create") for c in gw.calls),
+              "a chart pin that leaves its vendored contract at the old tag fails verify and opens nothing")
+    # 12. sources + contract regeneration: the source is cloned beside the chart, the contract moves, verify passes
+    with tempfile.TemporaryDirectory() as w:
+        gw = FixtureGateway(contract_files, {("docs-site", "v2"): DIG}, sources=site_v2)
+        rc = fanout(contract_manifest([image_list, "sh gen.sh"], ["o/site"], ["sh check.sh"]), "docs-site", gw, None, "main", False, w)
+        contract = open(os.path.join(w, "o__charts", "contracts/docs-site.txt")).read()
+        committed = sh("git", "show", "--name-only", "--format=", "HEAD", cwd=os.path.join(w, "o__charts")).split()
+        check(rc == 0 and "# Source: o/site @ v2" in contract and "DOCS_B" in contract,
+              "the contract is regenerated from the source at the released tag")
+        check("contracts/docs-site.txt" in committed and any(c[0] == "create" for c in gw.calls),
+              "the regenerated contract is in the fan-out commit, and the PR opens")
+        check(("clone_source", "o/site", "v2") in gw.calls, "the source is cloned at the fanned-out value")
+        url = sh("git", "config", "--get", "remote.origin.url", cwd=os.path.join(w, "site")).strip()
+        check(url == "https://github.com/o/site.git", "the source clone keeps no token in its remote")
+    # 13. the manifest rule: a charts image pin with no contract check is refused
+    bad = contract_manifest([image_list], [], [])
+    bad["links"][0]["consumers"][0]["repo"] = "zeroroot-ai/charts"
+    check(manifest_problems(bad) != [], "a charts image pin with no `pinned_source.py --check-headers` verify is refused")
+    real_m = yaml_to_json(open(os.path.join(os.path.dirname(__file__), "..", "version-links.yaml")).read())
+    check(manifest_problems(real_m) == [], "the real version-links.yaml passes the manifest rules")
+    # 14. --refresh: an open fan-out PR behind main is rebuilt on main with the digest of the PR; one at main is left
+    fanout_branch = "chore/version-fanout-docs-site-v2"
+    pr_values = 'docs:\n  image:\n    tag: "v2@' + "sha256:" + "d" * 64 + '"\n'
+    with tempfile.TemporaryDirectory() as w:
+        gw = FixtureGateway(contract_files, {}, sources=site_v2, open_prs={("o/charts", fanout_branch): 7},
+                            behind={("o/charts", fanout_branch): 3},
+                            branch_files={("o/charts", "helm/values.yaml", fanout_branch): pr_values})
+        rc = refresh(contract_manifest([image_list, "sh gen.sh"], ["o/site"], ["sh check.sh"]), gw, False, w)
+        after = open(os.path.join(w, "o__charts", "helm/values.yaml")).read()
+        check(rc == 0 and ("push", fanout_branch) in gw.calls and any(c[0] == "edit" and c[2] == 7 for c in gw.calls),
+              "a fan-out PR behind main is rebuilt and pushed, and the PR is edited in place")
+        check("sha256:" + "d" * 64 in after, "the rebuilt PR keeps the digest of the open PR (no registry read)")
+    with tempfile.TemporaryDirectory() as w:
+        gw = FixtureGateway(contract_files, {}, sources=site_v2, open_prs={("o/charts", fanout_branch): 7})
+        rc = refresh(contract_manifest([image_list, "sh gen.sh"], ["o/site"], ["sh check.sh"]), gw, False, w)
+        check(rc == 0 and not gw.calls, "a fan-out PR at main is left as it is")
+    # 15. refresh rebuilds only the App's own PRs, and one failing compare does not stop the run
+    p = "chore/version-fanout-docs-site-"
+    check(fanout_owned({"headRefName": p + "v2", "author": {"login": APP_AUTHOR}, "isCrossRepository": False}, p),
+          "a fan-out PR the App opened is the refresh's to rebuild")
+    check(not fanout_owned({"headRefName": p + "v2", "author": {"login": "someone"}, "isCrossRepository": False}, p),
+          "a PR by another author on a fan-out branch name is left alone")
+    check(not fanout_owned({"headRefName": p + "v2", "author": {"login": APP_AUTHOR}, "isCrossRepository": True}, p),
+          "a PR from a fork is left alone")
+    with tempfile.TemporaryDirectory() as w:
+        gone = "chore/version-fanout-docs-site-v1"
+        gw = FixtureGateway(contract_files, {}, sources=site_v2,
+                            open_prs={("o/charts", gone): 6, ("o/charts", fanout_branch): 7},
+                            behind={("o/charts", gone): -1, ("o/charts", fanout_branch): 3},
+                            branch_files={("o/charts", "helm/values.yaml", fanout_branch): pr_values})
+        rc = refresh(contract_manifest([image_list, "sh gen.sh"], ["o/site"], ["sh check.sh"]), gw, False, w)
+        check(rc == 1 and ("push", fanout_branch) in gw.calls,
+              "a failing compare for one PR is loud, and the next PR is still rebuilt")
     # 7. unknown link / unsafe value are errors
     try:
         fanout(MANIFEST, "nope", FixtureGateway(files, {}), None, "main", True, tempfile.mkdtemp()); check(False, "unknown link raises")
@@ -585,16 +841,24 @@ def main() -> int:
     ap.add_argument("--value"); ap.add_argument("--source-ref", default="main")
     ap.add_argument("--dry-run", action="store_true"); ap.add_argument("--work", default=None)
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--refresh", action="store_true")
     a = ap.parse_args()
     if a.selftest:
         return selftest()
-    if not a.link:
-        ap.error("--link is required")
+    if not a.link and not a.refresh:
+        ap.error("--link or --refresh is required")
     token = os.environ.get("GH_TOKEN") or sh("gh", "auth", "token").strip()
     gw = Gateway(token, os.environ.get("GHCR_TOKEN") or token)
     manifest = yaml_to_json(open(a.manifest).read())
     work = a.work or tempfile.mkdtemp(prefix="version-fanout-")
+    problems = manifest_problems(manifest)
+    if problems:
+        for p in problems:
+            print(f"::error::{p}", file=sys.stderr)
+        return 1
     try:
+        if a.refresh:
+            return refresh(manifest, gw, a.dry_run, work)
         return fanout(manifest, a.link, gw, a.value, a.source_ref, a.dry_run, work)
     except FanoutError as e:
         print(f"::error::{e}", file=sys.stderr)

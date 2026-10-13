@@ -1,0 +1,80 @@
+name: Version fan-out refresh
+
+# .github#275. A fan-out PR is built from the consumer's main of its moment.
+# When that main moves, the files the fan-out regenerated (golden snapshots,
+# the air-gap image list, a vendored contract) conflict, and the PR goes
+# stale. charts#682 stood five hours, fell seven commits behind and needed a
+# rebase and a second regeneration by hand.
+#
+# Every two hours this rebuilds each open fan-out PR whose branch is behind
+# its consumer's main: the same value, rewritten on current main,
+# regenerated and verified again, and pushed with a lease
+# (scripts/version-fanout.py --refresh). The digest of an image pin comes
+# from the open PR, so the image stays the one in the PR. A PR at main is
+# left as it is. Auto-merge is never armed.
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        type: boolean
+        default: false
+        description: Rebuild and print the diff, push nothing.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-fanout-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prove the fan-out rules still hold
+        run: python3 scripts/version-fanout.py --selftest
+
+      - name: Resolve every consumer and source repo
+        id: repos
+        run: |
+          set -euo pipefail
+          repos=$(yq -r '.links[] | .consumers[]? | (.repo, (.sources // [])[])' version-links.yaml | sed 's|^zeroroot-ai/||' | sort -u | paste -sd,)
+          [ -n "$repos" ] || { echo "::error::version-links.yaml names no consumer"; exit 1; }
+          echo "repos=$repos" >> "$GITHUB_OUTPUT"
+          echo "repos: $repos"
+
+      - name: Mint the fan-out App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.SDK_FANOUT_APP_ID }}
+          private-key: ${{ secrets.SDK_FANOUT_APP_PRIVATE_KEY }}
+          owner: zeroroot-ai
+          repositories: ${{ steps.repos.outputs.repos }}
+
+      # The same toolchain as reusable-version-fanout.yml: a consumer's
+      # `regenerate` commands may render charts.
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+        with:
+          version: v3.16.2
+      - name: Log helm in to ghcr.io
+        run: echo "${{ github.token }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Rebuild the fan-out PRs that fell behind main
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--refresh --manifest version-links.yaml)
+          [ "${DRY_RUN:-false}" = "true" ] && args+=(--dry-run)
+          python3 scripts/version-fanout.py "${args[@]}"

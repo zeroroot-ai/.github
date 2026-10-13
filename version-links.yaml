@@ -29,6 +29,17 @@
 #                       fails the run. For derived files the consumer's gate
 #                       compares against the values (golden snapshots, the
 #                       air-gap image list).
+#     sources           optional list of owner/name repos the fan-out clones
+#                       at the released tag (or `<name>-<tag>`) beside the
+#                       consumer clone, before `regenerate`. A consumer
+#                       generator reads them as sibling checkouts (charts
+#                       env reader contracts, .github#275). No token stays
+#                       in the clone.
+#     verify            optional list of shell commands the fan-out runs
+#                       after `regenerate`, with no token. A failure pushes
+#                       nothing. Every image pin in zeroroot-ai/charts runs
+#                       `python3 scripts/pinned_source.py --check-headers`,
+#                       the charts `contract-pins` gate.
 #     after             optional: compare only the part of the value after
 #                       the last occurrence of this string (an inline image
 #                       reference `registry/name:tag` carries the tag after
@@ -80,6 +91,8 @@ links:
         regenerate:
           - ./scripts/golden.sh update
           - ./airgap/generate-image-list.py
+        verify:
+          - python3 scripts/pinned_source.py --check-headers
     upstream:
       repo: zitadel/zitadel
     subchart:
@@ -269,9 +282,18 @@ links:
         format: yaml
         before: "@"
         image: docs-site
+        # The chart vendors the docs-site env reader contract, and its gate
+        # wants the contract read at the pinned tag (.github#275). The
+        # fan-out clones docs-site at the released tag beside the chart, and
+        # the generator reads it there after the image list moves the pin.
+        sources:
+          - zeroroot-ai/docs-site
         regenerate:
           - ./scripts/golden.sh update
           - ./airgap/generate-image-list.py
+          - python3 scripts/gen-env-readers.py --write docs-site
+        verify:
+          - python3 scripts/pinned_source.py --check-headers
 
   # ---- charts#400: subchart images from the install registry mirror, by digest ----
   - name: mirror-cert-manager-cainjector
