@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/zeroroot-ai/.github/compare/v0.19.3...v0.20.0) (2026-10-14)
+
+
+### Features
+
+* **rulesets:** charts merges through a merge queue ([#278](https://github.com/zeroroot-ai/.github/issues/278)) ([f608aae](https://github.com/zeroroot-ai/.github/commit/f608aae9531660851323c6d9936e5bdf788afa1b))
+
 ## [0.19.3](https://github.com/zeroroot-ai/.github/compare/v0.19.2...v0.19.3) (2026-10-13)
 
 
