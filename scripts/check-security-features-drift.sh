@@ -60,7 +60,7 @@ fetch() {
   #
   # The org-wide GraphQL enumeration this used to run is expensive, and the
   # GraphQL budget is a USER-level limit shared by every token that user holds
-  # — so one agent exhausting it blocks everyone. This guard runs hourly and
+  # — so one agent exhausting it blocks everyone. This guard runs on dispatch and
   # after every repo recreation, so it is exactly the kind of recurring cost
   # that should not sit on a contended budget.
   #

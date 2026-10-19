@@ -8,7 +8,7 @@
 # A pull request or merge group checks only the Markdown its change added,
 # modified or renamed, and runs no check when it touched none. A pin PR must
 # not fail because a site linked from an untouched document is down
-# (charts#251). The push to main and the schedule sweep the whole tree.
+# (charts#251). The push to main sweeps the whole tree.
 #
 # The flags, the org policy and the caller-override contract live in
 # actions/link-check/. Read actions/link-check/lychee.toml for what is

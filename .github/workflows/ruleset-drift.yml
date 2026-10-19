@@ -39,10 +39,9 @@
 #                         it reads PR check-run names in every targeted repo
 #                         and most of them are private.
 #
-# Cadence: live-drift hourly. An out-of-band edit is usually made to unfreeze
-# something in a hurry and then forgotten, so the useful window is hours, not
-# days. required-contexts daily — it costs ~100 API calls, and a workflow's
-# trigger does not change between one hour and the next.
+# Trigger: a person starts both live jobs with workflow_dispatch. No schedule
+# triggers this workflow (owner order 2026-10-19). required-contexts costs
+# ~100 API calls.
 #
 # This workflow is NOT a required check anywhere and must not become one — it
 # depends on an org API call, and a required context that goes red or absent
@@ -53,11 +52,6 @@ name: ruleset-drift
 
 on:
   pull_request:
-  schedule:
-    # live-drift: an out-of-band edit is made in a hurry, then forgotten
-    - cron: "23 * * * *"
-    # required-contexts: ~100 API calls, and triggers do not move hourly
-    - cron: "41 7 * * *"
   workflow_dispatch:
 
 permissions:
@@ -107,9 +101,7 @@ jobs:
   # ---- live vs committed (needs the org-admin token) ----
   live-drift:
     name: live-drift
-    if: >-
-      github.event_name != 'pull_request'
-      && github.event.schedule != '41 7 * * *'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -140,13 +132,10 @@ jobs:
   # ---- is every required context actually produced on a PR? (.github#277) ----
   # Same class as live-drift — a fact about the committed file that only real
   # GitHub state can settle — so it lives here rather than in its own workflow.
-  # Daily rather than hourly: it samples six merged PRs per targeted repo, which
-  # is ~100 API calls, and a workflow's trigger does not change between hours.
+  # It samples six merged PRs per targeted repo, which is ~100 API calls.
   required-contexts:
     name: required-contexts
-    if: >-
-      github.event.schedule == '41 7 * * *'
-      || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

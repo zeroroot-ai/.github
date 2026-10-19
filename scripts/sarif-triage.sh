@@ -152,7 +152,7 @@ build_digest() {
   echo
   echo "Full list: ${link}"
   echo
-  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed. Fix alerts to close them, or dismiss them with a reason per slice 4.6 suppression discipline._"
+  echo "_Auto-filed by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed. Fix alerts to close them, or dismiss them with a reason per slice 4.6 suppression discipline._"
 }
 
 # build_digest_summary <repo> <alerts_file> — fallback when the full digest
@@ -176,7 +176,7 @@ build_digest_summary() {
   echo
   echo "Full list: ${link}"
   echo
-  echo "_Auto-filed on a schedule by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed._"
+  echo "_Auto-filed by the org SARIF-triage workflow (zeroroot-ai/.github). One digest issue per repo, found by title and updated in place; a repo that reaches zero open alerts has its digest closed._"
 }
 
 # render_digest <repo> <alerts_file> <out_file> — full digest, with the byte

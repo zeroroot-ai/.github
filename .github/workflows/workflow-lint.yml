@@ -24,6 +24,10 @@
 # `run:` blocks, which is a different question with hundreds of answers, and a
 # gate that starts red in every repository gets switched off.
 #
+# A second step fails any workflow that has a `schedule` trigger. Owner order
+# 2026-10-19: no zeroroot-ai repo runs a scheduled workflow. A workflow that
+# must run on a timer is started by a person with `workflow_dispatch`.
+#
 # The one runner label that is not GitHub-hosted is the org's ephemeral ARC
 # scale-set (`*-ephemeral`, enforced by runs-on-lint.yml), so it is
 # declared here once and no consumer needs a config file.
@@ -85,3 +89,47 @@ jobs:
           fi
           echo "OK: $count workflow file(s) are valid workflows."
           # END-LINT
+
+      - name: No workflow has a schedule trigger
+        # INLINE for the same reason as the step above.
+        # scripts/test-workflow-lint.sh extracts the program below and runs it
+        # against a workflow that has a schedule, which must fail.
+        #
+        # No GitHub expression may appear inside this run: block, not even in a
+        # comment. Actions interpolates it there and the whole file is invalid.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          # BEGIN-NOSCHED (extracted by scripts/test-workflow-lint.sh)
+          import glob, sys
+          import yaml
+
+          files = sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml"))
+          failures = []
+          for path in files:
+              doc = yaml.safe_load(open(path, encoding="utf-8"))
+              if not isinstance(doc, dict):
+                  failures.append("%s: not a workflow mapping, so its triggers were not checked" % path)
+                  continue
+              # PyYAML reads a bare `on:` key as the boolean True.
+              on = doc.get("on", doc.get(True))
+              if isinstance(on, dict):
+                  names = set(on)
+              elif isinstance(on, list):
+                  names = set(on)
+              elif isinstance(on, str):
+                  names = {on}
+              else:
+                  failures.append("%s: no readable `on:` block, so its triggers were not checked" % path)
+                  continue
+              if "schedule" in names:
+                  failures.append("%s: has a `schedule` trigger. No workflow runs on a schedule. Remove it and use workflow_dispatch" % path)
+          if not files:
+              failures.append("no workflow file under .github/workflows, so this run checked nothing")
+          for f in failures:
+              print("::error::" + f)
+          if failures:
+              sys.exit(1)
+          print("OK: %d workflow file(s) have no schedule trigger." % len(files))
+          # END-NOSCHED
+          PY

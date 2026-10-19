@@ -20,9 +20,6 @@ on:
       - "scripts/check-dependabot-drift.py"
       - "templates/dependabot.yml"
       - "repo-settings/dependabot-exceptions.json"
-  schedule:
-    # Mondays 08:11 UTC, before the weekly Dependabot run at 09:00.
-    - cron: "11 8 * * 1"
   workflow_dispatch:
 
 permissions:

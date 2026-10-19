@@ -14,9 +14,6 @@
 name: merge-gate-time
 
 on:
-  schedule:
-    # Mondays 07:47 UTC. Off the hour, away from the peak of the scheduler.
-    - cron: "47 7 * * 1"
   workflow_dispatch:
     inputs:
       days:

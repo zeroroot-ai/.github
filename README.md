@@ -23,7 +23,7 @@ commit SHA, and so can you.
 ## Rulesets are code
 
 `rulesets/` is authoritative. `apply-rulesets.yml` PUTs every file on merge, and
-`ruleset-drift.yml` fails hourly if live GitHub state has diverged.
+`ruleset-drift.yml` fails when a person runs it and live GitHub state has diverged.
 
 **A change made in the GitHub UI is not "already applied" — it is pending
 deletion.** Edit the JSON and merge it.

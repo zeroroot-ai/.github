@@ -1,6 +1,6 @@
 name: release-pipeline-health
 
-# Daily audit of the release pipeline across every org repo. Closes the
+# On-demand audit of the release pipeline across every org repo. Closes the
 # blind spot behind zeroroot-ai/.github#263, where six repos silently
 # stopped releasing and nothing went red.
 #
@@ -39,12 +39,10 @@ name: release-pipeline-health
 # closes it again when the org is clean — same contract as
 # makefile-contract.yml and per-repo-claude-md-drift.yml.
 #
-# Daily, not monthly: a stalled release is on the launch-gate critical
-# path, and the whole point is that it is invisible between scans.
+# No schedule triggers this workflow (owner order 2026-10-19). A person
+# starts it with workflow_dispatch.
 
 on:
-  schedule:
-    - cron: "45 11 * * *"  # daily, 11:45 UTC
   workflow_dispatch:
   pull_request:
     paths:

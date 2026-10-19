@@ -10,7 +10,7 @@
 # A required check that fails a change for a fault outside the change is a
 # guard defect. This script scopes a pull request run to the Markdown files
 # the change added, copied, modified or renamed. The full sweep stays on the
-# push to main and on the schedule, where an outage costs nobody a merge.
+# push to main and on dispatch, where an outage costs nobody a merge.
 #
 # CONTRACT
 #

@@ -1,17 +1,14 @@
 name: per-repo-claude-md-drift
 
-# Monthly check: every repo in the org has either CLAUDE.md or AGENTS.md
+# On-demand check: every repo in the org has either CLAUDE.md or AGENTS.md
 # at the root. Posts a tracked issue listing missing repos.
 #
 # Slice 6.3 of the production-readiness epic (gibson#176 → board #16).
 #
-# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
-# board #44) — low-signal maintenance cron, workflow_dispatch still
-# available for on-demand runs.
+# No schedule triggers this workflow (owner order 2026-10-19). A person
+# starts it with workflow_dispatch.
 
 on:
-  schedule:
-    - cron: "0 11 1 * *" # monthly: 1st of month, 11:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -60,7 +57,7 @@ jobs:
             echo "::notice::all repos have CLAUDE.md or AGENTS.md"
             # Self-heal: close any stale open drift issue so the tracker
             # reflects the now-clean state instead of lingering open with a
-            # stale repo list until the next cron rewrite (mirrors
+            # stale repo list until the next run rewrites it (mirrors
             # makefile-contract.yml; this branch was missing — .github#231).
             CLEAN_EXISTING=$(gh issue list -R zeroroot-ai/.github \
                                --state open --search 'in:title "Per-repo CLAUDE.md drift"' \
