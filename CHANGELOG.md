@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/zeroroot-ai/.github/compare/v0.20.0...v0.20.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **rework:** schedule guard closes each file and refuses two on keys ([#286](https://github.com/zeroroot-ai/.github/issues/286)) ([6da6ee0](https://github.com/zeroroot-ai/.github/commit/6da6ee016ea210667b96ffa1b182b033275bc67a))
+
 ## [0.20.0](https://github.com/zeroroot-ai/.github/compare/v0.19.3...v0.20.0) (2026-10-14)
 
 
