@@ -207,7 +207,10 @@ nosched_red schedlist 'has a `schedule` trigger'
 # 10. A workflow with no schedule passes.
 nosched_tree nosched $'on:\n  push:\n    branches: [main]\n  workflow_dispatch: {}'
 if out="$(nosched_run nosched)"; then echo "ok    green  nosched"; passed=$((passed+1)); else echo "FAIL  nosched was blocked: $out"; fails=$((fails+1)); fi
-# 11. THE FLOOR. A tree with no workflow file checked nothing.
+# 11. A quoted "on" key cannot hide a bare on key that holds a schedule.
+nosched_tree schedtwokeys $'"on": push\non:\n  schedule:\n    - cron: "0 4 * * *"'
+nosched_red schedtwokeys 'has both a quoted and a bare on key'
+# 12. THE FLOOR. A tree with no workflow file checked nothing.
 mkdir -p "$work/nosched-empty/.github/workflows"
 nosched_red nosched-empty 'checked nothing'
 
@@ -225,7 +228,7 @@ fi
 echo
 echo "passed=$passed failed=$fails"
 # A count floor, so cases added below this block cannot silently never run.
-if [ "$fails" -eq 0 ] && [ "$passed" -lt 12 ]; then
-  echo "FAIL: only $passed assertion(s) ran, want 12"; exit 1
+if [ "$fails" -eq 0 ] && [ "$passed" -lt 13 ]; then
+  echo "FAIL: only $passed assertion(s) ran, want 13"; exit 1
 fi
 [ "$fails" -eq 0 ]
