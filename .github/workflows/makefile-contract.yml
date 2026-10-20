@@ -26,13 +26,11 @@ name: makefile-contract
 # and reports a false "all clear" (.github#170). The script hard-fails if the
 # private canary is not visible, so the blind spot cannot silently return.
 #
-# Runs monthly + on workflow_dispatch + on PR touching the audit (to validate
-# changes against the fixtures). Cadence pruned weekly→monthly by .github#201
-# (cicd-efficiency epic, board #44).
+# Runs on workflow_dispatch and on a PR that touches the audit (to validate
+# changes against the fixtures). No schedule triggers it (owner order
+# 2026-10-19).
 
 on:
-  schedule:
-    - cron: "30 11 1 * *"  # monthly: 1st of month, 11:30 UTC
   workflow_dispatch:
   pull_request:
     paths:
@@ -49,7 +47,7 @@ jobs:
     # Proves the audit names a genuinely missing target, stays quiet about a
     # present one, skips the exempt repos, and — the .github#141 case — passes
     # a complete Makefile that is far larger than a pipe buffer. Gates the
-    # audit on every scheduled run, so a regression fails before anything is
+    # audit on every run, so a regression fails before anything is
     # filed.
     name: contract-logic-fixture-self-test
     runs-on: ubuntu-latest

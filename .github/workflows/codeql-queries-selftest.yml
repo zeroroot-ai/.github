@@ -16,8 +16,6 @@ name: codeql-queries-selftest
 on:
   pull_request:
   merge_group:
-  schedule:
-    - cron: '41 6 * * 1'
   workflow_dispatch:
 
 permissions:

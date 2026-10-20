@@ -1,20 +1,16 @@
 name: flake-report
 
-# Weekly aggregator that scans recent CI runs across the org for flake
+# On-demand aggregator that scans recent CI runs across the org for flake
 # events emitted by actions/flake-quarantine. Updates (or creates) a
 # single open issue listing flaky tests.
 #
 # Slice 5.11 of the production-readiness epic (gibson#175 → board #16).
 #
-# Cadence history: pruned weekly→monthly by .github#201, but the 7-day
-# lookback window and the "Weekly" report title were left behind, so a
-# monthly run silently discarded ~23 of every 30 days. Restored to weekly
-# by .github#241 so cadence, window and title agree; the aggregation is a
-# handful of API calls, not a heavy job.
+# No schedule triggers this workflow (owner order 2026-10-19). A person
+# starts it with workflow_dispatch. The lookback window is 7 days, so run it
+# about once a week. The aggregation is a handful of API calls, not a heavy job.
 
 on:
-  schedule:
-    - cron: "0 10 * * 1"  # weekly: Monday 10:00 UTC (matches the 7-day window)
   workflow_dispatch:
   pull_request:
     paths:

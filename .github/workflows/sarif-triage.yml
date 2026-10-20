@@ -1,7 +1,7 @@
 name: sarif-triage
 
 # Slice 4.6 of the production-readiness epic (gibson#174 → board #16).
-# Scheduled cron that polls open code-scanning alerts across the org and
+# On-demand workflow that polls open code-scanning alerts across the org and
 # files ONE digest issue per repo, updated in place.
 #
 # Behavior contract (implemented in scripts/sarif-triage.sh; regression- and
@@ -34,8 +34,6 @@ name: sarif-triage
 # is not visible (guard added by .github#243 — kept).
 
 on:
-  schedule:
-    - cron: "0 9 * * *"  # unchanged cadence, 09:00 UTC
   workflow_dispatch:
   pull_request:
     paths:
@@ -51,7 +49,7 @@ jobs:
     # Mutation/fixture tests for the digest logic: proves an empty/null/
     # error API response files NOTHING, a real-shaped response files
     # EXACTLY ONE digest, and the hard-safety abort actually fires. Gates
-    # the triage job on every scheduled run so a regression in the guard
+    # the triage job on every run so a regression in the guard
     # logic fails before anything is filed.
     name: digest-logic-fixture-self-test
     runs-on: ubuntu-latest

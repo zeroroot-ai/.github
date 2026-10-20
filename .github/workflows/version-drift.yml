@@ -3,13 +3,13 @@ name: version-drift
 # Epic zeroroot-ai/.github#20: one upstream version is copied into several
 # places by hand (a fork's UPSTREAM_REF, a chart's image tag, a chart's image
 # pin) and only a README checklist kept them equal. `version-links.yaml` names
-# every such link once. This workflow reads the manifest on a schedule,
+# every such link once. This workflow reads the manifest on demand,
 # resolves each value on the repo's default branch, compares consumers against
 # the source and the source against the newest upstream release, and keeps
 # ONE tracker issue in this repo.
 #
 # Behavior contract (implemented in scripts/version-drift.py, proved by its
-# --selftest, which gates every scheduled run):
+# --selftest, which gates every run):
 #   * One tracker issue, found by the title prefix
 #     "ci(version-drift): version links out of sync", edited in place.
 #   * Zero drift CLOSES the open tracker with a dated comment. The next drift
@@ -23,8 +23,6 @@ name: version-drift
 # sarif-triage does; the default GITHUB_TOKEN is the fallback.
 
 on:
-  schedule:
-    - cron: "30 9 * * *"  # daily, 30 min after sarif-triage
   workflow_dispatch:
   pull_request:
     paths:

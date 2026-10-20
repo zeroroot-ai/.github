@@ -2,7 +2,7 @@
 # repository is pinned to a commit SHA (attic#24, .github#66). A moved ref
 # cannot change what CI runs.
 #
-# Runs nightly and on demand. Clones each repository shallowly with the org
+# Runs on demand and on a change to its own files. Clones each repository shallowly with the org
 # read token, then runs scripts/pin-actions.py --check on its .github tree.
 #
 # FIRST-PARTY REFERENCES COUNT (.github#66). This used to exempt
@@ -20,8 +20,6 @@
 # and .github's own tree must pass.
 name: unpinned-actions-guard
 on:
-  schedule:
-    - cron: "17 6 * * *"
   workflow_dispatch:
   pull_request:
     paths:

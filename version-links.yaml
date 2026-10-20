@@ -2,8 +2,8 @@
 #
 # Epic: zeroroot-ai/.github#20. One upstream version is copied into several
 # places, and a README checklist was the only thing that kept the copies
-# equal. This file names each link once. `version-drift.yml` reads it on a
-# schedule, compares every value on `main`, checks the upstream release feed,
+# equal. This file names each link once. `version-drift.yml` reads it on
+# dispatch, compares every value on `main`, checks the upstream release feed,
 # and refreshes ONE tracker issue in this repo (see scripts/version-drift.py).
 # `reusable-version-fanout.yml` reads the same entries to open the consumer PR
 # when a source publishes.

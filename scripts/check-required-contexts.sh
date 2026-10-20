@@ -24,7 +24,7 @@
 #                     through the policy-guards reusable workflow, so the check
 #                     name is "<caller job> / <called job>").
 #   tier-opensource   required 4 contexts. NOT ONE reported anywhere.
-#                     `Scorecard analysis` runs on schedule and push, never on
+#                     `Scorecard analysis` runs on push, never on
 #                     a PR; sdk-ts and zerocool-plugins have no pr-title-lint
 #                     workflow at all.
 #   gitops.json       required `terraform`, which has no workflow in that repo,

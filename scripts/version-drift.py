@@ -2,7 +2,7 @@
 """version-drift.py — compare every link in version-links.yaml and keep ONE tracker issue.
 
 Epic zeroroot-ai/.github#20. Behavior contract (proved by `--selftest`, which
-gates the scheduled job in .github/workflows/version-drift.yml):
+gates the job in .github/workflows/version-drift.yml):
 
   * One tracker issue, found by the stable title prefix and edited in place.
     Never a second one, even when several links drift in the same run.

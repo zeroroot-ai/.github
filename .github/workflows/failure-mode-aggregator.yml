@@ -6,17 +6,14 @@ name: failure-mode-aggregator
 #
 # Slice 6.5 of the production-readiness epic.
 #
-# Runs monthly + manually. The table belongs in the internal docs tree at
+# Runs on demand. The table belongs in the internal docs tree at
 # docs/agents/failure-modes.md, which is not a GitHub repository, so a
 # human copies the artifact into it.
 #
-# Cadence pruned weekly→monthly by .github#201 (cicd-efficiency epic,
-# board #44) — low-signal maintenance cron, workflow_dispatch still
-# available for on-demand runs.
+# No schedule triggers this workflow (owner order 2026-10-19). A person
+# starts it with workflow_dispatch.
 
 on:
-  schedule:
-    - cron: "0 12 1 * *" # monthly: 1st of month, 12:00 UTC
   workflow_dispatch:
 
 permissions:

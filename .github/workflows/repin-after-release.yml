@@ -84,7 +84,7 @@ jobs:
       #
       # It says so and stops, rather than failing red on every release or — worse —
       # skipping quietly. Nothing is masked by stopping: the pin guard still fails
-      # on the actual staleness, on every PR and nightly, so the safety property
+      # on the actual staleness, on every PR, so the safety property
       # holds without this workflow. What is lost is only the automation.
       - name: Is the re-pin App configured?
         id: token-ready
@@ -116,7 +116,7 @@ jobs:
             echo "bash scripts/check-action-pins-are-current.sh --ref ${{ steps.check.outputs.ref }} --fix"
             echo '```'
             echo ""
-            echo "The nightly pin guard keeps failing until that lands, so this is not"
+            echo "The pin guard keeps failing until that lands, so this is not"
             echo "a silent gap."
           } >>"$GITHUB_STEP_SUMMARY"
           echo "::warning::${{ steps.check.outputs.ref }} has stale action pins and REPIN_APP_ID is unset; re-pin manually with scripts/check-action-pins-are-current.sh --fix"
