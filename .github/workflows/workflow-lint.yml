@@ -107,11 +107,16 @@ jobs:
           files = sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml"))
           failures = []
           for path in files:
-              doc = yaml.safe_load(open(path, encoding="utf-8"))
+              with open(path, encoding="utf-8") as fh:
+                  doc = yaml.safe_load(fh)
               if not isinstance(doc, dict):
                   failures.append("%s: not a workflow mapping, so its triggers were not checked" % path)
                   continue
-              # PyYAML reads a bare `on:` key as the boolean True.
+              # PyYAML reads a bare `on:` key as the boolean True. A file can hold
+              # both a quoted "on" and a bare on key, so check both.
+              if "on" in doc and True in doc:
+                  failures.append("%s: has both a quoted and a bare on key" % path)
+                  continue
               on = doc.get("on", doc.get(True))
               if isinstance(on, dict):
                   names = set(on)
