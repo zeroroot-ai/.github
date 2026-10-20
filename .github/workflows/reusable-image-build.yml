@@ -189,7 +189,7 @@ jobs:
       # procurement filter both read that as "unlicensed", which is a worse
       # answer than the truth and is not one anybody chose.
       - id: license
-        uses: zeroroot-ai/.github/actions/spdx-from-license@921fad62b026bd330c77cdd18a72e29a7b1cae43 # v0.19.0
+        uses: zeroroot-ai/.github/actions/spdx-from-license@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
         with:
           path: ${{ inputs.component_path }}
       - id: meta
@@ -308,7 +308,7 @@ jobs:
       # named here rather than changed quietly.
       - name: Block the push on a fixable vulnerability
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/gate-image-vulns@921fad62b026bd330c77cdd18a72e29a7b1cae43 # v0.19.0
+        uses: zeroroot-ai/.github/actions/gate-image-vulns@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
         with:
           report: gate-${{ inputs.component_name }}.json
           severities: ${{ inputs.trivy_severity }}
@@ -344,7 +344,7 @@ jobs:
       # is no pushed reference to inspect.
       - name: The image carries its license text
         if: ${{ github.event_name != 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/verify-image-license@921fad62b026bd330c77cdd18a72e29a7b1cae43 # v0.19.0
+        uses: zeroroot-ai/.github/actions/verify-image-license@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
       - if: github.event_name != 'pull_request'
