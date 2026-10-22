@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/zeroroot-ai/.github/compare/v0.20.1...v0.21.0) (2026-10-22)
+
+
+### Features
+
+* **version-links:** the Zitadel setup Job store container follows alpine-k8s ([#289](https://github.com/zeroroot-ai/.github/issues/289)) ([1889c6a](https://github.com/zeroroot-ai/.github/commit/1889c6a37d69151e22ff3ce6c87d2b2ca64ed8a9))
+
+
+### Bug Fixes
+
+* **rework:** the Zitadel setup store container is an init sidecar ([#292](https://github.com/zeroroot-ai/.github/issues/292)) ([7a7c1af](https://github.com/zeroroot-ai/.github/commit/7a7c1af553889523d3c15ad6c2cdfc9493d4ef1a))
+
 ## [0.20.1](https://github.com/zeroroot-ai/.github/compare/v0.20.0...v0.20.1) (2026-10-20)
 
 
