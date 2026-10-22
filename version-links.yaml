@@ -203,11 +203,12 @@ links:
         after: ":"
       - repo: zeroroot-ai/charts
         file: helm/gibson/values.yaml
-        # login-client-pat-store, the container of the Zitadel setup Job that
-        # writes the first login-client PAT straight to OpenBao (charts#758,
-        # ADR-0014). The Zitadel chart takes zitadel.setupJob.extraContainers
-        # verbatim, so it is a plain string and drift-only.
-        key: zitadel.setupJob.extraContainers.0.image
+        # login-client-pat-store, the native sidecar of the Zitadel setup Job
+        # that writes the first login-client PAT straight to OpenBao
+        # (charts#758, ADR-0014). The Zitadel chart takes
+        # zitadel.setupJob.initContainers verbatim, so it is a plain string
+        # and drift-only.
+        key: zitadel.setupJob.initContainers.0.image
         format: yaml
         after: ":"
     subchart:
