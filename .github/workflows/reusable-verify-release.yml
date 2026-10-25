@@ -182,4 +182,20 @@ jobs:
           # Same policy as reusable-image-build: unfixed OS-package CVEs have
           # no action a repo can take and drown the fixable ones.
           ignore-unfixed: true
+          # Without this, trivy-action builds the SARIF with ALL severities and
+          # ignores `severity` above, so exit-code 1 fires on a fixable LOW or
+          # MEDIUM finding. This gate means HIGH and CRITICAL only.
+          limit-severities-for-sarif: true
           exit-code: 1
+      # The SARIF step writes a file and prints nothing, so a failure named
+      # no finding. Print the table into the log when the scan fails.
+      - name: Trivy findings
+        if: failure()
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.digest.outputs.digest_ref }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 0
+          skip-setup-trivy: true

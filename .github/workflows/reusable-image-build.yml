@@ -490,6 +490,11 @@ jobs:
           # and it hides the fixable ones. Trivy re-raises the alert the day
           # a fixed version ships, so nothing is lost by waiting for it.
           ignore-unfixed: true
+          # Without this, trivy-action builds the SARIF with ALL severities and
+          # ignores `severity` above, so exit-code 1 fires on any fixable LOW or
+          # MEDIUM finding and the job goes red on a finding the gate never
+          # blocks (zerocool-plugins, 2026-10-25: fast-uri MEDIUM).
+          limit-severities-for-sarif: true
           exit-code: 1
       # Guaranteed-readable findings surface (failure mode 3 above): render the
       # findings table into the run's step summary so agents/humans can read
@@ -515,7 +520,7 @@ jobs:
             echo '```'
             cat "trivy-${{ inputs.component_name }}.txt" 2>/dev/null || echo "(no table output produced)"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       # Opportunistic Security-tab upload: continue-on-error because private
       # repos without Code Security reject it (failure mode 3) and the JWT
       # mismatch (failure mode 1) also 403s — the summary above is canonical.
