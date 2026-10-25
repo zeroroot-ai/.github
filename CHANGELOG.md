@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.1](https://github.com/zeroroot-ai/.github/compare/v0.21.0...v0.21.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **workflows:** the trivy SARIF scans honor the severity, and a failed scan prints its table ([43b0dd5](https://github.com/zeroroot-ai/.github/commit/43b0dd5e90fbf1bd77d39d8e32693d2a1fb26739))
+* **workflows:** trivy SARIF scans honor the severity, and a failed scan prints its table ([#293](https://github.com/zeroroot-ai/.github/issues/293)) ([43b0dd5](https://github.com/zeroroot-ai/.github/commit/43b0dd5e90fbf1bd77d39d8e32693d2a1fb26739))
+
 ## [0.21.0](https://github.com/zeroroot-ai/.github/compare/v0.20.1...v0.21.0) (2026-10-22)
 
 
