@@ -145,6 +145,20 @@ mirrors:
   - source: docker.io/library/redis
     tag: "7.2.8-alpine"
     dest: redis
+  # The images of the argo-cd chart 10.11.6 (Argo CD 3.5.6). Argo CD 3.0.x
+  # strands a child Application at phase Running when its parent syncs
+  # (argoproj/argo-cd#29253, fixed by #28201 in 3.4.4), which failed the drill
+  # (zeroroot-ai/hosted#24). The kind module moves to this chart after these
+  # tags exist.
+  - source: quay.io/argoproj/argocd
+    tag: "v3.5.6"
+    dest: argocd
+  - source: ghcr.io/dexidp/dex
+    tag: "v2.46.1"
+    dest: dex
+  - source: docker.io/library/redis
+    tag: "8.6.4-alpine"
+    dest: redis
 
   # ---------------------------------------------------------------------------
   # Bitnami refugees (legacy registry; pull-then-mirror until replacements land)
