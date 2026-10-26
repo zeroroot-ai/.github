@@ -381,7 +381,13 @@ def install_helm(version: str, gw) -> str:
 
 
 def consumer_env(dest: str, gw) -> dict[str, str]:
-    """The token-free environment of a consumer command, with the consumer's Helm first on PATH."""
+    """The environment of a consumer command, with the consumer's Helm first on PATH.
+
+    It holds no fan-out token. Known limit: install_helm logs Helm in to
+    ghcr.io, and that login lives in the Helm registry config under $HOME,
+    which a consumer command can read. golden.sh pulls the mirrored sub-charts
+    with it, so the consumer needs it. The workflow login step did the same.
+    """
     env = regenerate_env()
     version = consumer_helm_version(dest)
     if version:
