@@ -204,6 +204,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: bash scripts/test-reusable-image-build.sh
+      # The scans give code scanning every severity and gate on HIGH and
+      # CRITICAL only (.github#296). The test runs the convert blocks of both
+      # reusable workflows on fixture reports, with the trivy version that
+      # trivy-action v0.36.0 installs. It runs in this required job, so a
+      # failure blocks the merge.
+      - uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+        with:
+          version: v0.70.0
+      - run: bash scripts/test-trivy-severity-split.sh
 
   # The release policy must verify what the shared build signs. Its first
   # version matched the caller repo against a certificate that names the

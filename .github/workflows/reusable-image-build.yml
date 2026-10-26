@@ -478,47 +478,68 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ inputs.image_name }}@${{ needs.build-and-push.outputs.digest }}
-          format: sarif
-          output: trivy-${{ inputs.component_name }}.sarif
-          severity: ${{ inputs.trivy_severity }}
-          # Only report CVEs the distro or module has a fix for. An unfixed
-          # OS-package CVE has no action a repo can take (2026-09-07: 1165 of
-          # 1484 open Trivy alerts org-wide had an empty "Fixed Version"),
-          # and it hides the fixable ones. Trivy re-raises the alert the day
-          # a fixed version ships, so nothing is lost by waiting for it.
-          ignore-unfixed: true
-          # Without this, trivy-action builds the SARIF with ALL severities and
-          # ignores `severity` above, so exit-code 1 fires on any fixable LOW or
-          # MEDIUM finding and the job goes red on a finding the gate never
-          # blocks (zerocool-plugins, 2026-10-25: fast-uri MEDIUM).
-          limit-severities-for-sarif: true
-          exit-code: 1
-      # Guaranteed-readable findings surface (failure mode 3 above): render the
-      # findings table into the run's step summary so agents/humans can read
-      # them on ANY repo, Code Security or not. Reuses the local vuln DB the
-      # SARIF step just populated; never fails the step chain (exit-code 0).
-      - name: Findings to step summary
-        if: always()
+      # One scan, three reports (.github#296). The scan writes a JSON report
+      # with every severity and never fails. `trivy convert` then makes each
+      # report from that one file, so the image is scanned once:
+      #   SARIF  every severity, for code scanning. A LOW or MEDIUM finding is
+      #          real and stays visible there. A SARIF limited to the gate
+      #          severities retired real MEDIUM alerts as "fixed" with no fix
+      #          (.github#293, zitadel-login alerts 84-94).
+      #   table  the gate severities, into the log and the step summary.
+      #   gate   the gate severities, exit 1. It runs last, so every report
+      #          above exists when it fails.
+      # The table and the gate take every result of the scan: a vulnerability
+      # and an embedded secret alike. In `trivy convert`, `--scanners` picks
+      # only the rows of the summary table. The table names both scanners so
+      # the summary lists both.
+      # scripts/test-trivy-severity-split.sh runs these blocks against a fixture
+      # report and fails when the SARIF drops a severity or the gate passes a
+      # HIGH finding.
+      #
+      # ignore-unfixed: only report CVEs the distro or module has a fix for.
+      # An unfixed OS-package CVE has no action a repo can take (2026-09-07:
+      # 1165 of 1484 open Trivy alerts org-wide had an empty "Fixed Version"),
+      # and it hides the fixable ones. Trivy re-raises the alert the day a
+      # fixed version ships, so nothing is lost by waiting for it.
+      - name: Trivy scan (JSON, every severity)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ inputs.image_name }}@${{ needs.build-and-push.outputs.digest }}
-          format: table
-          output: trivy-${{ inputs.component_name }}.txt
-          severity: ${{ inputs.trivy_severity }}
+          format: json
+          output: trivy-${{ inputs.component_name }}.json
           ignore-unfixed: true
           exit-code: 0
-          skip-setup-trivy: true
-      - name: Append findings to summary
+      - name: SARIF report (every severity)
         if: always()
         shell: bash
+        env:
+          REPORT: trivy-${{ inputs.component_name }}.json
+          SARIF: trivy-${{ inputs.component_name }}.sarif
         run: |
+          set -euo pipefail
+          # BEGIN-TRIVY-SARIF (extracted by scripts/test-trivy-severity-split.sh)
+          trivy convert --format sarif --output "$SARIF" "$REPORT"
+          # END-TRIVY-SARIF
+      # Guaranteed-readable findings surface (failure mode 3 above): the table
+      # goes into the log and the run's step summary, so agents and humans can
+      # read it on ANY repo, Code Security or not.
+      - name: Findings to log and step summary
+        if: always()
+        shell: bash
+        env:
+          REPORT: trivy-${{ inputs.component_name }}.json
+          TABLE: trivy-${{ inputs.component_name }}.txt
+          SEVERITY: ${{ inputs.trivy_severity }}
+          COMPONENT: ${{ inputs.component_name }}
+        run: |
+          set -euo pipefail
+          # BEGIN-TRIVY-TABLE (extracted by scripts/test-trivy-severity-split.sh)
+          trivy convert --format table --scanners vuln,secret --severity "$SEVERITY" --output "$TABLE" "$REPORT"
+          # END-TRIVY-TABLE
           {
-            echo "## Trivy findings — ${{ inputs.component_name }} (${{ inputs.trivy_severity }})"
+            echo "## Trivy findings — ${COMPONENT} (${SEVERITY})"
             echo '```'
-            cat "trivy-${{ inputs.component_name }}.txt" 2>/dev/null || echo "(no table output produced)"
+            cat "$TABLE"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
       # Opportunistic Security-tab upload: continue-on-error because private
@@ -530,3 +551,16 @@ jobs:
         with:
           sarif_file: trivy-${{ inputs.component_name }}.sarif
           category: trivy-${{ inputs.component_name }}
+      - name: Gate (${{ inputs.trivy_severity }})
+        shell: bash
+        env:
+          REPORT: trivy-${{ inputs.component_name }}.json
+          GATE_SEVERITY: ${{ inputs.trivy_severity }}
+        run: |
+          set -euo pipefail
+          # BEGIN-TRIVY-GATE (extracted by scripts/test-trivy-severity-split.sh)
+          if ! trivy convert --format table --severity "$GATE_SEVERITY" --exit-code 1 --output /dev/null "$REPORT"; then
+            echo "::error::The image has a ${GATE_SEVERITY} finding: a vulnerability with a fix, or a secret. The findings table above names it."
+            exit 1
+          fi
+          # END-TRIVY-GATE
