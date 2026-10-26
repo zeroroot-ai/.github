@@ -1,0 +1,68 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "ghcr.io/zeroroot-ai/fixture@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "OS": {
+      "Family": "alpine",
+      "Name": "3.15.4",
+      "EOSL": true
+    }
+  },
+  "Results": [
+    {
+      "Target": "Node.js",
+      "Class": "lang-pkgs",
+      "Type": "node-pkg",
+      "Vulnerabilities": [
+        {
+          "Title": "@tootallnate/once: @tootallnate/once: Denial of Service due to incorrect control flow scoping with AbortSignal",
+          "PkgName": "@tootallnate/once",
+          "Severity": "LOW",
+          "InstalledVersion": "2.0.0",
+          "VulnerabilityID": "CVE-2026-3449",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-3449",
+          "FixedVersion": "3.0.1, 2.0.1",
+          "Status": "fixed",
+          "PkgID": "@tootallnate/once@2.0.0"
+        }
+      ]
+    },
+    {
+      "Target": "node:18.0.0-alpine (alpine 3.15.4)",
+      "Class": "os-pkgs",
+      "Type": "alpine",
+      "Vulnerabilities": [
+        {
+          "Title": "openssl: AES OCB fails to encrypt some bytes",
+          "PkgName": "libcrypto1.1",
+          "Severity": "MEDIUM",
+          "InstalledVersion": "1.1.1n-r0",
+          "VulnerabilityID": "CVE-2022-2097",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2022-2097",
+          "FixedVersion": "1.1.1q-r0",
+          "Status": "fixed",
+          "PkgID": "libcrypto1.1@1.1.1n-r0"
+        }
+      ]
+    },
+    {
+      "Target": "node:18.0.0-alpine (alpine 3.15.4)",
+      "Class": "os-pkgs",
+      "Type": "alpine",
+      "Vulnerabilities": [
+        {
+          "Title": "openssl: double free after calling PEM_read_bio_ex",
+          "PkgName": "libcrypto1.1",
+          "Severity": "HIGH",
+          "InstalledVersion": "1.1.1n-r0",
+          "VulnerabilityID": "CVE-2022-4450",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2022-4450",
+          "FixedVersion": "1.1.1t-r0",
+          "Status": "fixed",
+          "PkgID": "libcrypto1.1@1.1.1n-r0"
+        }
+      ]
+    }
+  ]
+}
