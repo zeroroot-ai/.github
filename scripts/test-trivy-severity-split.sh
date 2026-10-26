@@ -19,7 +19,8 @@
 #     block on tests/fixtures/trivy/report-with-high.json and counts results;
 #   - a gate block passes a HIGH finding or fails on LOW and MEDIUM only: it
 #     runs the block on both fixture reports;
-#   - the table block does not name the HIGH finding.
+#   - a gate block passes a HIGH embedded secret (report-with-secret.json);
+#   - the table block does not name the HIGH finding or the HIGH secret.
 # It then plants each defect in a copy of the workflows and proves that the
 # check fails on it. A check that cannot fail is worse than none.
 #
@@ -43,6 +44,8 @@ TRIVY = os.environ["TRIVY"]
 FIX = "tests/fixtures/trivy"
 LOW_MED = f"{FIX}/report-low-medium.json"
 WITH_HIGH = f"{FIX}/report-with-high.json"
+WITH_SECRET = f"{FIX}/report-with-secret.json"
+SECRET_RULE = "github-pat"
 HIGH_ID = "CVE-2022-4450"
 FILES = {
     "image-build": (".github/workflows/reusable-image-build.yml", "vuln-scan"),
@@ -106,6 +109,8 @@ def check(texts):
             env = {"GATE_SEVERITY": sev}
             if run_block(gate, dict(env, REPORT=WITH_HIGH)) == 0:
                 fails.append(f"{key}: the gate passed a report with a HIGH finding")
+            if run_block(gate, dict(env, REPORT=WITH_SECRET)) == 0:
+                fails.append(f"{key}: the gate passed a report with a HIGH secret")
             if run_block(gate, dict(env, REPORT=LOW_MED)) != 0:
                 fails.append(f"{key}: the gate failed a report with only LOW and MEDIUM findings")
 
@@ -118,6 +123,9 @@ def check(texts):
                 rc = run_block(table, {"REPORT": WITH_HIGH, "TABLE": out, "SEVERITY": "HIGH,CRITICAL"})
                 if rc != 0 or HIGH_ID not in open(out).read():
                     fails.append(f"{key}: the table does not name the HIGH finding {HIGH_ID}")
+                rc = run_block(table, {"REPORT": WITH_SECRET, "TABLE": out, "SEVERITY": "HIGH,CRITICAL"})
+                if rc != 0 or SECRET_RULE not in open(out).read():
+                    fails.append(f"{key}: the table does not name the HIGH secret {SECRET_RULE}")
 
         if key == "image-build":
             sarif = block(text, "TRIVY-SARIF")

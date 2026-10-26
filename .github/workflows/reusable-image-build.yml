@@ -488,6 +488,10 @@ jobs:
       #   table  the gate severities, into the log and the step summary.
       #   gate   the gate severities, exit 1. It runs last, so every report
       #          above exists when it fails.
+      # The table and the gate take every result of the scan: a vulnerability
+      # and an embedded secret alike. In `trivy convert`, `--scanners` picks
+      # only the rows of the summary table. The table names both scanners so
+      # the summary lists both.
       # scripts/test-trivy-severity-split.sh runs these blocks against a fixture
       # report and fails when the SARIF drops a severity or the gate passes a
       # HIGH finding.
@@ -530,7 +534,7 @@ jobs:
         run: |
           set -euo pipefail
           # BEGIN-TRIVY-TABLE (extracted by scripts/test-trivy-severity-split.sh)
-          trivy convert --format table --scanners vuln --severity "$SEVERITY" --output "$TABLE" "$REPORT"
+          trivy convert --format table --scanners vuln,secret --severity "$SEVERITY" --output "$TABLE" "$REPORT"
           # END-TRIVY-TABLE
           {
             echo "## Trivy findings — ${COMPONENT} (${SEVERITY})"
@@ -555,8 +559,8 @@ jobs:
         run: |
           set -euo pipefail
           # BEGIN-TRIVY-GATE (extracted by scripts/test-trivy-severity-split.sh)
-          if ! trivy convert --format table --scanners vuln --severity "$GATE_SEVERITY" --exit-code 1 --output /dev/null "$REPORT"; then
-            echo "::error::The image has a fixable ${GATE_SEVERITY} finding. The findings table above names it."
+          if ! trivy convert --format table --severity "$GATE_SEVERITY" --exit-code 1 --output /dev/null "$REPORT"; then
+            echo "::error::The image has a ${GATE_SEVERITY} finding: a vulnerability with a fix, or a secret. The findings table above names it."
             exit 1
           fi
           # END-TRIVY-GATE

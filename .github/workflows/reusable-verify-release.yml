@@ -175,7 +175,9 @@ jobs:
       # One scan, then the table and the gate from the same JSON report
       # (.github#296). The scan writes every severity and never fails. The
       # table goes into the log and the step summary. The gate fails on a
-      # fixable HIGH or CRITICAL finding only. scripts/test-trivy-severity-split.sh
+      # HIGH or CRITICAL finding only: a vulnerability with a fix, or an
+      # embedded secret. In `trivy convert`, `--scanners` picks only the rows
+      # of the summary table, so the table names both scanners. scripts/test-trivy-severity-split.sh
       # runs both blocks against a fixture report.
       # ignore-unfixed: same policy as reusable-image-build. Unfixed OS-package
       # CVEs have no action a repo can take and drown the fixable ones.
@@ -197,7 +199,7 @@ jobs:
         run: |
           set -euo pipefail
           # BEGIN-TRIVY-TABLE (extracted by scripts/test-trivy-severity-split.sh)
-          trivy convert --format table --scanners vuln --severity "$SEVERITY" --output "$TABLE" "$REPORT"
+          trivy convert --format table --scanners vuln,secret --severity "$SEVERITY" --output "$TABLE" "$REPORT"
           # END-TRIVY-TABLE
           {
             echo "## Trivy findings — verify-release (${SEVERITY})"
@@ -213,8 +215,8 @@ jobs:
         run: |
           set -euo pipefail
           # BEGIN-TRIVY-GATE (extracted by scripts/test-trivy-severity-split.sh)
-          if ! trivy convert --format table --scanners vuln --severity "$GATE_SEVERITY" --exit-code 1 --output /dev/null "$REPORT"; then
-            echo "::error::The image has a fixable ${GATE_SEVERITY} finding. The findings table above names it."
+          if ! trivy convert --format table --severity "$GATE_SEVERITY" --exit-code 1 --output /dev/null "$REPORT"; then
+            echo "::error::The image has a ${GATE_SEVERITY} finding: a vulnerability with a fix, or a secret. The findings table above names it."
             exit 1
           fi
           # END-TRIVY-GATE
