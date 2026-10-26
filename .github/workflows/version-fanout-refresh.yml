@@ -59,17 +59,14 @@ jobs:
           owner: zeroroot-ai
           repositories: ${{ steps.repos.outputs.repos }}
 
-      # The same toolchain as reusable-version-fanout.yml: a consumer's
-      # `regenerate` commands may render charts.
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
-        with:
-          version: v3.16.2
-      - name: Log helm in to ghcr.io
-        run: echo "${{ github.token }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+      # As in reusable-version-fanout.yml, this workflow pins no Helm.
+      # version-fanout.py installs the Helm that each consumer names, checks
+      # its published SHA-256 and logs it in to ghcr.io with GHCR_TOKEN.
 
       - name: Rebuild the fan-out PRs that fell behind main
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GHCR_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
