@@ -685,7 +685,9 @@ DIG = "sha256:" + "b" * 64
 # failed every charts fan-out. The fan-out reads it from the consumer instead.
 FANOUT_WORKFLOWS = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".github", "workflows", f)
                     for f in ("reusable-version-fanout.yml", "version-fanout-refresh.yml")]
-HELM_PIN_RE = re.compile(r"setup-helm|get\.helm\.sh|helm-v\d|HELM_VERSION|^\s*version:\s*['\"]?v?\d+\.\d+\.\d+", re.M)
+# Keyed to Helm names only. A bare `version:` input of another action must not
+# trip it, or the guard would need a change for an edit that has no Helm in it.
+HELM_PIN_RE = re.compile(r"setup-helm|get\.helm\.sh|helm-v\d|HELM_VERSION")
 
 
 def workflow_pins_helm(text: str) -> bool:
@@ -856,6 +858,8 @@ def selftest() -> int:
                "        with:\n          version: v3.16.2\n")
     check(workflow_pins_helm(planted), "the guard catches a workflow that pins its own Helm (planted fixture)")
     check(workflow_pins_helm('        env:\n          HELM_VERSION: "v4.2.1"\n'), "the guard catches a HELM_VERSION literal (planted fixture)")
+    check(not workflow_pins_helm("      - uses: actions/setup-node@abc # v6\n        with:\n          version: 22.11.0\n"),
+          "the guard ignores a version input of an action that is not Helm")
     for wf in FANOUT_WORKFLOWS:
         check(os.path.isfile(wf) and not workflow_pins_helm(open(wf).read()),
               f"{os.path.basename(wf)} installs no Helm of its own; the consumer names it")
