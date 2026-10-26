@@ -29,6 +29,13 @@ Rules (proved by --selftest, which gates this repo's PRs):
   * A consumer may name `verify` commands. They run after `regenerate`, with
     no token. A failing one pushes nothing: the fan-out does not open a PR
     that the consumer's gate would refuse.
+  * The fan-out installs the Helm that a consumer requires, read from the
+    consumer clone itself: the `GOLDEN_HELM_VERSION="vX.Y.Z"` line of its
+    scripts/golden.sh, which that script checks with require-helm.sh
+    (charts#789). It verifies the download against the published SHA-256
+    and puts that Helm first on PATH for `regenerate` and `verify`. The
+    reusable workflow pins no Helm of its own: a second copy drifted
+    (Helm v3.16.2 against v4.2.1) and failed every charts fan-out.
   * `--refresh` rebuilds each open fan-out PR that fell behind the consumer's
     main: the same value, rewritten on current main and regenerated again.
     The digest comes from the open PR, so no registry read is needed.
@@ -45,12 +52,15 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.error
 import urllib.request
@@ -183,6 +193,23 @@ class Gateway:
             raise FanoutError(f"registry: no digest for {REGISTRY}/{image}:{ref}")
         return digest
 
+    def helm_release(self, version: str) -> tuple[bytes, str]:
+        """The linux-amd64 tarball of a Helm release and its published SHA-256."""
+        base = f"https://get.helm.sh/helm-{version}-linux-amd64.tar.gz"
+        with urllib.request.urlopen(base, timeout=120) as r:
+            tarball = r.read()
+        with urllib.request.urlopen(base + ".sha256sum", timeout=60) as r:
+            published = r.read().decode().split()[0]
+        return tarball, published
+
+    def helm_login(self, helm: str) -> None:
+        """Log the installed Helm in to ghcr.io for the mirrored sub-charts."""
+        user = os.environ.get("GITHUB_ACTOR") or "x-access-token"
+        r = subprocess.run([helm, "registry", "login", "ghcr.io", "-u", user, "--password-stdin"],
+                           input=self.ghcr_token, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise FanoutError(f"helm registry login ghcr.io failed: {(r.stderr or r.stdout).strip()[-400:]}")
+
     def clone(self, repo: str, dest: str) -> None:
         sh("git", "clone", "--quiet", "--depth", "50", f"https://x-access-token:{self.token}@github.com/{repo}.git", dest, env=self.env)
         sh("git", "config", "user.name", BOT_NAME, cwd=dest)
@@ -311,7 +338,64 @@ def regenerate_env() -> dict[str, str]:
     return {k: v for k, v in os.environ.items() if k not in FANOUT_TOKENS}
 
 
-def regenerate(dest: str, repo: str, consumers: list[dict]) -> list[str]:
+# The Helm a consumer requires lives in the consumer, never in this repo. The
+# golden step of charts checks it (scripts/golden.sh calls require-helm.sh with
+# GOLDEN_HELM_VERSION), so the fan-out reads that one line from the clone.
+HELM_VERSION_FILE = "scripts/golden.sh"
+HELM_VERSION_RE = re.compile(r'^GOLDEN_HELM_VERSION="(v\d+\.\d+\.\d+)"$', re.M)
+_HELM_DIRS: dict[str, str] = {}
+
+
+def consumer_helm_version(dest: str) -> str | None:
+    """The Helm version the consumer clone requires, or None when it names none."""
+    path = os.path.join(dest, HELM_VERSION_FILE)
+    if not os.path.isfile(path):
+        return None
+    found = HELM_VERSION_RE.findall(open(path).read())
+    if len(found) > 1:
+        raise FanoutError(f"{HELM_VERSION_FILE} names {len(found)} Helm versions; it must name one")
+    return found[0] if found else None
+
+
+def install_helm(version: str, gw) -> str:
+    """Install one Helm release, verified against its published SHA-256. Returns its directory."""
+    if version in _HELM_DIRS:
+        return _HELM_DIRS[version]
+    tarball, published = gw.helm_release(version)
+    got = hashlib.sha256(tarball).hexdigest()
+    if not re.fullmatch(r"[0-9a-f]{64}", published or "") or got != published:
+        raise FanoutError(f"Helm {version}: the download has SHA-256 {got}, the published sum is {published!r}")
+    d = tempfile.mkdtemp(prefix=f"helm-{version}-")
+    with tarfile.open(fileobj=io.BytesIO(tarball), mode="r:gz") as t:
+        member = t.getmember("linux-amd64/helm")
+        f = t.extractfile(member)
+        if f is None:
+            raise FanoutError(f"Helm {version}: the tarball has no linux-amd64/helm file")
+        helm = os.path.join(d, "helm")
+        open(helm, "wb").write(f.read())
+    os.chmod(helm, 0o755)
+    gw.helm_login(helm)
+    _HELM_DIRS[version] = d
+    print(f"helm {version}: installed and verified (sha256 {got[:12]}…)")
+    return d
+
+
+def consumer_env(dest: str, gw) -> dict[str, str]:
+    """The environment of a consumer command, with the consumer's Helm first on PATH.
+
+    It holds no fan-out token. Known limit: install_helm logs Helm in to
+    ghcr.io, and that login lives in the Helm registry config under $HOME,
+    which a consumer command can read. golden.sh pulls the mirrored sub-charts
+    with it, so the consumer needs it. The workflow login step did the same.
+    """
+    env = regenerate_env()
+    version = consumer_helm_version(dest)
+    if version:
+        env["PATH"] = install_helm(version, gw) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def regenerate(dest: str, repo: str, consumers: list[dict], gw) -> list[str]:
     """Run the consumer repo's declared `regenerate` commands after the rewrite.
 
     A consumer may carry derived files (golden snapshots, an air-gap image
@@ -328,7 +412,7 @@ def regenerate(dest: str, repo: str, consumers: list[dict]) -> list[str]:
                 cmds.append(cmd)
     if not cmds:
         return []
-    env = regenerate_env()
+    env = consumer_env(dest, gw)
     for cmd in cmds:
         print(f"{repo}: regenerate: {cmd}")
         r = subprocess.run(["sh", "-c", cmd], cwd=dest, env=env, capture_output=True, text=True)
@@ -357,10 +441,12 @@ def clone_sources(work: str, consumers: list[dict], value: str, gw) -> None:
         gw.clone_source(repo, value, dest)
 
 
-def verify(dest: str, repo: str, consumers: list[dict]) -> None:
+def verify(dest: str, repo: str, consumers: list[dict], gw) -> None:
     """Run the consumer's `verify` commands after `regenerate`, with no token. A failure pushes nothing."""
     cmds = list(dict.fromkeys(cmd for c in consumers for cmd in c.get("verify", []) or []))
-    env = regenerate_env()
+    if not cmds:
+        return
+    env = consumer_env(dest, gw)
     for cmd in cmds:
         print(f"{repo}: verify: {cmd}")
         r = subprocess.run(["sh", "-c", cmd], cwd=dest, env=env, capture_output=True, text=True)
@@ -477,8 +563,8 @@ def fanout(manifest: dict, link_name: str, gw, value: str | None, source_ref: st
                 continue
             for c in consumers:
                 sh("git", "add", "--", c["file"], cwd=dest)
-            changes += regenerate(dest, repo, consumers)
-            verify(dest, repo, consumers)
+            changes += regenerate(dest, repo, consumers, gw)
+            verify(dest, repo, consumers, gw)
             title = f"fix({link_name}): bump to {value}"
             body = pr_body(link_name, value, src, changes)
             sh("git", "commit", "-q", "-m", title, "-m", f"Automated by zeroroot-ai/.github reusable-version-fanout ({EPIC}).",
@@ -512,6 +598,7 @@ class FixtureGateway:
         self.sources = sources or {}          # (repo, tag) -> {path: text}
         self.behind = behind or {}            # (repo, branch) -> commits behind main
         self.branch_files = branch_files or {}  # (repo, path, ref) -> text
+        self.helm: dict = {}                  # version -> (tarball bytes, published sha256)
         self.calls: list[tuple] = []
 
     def file_text(self, repo, path, ref):
@@ -577,6 +664,13 @@ class FixtureGateway:
             raise FanoutError(f"compare main...{branch}: mocked 404")
         return n
 
+    def helm_release(self, version):
+        self.calls.append(("helm_release", version))
+        return self.helm[version]
+
+    def helm_login(self, helm):
+        self.calls.append(("helm_login", helm))
+
 
 VALUES = ('zitadel:\n  # server\n  image:\n    tag: "v4.14.0"  # pinned, see note\n  login:\n    image:\n'
           '      repository: "ghcr.io/zeroroot-ai/zitadel-login"\n      tag: "sha-f41ce75@sha256:' + "a" * 64 + '"\n'
@@ -590,6 +684,36 @@ MANIFEST = {"version": 1, "links": [{
         {"repo": "o/other", "file": "cfg.env", "key": "ZITADEL_TAG", "format": "env"},
     ]}]}
 DIG = "sha256:" + "b" * 64
+
+
+# The reusable workflow must not install a Helm of its own. A pinned copy
+# drifted from the Helm the consumer requires (v3.16.2 against v4.2.1) and
+# failed every charts fan-out. The fan-out reads it from the consumer instead.
+FANOUT_WORKFLOWS = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".github", "workflows", f)
+                    for f in ("reusable-version-fanout.yml", "version-fanout-refresh.yml")]
+# Keyed to Helm names only. A bare `version:` input of another action must not
+# trip it, or the guard would need a change for an edit that has no Helm in it.
+HELM_PIN_RE = re.compile(r"setup-helm|get\.helm\.sh|helm-v\d|HELM_VERSION")
+
+
+def workflow_pins_helm(text: str) -> bool:
+    """True when a workflow text installs or names a Helm version of its own.
+
+    Comment lines do not count: a comment may tell the history of the pin.
+    """
+    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+    return bool(HELM_PIN_RE.search(code))
+
+
+def fixture_helm(version: str) -> tuple[bytes, str]:
+    """A Helm release tarball whose `helm` prints its version, and its SHA-256."""
+    buf = io.BytesIO()
+    script = f'#!/bin/sh\necho "fixture-helm {version} $*"\n'.encode()
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        info = tarfile.TarInfo("linux-amd64/helm"); info.size = len(script); info.mode = 0o755
+        t.addfile(info, io.BytesIO(script))
+    data = buf.getvalue()
+    return data, hashlib.sha256(data).hexdigest()
 
 
 def selftest() -> int:
@@ -693,6 +817,58 @@ def selftest() -> int:
         check("fixture-app-token" not in seen and "fixture-github-token" not in seen and "fixture-ghcr-token" not in seen
               and not any(ln.split("=", 1)[0] in FANOUT_TOKENS for ln in seen.splitlines()),
               "no fan-out token is visible to the regenerate command")
+    # 8c. the consumer names its Helm in scripts/golden.sh. The fan-out installs
+    #     that version, checks its published SHA-256, logs it in to ghcr.io,
+    #     and puts it first on PATH for regenerate and verify.
+    with tempfile.TemporaryDirectory() as w:
+        _HELM_DIRS.clear()
+        m = json.loads(json.dumps(MANIFEST))
+        m["links"][0]["consumers"][0]["regenerate"] = ["helm version > derived/helm.txt"]
+        m["links"][0]["consumers"][0]["verify"] = ["helm version | grep -q 'fixture-helm v9.9.9'"]
+        f2 = dict(files); f2[("o/charts", "derived/helm.txt")] = "stale\n"
+        f2[("o/charts", "scripts/golden.sh")] = '#!/bin/sh\nGOLDEN_HELM_VERSION="v9.9.9"\n'
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.17.3"): DIG})
+        gw.helm["v9.9.9"] = fixture_helm("v9.9.9")
+        rc = fanout(m, "zitadel", gw, None, "main", False, w)
+        seen = open(os.path.join(w, "o__charts", "derived/helm.txt")).read()
+        check(rc == 0 and "fixture-helm v9.9.9" in seen, "regenerate runs the Helm that the consumer's golden.sh names")
+        check(("helm_release", "v9.9.9") in gw.calls and any(c[0] == "helm_login" for c in gw.calls),
+              "the fan-out fetched that Helm release and logged it in to ghcr.io")
+        check(any(c[0] == "create" and c[1] == "o/charts" for c in gw.calls), "the consumer with a named Helm gets its PR")
+    # 8d. a download that does not match its published SHA-256 is refused, and nothing opens for that repo
+    with tempfile.TemporaryDirectory() as w:
+        _HELM_DIRS.clear()
+        m = json.loads(json.dumps(MANIFEST))
+        m["links"][0]["consumers"][0]["regenerate"] = ["helm version > derived/helm.txt"]
+        f2 = dict(files); f2[("o/charts", "derived/helm.txt")] = "stale\n"
+        f2[("o/charts", "scripts/golden.sh")] = 'GOLDEN_HELM_VERSION="v9.9.9"\n'
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.17.3"): DIG})
+        tarball, _ = fixture_helm("v9.9.9")
+        gw.helm["v9.9.9"] = (tarball, "0" * 64)
+        rc = fanout(m, "zitadel", gw, None, "main", False, w)
+        check(rc == 1 and not any(c[0] == "create" and c[1] == "o/charts" for c in gw.calls),
+              "a Helm download with the wrong SHA-256 is refused and opens nothing")
+        check(not any(c[0] == "helm_login" for c in gw.calls), "an unverified Helm is never logged in")
+    # 8e. a consumer that names no Helm installs none
+    with tempfile.TemporaryDirectory() as w:
+        _HELM_DIRS.clear()
+        m = json.loads(json.dumps(MANIFEST))
+        m["links"][0]["consumers"][0]["regenerate"] = ["wc -l < helm/values.yaml > derived/lines.txt"]
+        f2 = dict(files); f2[("o/charts", "derived/lines.txt")] = "stale\n"
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.17.3"): DIG})
+        rc = fanout(m, "zitadel", gw, None, "main", False, w)
+        check(rc == 0 and not any(c[0] == "helm_release" for c in gw.calls), "a consumer that names no Helm installs none")
+    # 8f. the reusable workflow installs no Helm of its own. The planted copy is
+    #     the step that drifted to v3.16.2 while charts required v4.2.1.
+    planted = ("      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5\n"
+               "        with:\n          version: v3.16.2\n")
+    check(workflow_pins_helm(planted), "the guard catches a workflow that pins its own Helm (planted fixture)")
+    check(workflow_pins_helm('        env:\n          HELM_VERSION: "v4.2.1"\n'), "the guard catches a HELM_VERSION literal (planted fixture)")
+    check(not workflow_pins_helm("      - uses: actions/setup-node@abc # v6\n        with:\n          version: 22.11.0\n"),
+          "the guard ignores a version input of an action that is not Helm")
+    for wf in FANOUT_WORKFLOWS:
+        check(os.path.isfile(wf) and not workflow_pins_helm(open(wf).read()),
+              f"{os.path.basename(wf)} installs no Helm of its own; the consumer names it")
     # 9. regenerate that leaves untracked output, or fails, is loud and opens nothing for that repo
     with tempfile.TemporaryDirectory() as w:
         m = json.loads(json.dumps(MANIFEST))
