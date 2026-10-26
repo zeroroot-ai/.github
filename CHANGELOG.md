@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.2](https://github.com/zeroroot-ai/.github/compare/v0.21.1...v0.21.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* **workflows:** code scanning gets every Trivy severity, and the gate stays HIGH and CRITICAL ([#297](https://github.com/zeroroot-ai/.github/issues/297)) ([3eb3377](https://github.com/zeroroot-ai/.github/commit/3eb3377ae46f88f9a29cac9f5658584688d4efb8))
+
 ## [0.21.1](https://github.com/zeroroot-ai/.github/compare/v0.21.0...v0.21.1) (2026-10-25)
 
 
