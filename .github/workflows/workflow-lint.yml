@@ -173,13 +173,16 @@ jobs:
 
           RAISE = re.compile(r"(^|/)\.github/actions/raise-inotify-limits/?$")
           STARTS = [
-              (re.compile(r"\bmake\b[^\n#]*\brecreate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\"?\s+make\b[^\n#]*\brecreate\b"), "make recreate ENV=kind"),
-              (re.compile(r"\bmake\b[^\n#]*\bsubstrate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\"?\s+make\b[^\n#]*\bsubstrate\b"), "make substrate ENV=kind"),
+              (re.compile(r"\bmake\b[^\n#]*\brecreate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\b[^\n#]*\bmake\b[^\n#]*\brecreate\b"), "make recreate ENV=kind"),
+              (re.compile(r"\bmake\b[^\n#]*\bsubstrate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\b[^\n#]*\bmake\b[^\n#]*\bsubstrate\b"), "make substrate ENV=kind"),
               (re.compile(r"\bkind\s+create\s+cluster\b"), "kind create cluster"),
           ]
 
           def code_lines(text):
-              return "\n".join(l for l in str(text or "").splitlines() if not l.lstrip().startswith("#"))
+              # Drop comment lines, then join a command that a trailing
+              # backslash continues, so `make recreate \` + `ENV=kind` is one line.
+              kept = [l for l in str(text or "").splitlines() if not l.lstrip().startswith("#")]
+              return re.sub(r"\\\n\s*", " ", "\n".join(kept))
 
           def local_action(uses):
               if not uses.startswith("./"):

@@ -271,6 +271,28 @@ jobs:
           config: hack/kind.yaml
 YAML
 kind_red kind-action-noraise 'helm/kind-action without install_only'
+# 13a. ENV=kind before make with other variables between, and a command that
+#      a backslash continues, are kind starts too.
+kind_tree kind-env-first <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ENV=kind RUNG=ci make recreate
+YAML
+kind_red kind-env-first '(make recreate ENV=kind)'
+kind_tree kind-continued <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          WAIT_APPS_TIMEOUT=5400 make recreate \
+            ENV=kind EXTRA_VALUES=x.yaml
+YAML
+kind_red kind-continued '(make recreate ENV=kind)'
 # 13b. `make recreate` of an AWS environment starts no kind cluster, so it
 #      needs no raise (hosted drill.yml and recreate.yml).
 kind_tree kind-recreate-aws <<'YAML'
@@ -395,7 +417,7 @@ fi
 echo
 echo "passed=$passed failed=$fails"
 # A count floor, so cases added below this block cannot silently never run.
-if [ "$fails" -eq 0 ] && [ "$passed" -lt 25 ]; then
-  echo "FAIL: only $passed assertion(s) ran, want 25"; exit 1
+if [ "$fails" -eq 0 ] && [ "$passed" -lt 27 ]; then
+  echo "FAIL: only $passed assertion(s) ran, want 27"; exit 1
 fi
 [ "$fails" -eq 0 ]
