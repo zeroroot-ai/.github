@@ -187,6 +187,12 @@ class Gateway:
                     "application/vnd.docker.distribution.manifest.v2+json"])})
             with urllib.request.urlopen(req, timeout=30) as r:
                 digest = r.headers.get("Docker-Content-Digest", "")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                hint = (" Mirror that tag first (the .github mirror workflow); the fan-out writes no bare tag."
+                        if image.startswith("mirror/") else "")
+                raise FanoutError(f"registry: {REGISTRY}/{image}:{ref} does not exist, so it has no digest.{hint}") from e
+            raise FanoutError(f"registry: {REGISTRY}/{image}:{ref}: {e}") from e
         except urllib.error.URLError as e:
             raise FanoutError(f"registry: {REGISTRY}/{image}:{ref}: {e}") from e
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest or ""):
@@ -308,13 +314,23 @@ def apply_consumer(dest: str, c: dict, value: str, gw) -> str:
     if c.get("after"):
         raise FanoutError(f"{c['repo']}:{c['file']}:{c['key']} is an `after` consumer (inline image reference); "
                           "the fan-out does not rewrite those, edit it by hand")
+    current = read_key(text, c["format"], c["key"])
+    if not c.get("image") and "@sha256:" in current:
+        # charts#766: the zitadel server consumer had no `image`, so the
+        # fan-out wrote a bare tag over `v4.19.3@sha256:…` and three chart
+        # gates went red. A digest pin is never replaced by a bare tag.
+        raise FanoutError(f"{c['repo']}:{c['file']}:{c['key']} holds a digest pin ({current[:32]}…), but its consumer "
+                          "declares no `before`/`image`; the fan-out will not write a bare tag over it. "
+                          "Add `before: \"@\"` and `image:` to the consumer in version-links.yaml")
     if c["format"] == "env":
         open(path, "w").write(set_env_key(text, c["key"], value))
         return f"{c['file']}:{c['key']} = {value}"
     if c.get("image"):
         digest = gw.resolve_digest(c["image"], value)
         helper = os.path.join(dest, "scripts", "bump-image-digest.py")
-        if os.path.isfile(helper):
+        # The helper re-pins first-party images and skips the org mirrors on
+        # purpose, so a mirror pin is rewritten here, on its one line.
+        if os.path.isfile(helper) and not c["image"].startswith("mirror/"):
             sh(sys.executable, helper, "--image", c["image"], "--ref", value, "--digest", digest, cwd=dest)
             after = read_key(open(path).read(), "yaml", c["key"])
             if not after.startswith(f"{value}@"):
@@ -612,6 +628,8 @@ class FixtureGateway:
     def resolve_digest(self, image, ref):
         if self.fail_digest:
             raise FanoutError("registry: mocked failure")
+        if (image, ref) not in self.digests:
+            raise FanoutError(f"registry: {REGISTRY}/{image}:{ref} does not exist, so it has no digest (mocked)")
         return self.digests[(image, ref)]
 
     def clone(self, repo, dest):
@@ -869,6 +887,61 @@ def selftest() -> int:
     for wf in FANOUT_WORKFLOWS:
         check(os.path.isfile(wf) and not workflow_pins_helm(open(wf).read()),
               f"{os.path.basename(wf)} installs no Helm of its own; the consumer names it")
+    # 8g. charts#766: the server tag is a mirror digest pin. A consumer with no
+    #     `image` must not write a bare tag over it. The fan-out fails for that
+    #     repo, names the key, and opens nothing.
+    pinned_values = VALUES.replace('tag: "v4.14.0"', 'tag: "v4.19.3@sha256:' + "c" * 64 + '"')
+    with tempfile.TemporaryDirectory() as w:
+        f2 = dict(files); f2[("o/charts", "helm/values.yaml")] = pinned_values
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.19.4"): DIG})
+        rc = fanout(MANIFEST, "zitadel", gw, "v4.19.4", "main", False, w)
+        check(rc == 1 and not any(c[0] == "create" and c[1] == "o/charts" for c in gw.calls),
+              "a consumer with no image refuses to write a bare tag over a digest pin (planted fixture)")
+        check(sh("git", "show", "HEAD:helm/values.yaml", cwd=os.path.join(w, "o__charts")).count("@sha256:" + "c" * 64) == 1,
+              "the digest pin of the server stays in the clone's committed values")
+    # 8g2. the guard also holds for an env consumer
+    with tempfile.TemporaryDirectory() as w:
+        f2 = dict(files); f2[("o/other", "cfg.env")] = "ZITADEL_TAG=v4.19.3@sha256:" + "c" * 64 + "\n"
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.19.4"): DIG})
+        rc = fanout(MANIFEST, "zitadel", gw, "v4.19.4", "main", False, w)
+        check(rc == 1 and not any(c[0] == "create" and c[1] == "o/other" for c in gw.calls),
+              "an env consumer with no image refuses to write a bare tag over a digest pin (planted fixture)")
+    # 8h. with `before` and `image: mirror/zitadel`, the server keeps the digest
+    #     form and gets the digest of the new mirror tag. The first-party helper
+    #     skips mirrors, so the fan-out rewrites that one line itself.
+    mirror_manifest = json.loads(json.dumps(MANIFEST))
+    mirror_manifest["links"][0]["consumers"][0].update({"before": "@", "image": "mirror/zitadel"})
+    MDIG = "sha256:" + "d" * 64
+    with tempfile.TemporaryDirectory() as w:
+        f2 = dict(files); f2[("o/charts", "helm/values.yaml")] = pinned_values
+        # The fixture helper behaves like the charts one: it skips mirror/* (exit
+        # 2, no pin found) and re-pins a first-party image.
+        f2[("o/charts", "scripts/bump-image-digest.py")] = (
+            "import re, sys\n"
+            "a = dict(zip(sys.argv[1::2], sys.argv[2::2]))\n"
+            "if a['--image'].startswith('mirror/'): sys.exit(2)\n"
+            "p = 'helm/values.yaml'; t = open(p).read()\n"
+            "t = re.sub(r'(zeroroot-ai/' + a['--image'] + r'\"\\n\\s*tag: \")[^\"]*', "
+            "lambda m: m.group(1) + a['--ref'] + '@' + a['--digest'], t)\n"
+            "open(p, 'w').write(t)\n")
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.19.4"): DIG, ("mirror/zitadel", "v4.19.4"): MDIG})
+        rc = fanout(mirror_manifest, "zitadel", gw, "v4.19.4", "main", False, w)
+        vals = open(os.path.join(w, "o__charts", "helm/values.yaml")).read()
+        check(rc == 0 and f'tag: "v4.19.4@{MDIG}"' in vals and f'tag: "v4.19.4@{DIG}"' in vals,
+              "the mirror server pin and the login pin both keep the digest form at the new tag")
+    # 8i. no mirror digest for the new tag: the fan-out fails with a clear
+    #     message and writes no bare tag
+    with tempfile.TemporaryDirectory() as w:
+        f2 = dict(files); f2[("o/charts", "helm/values.yaml")] = pinned_values
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.19.4"): DIG})
+        buf = io.StringIO(); old_err = sys.stderr; sys.stderr = buf
+        try:
+            rc = fanout(mirror_manifest, "zitadel", gw, "v4.19.4", "main", False, w)
+        finally:
+            sys.stderr = old_err
+        check(rc == 1 and "mirror/zitadel:v4.19.4 does not exist" in buf.getvalue()
+              and not any(c[0] == "create" and c[1] == "o/charts" for c in gw.calls),
+              "a missing mirror digest fails the repo with a clear message and opens nothing")
     # 9. regenerate that leaves untracked output, or fails, is loud and opens nothing for that repo
     with tempfile.TemporaryDirectory() as w:
         m = json.loads(json.dumps(MANIFEST))
