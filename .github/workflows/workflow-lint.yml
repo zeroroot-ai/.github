@@ -197,6 +197,10 @@ jobs:
                       return "helm/kind-action without install_only"
                   return None
               run = code_lines(step.get("run"))
+              # This step's own program names every kind start in its patterns
+              # and labels. It starts no cluster, so it is not read as one.
+              if "BEGIN-" + "KIND (extracted by" in run:
+                  return None
               for rx, label in STARTS:
                   if rx.search(run):
                       return label
