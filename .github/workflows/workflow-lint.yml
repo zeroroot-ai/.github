@@ -159,10 +159,13 @@ jobs:
           # watcher: too many open files", gibson#1331). Each job that starts
           # kind runs the raise-inotify-limits action in an earlier step.
           #
-          # A kind start is any of: `make recreate`, `make substrate ENV=kind`,
+          # A kind start is any of: `make recreate ENV=kind`, `make substrate ENV=kind`,
           # `kind create cluster` in a run: line, or helm/kind-action without
-          # install_only true. A step that uses a composite action of this repo
-          # (./.github/actions/<name>) is read through that action. Comment
+          # install_only true. `make recreate ENV="<var>"` of an AWS environment
+          # is not a kind start. A step that uses a composite action of this repo
+          # (./.github/actions/<name>, or ./<checkout dir>/.github/actions/<name>
+          # when the workflow checks the repo out into a path) is read through
+          # that action. Comment
           # lines do not count. A start inside a script that a run: line calls
           # is not visible here; that script's workflow step names it instead.
           import glob, os, re, sys
@@ -170,7 +173,7 @@ jobs:
 
           RAISE = re.compile(r"(^|/)\.github/actions/raise-inotify-limits/?$")
           STARTS = [
-              (re.compile(r"\bmake\b[^\n#]*\brecreate\b"), "make recreate"),
+              (re.compile(r"\bmake\b[^\n#]*\brecreate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\"?\s+make\b[^\n#]*\brecreate\b"), "make recreate ENV=kind"),
               (re.compile(r"\bmake\b[^\n#]*\bsubstrate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\"?\s+make\b[^\n#]*\bsubstrate\b"), "make substrate ENV=kind"),
               (re.compile(r"\bkind\s+create\s+cluster\b"), "kind create cluster"),
           ]
@@ -182,10 +185,16 @@ jobs:
               if not uses.startswith("./"):
                   return None
               base = uses[2:].rstrip("/")
-              for name in ("action.yml", "action.yaml"):
-                  path = os.path.join(base, name)
-                  if os.path.isfile(path):
-                      return path
+              bases = [base]
+              # A workflow that checks this repo out into a path (gibson checks
+              # out into `gibson`) names ./<dir>/.github/actions/<name>.
+              if "/.github/actions/" in base and not base.startswith(".github/"):
+                  bases.append(base[base.index(".github/actions/"):])
+              for b in bases:
+                  for name in ("action.yml", "action.yaml"):
+                      path = os.path.join(b, name)
+                      if os.path.isfile(path):
+                          return path
               return None
 
           def kind_start(step):

@@ -254,7 +254,7 @@ jobs:
       - run: $start
 YAML
   case "$start" in
-    *recreate*) want='(make recreate)' ;;
+    *recreate*) want='(make recreate ENV=kind)' ;;
     *substrate*) want='(make substrate ENV=kind)' ;;
     *) want='(kind create cluster)' ;;
   esac
@@ -271,6 +271,39 @@ jobs:
           config: hack/kind.yaml
 YAML
 kind_red kind-action-noraise 'helm/kind-action without install_only'
+# 13b. `make recreate` of an AWS environment starts no kind cluster, so it
+#      needs no raise (hosted drill.yml and recreate.yml).
+kind_tree kind-recreate-aws <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    env:
+      ENV: staging
+    steps:
+      - run: make recreate ENV="${ENV}" INSTANCE_TYPE=m8i.2xlarge
+      - run: make recreate ENV=${ENV}
+YAML
+kind_green kind-recreate-aws
+# 13c. A composite action named through a checkout path is read through it
+#      (gibson checks out into `gibson` and names ./gibson/.github/actions/<x>).
+mkdir -p "$work/kind-checkout-path/.github/actions/up"
+cat > "$work/kind-checkout-path/.github/actions/up/action.yml" <<'YAML'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: kind create cluster
+YAML
+kind_tree kind-checkout-path <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./gibson/.github/actions/up
+YAML
+kind_red kind-checkout-path '.github/actions/up/action.yml step 1'
 # 14. The raise AFTER the start does not count.
 kind_tree kind-raise-after <<YAML
 on: push
@@ -362,7 +395,7 @@ fi
 echo
 echo "passed=$passed failed=$fails"
 # A count floor, so cases added below this block cannot silently never run.
-if [ "$fails" -eq 0 ] && [ "$passed" -lt 23 ]; then
-  echo "FAIL: only $passed assertion(s) ran, want 23"; exit 1
+if [ "$fails" -eq 0 ] && [ "$passed" -lt 25 ]; then
+  echo "FAIL: only $passed assertion(s) ran, want 25"; exit 1
 fi
 [ "$fails" -eq 0 ]
