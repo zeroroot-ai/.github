@@ -314,10 +314,7 @@ def apply_consumer(dest: str, c: dict, value: str, gw) -> str:
     if c.get("after"):
         raise FanoutError(f"{c['repo']}:{c['file']}:{c['key']} is an `after` consumer (inline image reference); "
                           "the fan-out does not rewrite those, edit it by hand")
-    if c["format"] == "env":
-        open(path, "w").write(set_env_key(text, c["key"], value))
-        return f"{c['file']}:{c['key']} = {value}"
-    current = read_key(text, "yaml", c["key"])
+    current = read_key(text, c["format"], c["key"])
     if not c.get("image") and "@sha256:" in current:
         # charts#766: the zitadel server consumer had no `image`, so the
         # fan-out wrote a bare tag over `v4.19.3@sha256:…` and three chart
@@ -325,6 +322,9 @@ def apply_consumer(dest: str, c: dict, value: str, gw) -> str:
         raise FanoutError(f"{c['repo']}:{c['file']}:{c['key']} holds a digest pin ({current[:32]}…), but its consumer "
                           "declares no `before`/`image`; the fan-out will not write a bare tag over it. "
                           "Add `before: \"@\"` and `image:` to the consumer in version-links.yaml")
+    if c["format"] == "env":
+        open(path, "w").write(set_env_key(text, c["key"], value))
+        return f"{c['file']}:{c['key']} = {value}"
     if c.get("image"):
         digest = gw.resolve_digest(c["image"], value)
         helper = os.path.join(dest, "scripts", "bump-image-digest.py")
@@ -899,6 +899,13 @@ def selftest() -> int:
               "a consumer with no image refuses to write a bare tag over a digest pin (planted fixture)")
         check(sh("git", "show", "HEAD:helm/values.yaml", cwd=os.path.join(w, "o__charts")).count("@sha256:" + "c" * 64) == 1,
               "the digest pin of the server stays in the clone's committed values")
+    # 8g2. the guard also holds for an env consumer
+    with tempfile.TemporaryDirectory() as w:
+        f2 = dict(files); f2[("o/other", "cfg.env")] = "ZITADEL_TAG=v4.19.3@sha256:" + "c" * 64 + "\n"
+        gw = FixtureGateway(f2, {("zitadel-login", "v4.19.4"): DIG})
+        rc = fanout(MANIFEST, "zitadel", gw, "v4.19.4", "main", False, w)
+        check(rc == 1 and not any(c[0] == "create" and c[1] == "o/other" for c in gw.calls),
+              "an env consumer with no image refuses to write a bare tag over a digest pin (planted fixture)")
     # 8h. with `before` and `image: mirror/zitadel`, the server keeps the digest
     #     form and gets the digest of the new mirror tag. The first-party helper
     #     skips mirrors, so the fan-out rewrites that one line itself.
