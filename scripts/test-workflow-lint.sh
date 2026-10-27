@@ -339,7 +339,12 @@ $RAISE
       - run: make recreate ENV=kind
 YAML
 kind_green kind-raised
-# 18. THE FLOOR. A tree with no workflow file checked nothing.
+# 18. This repo's own workflows pass. The kind step names every kind start in
+#     its program, and it must not read itself as one (.github#307 first run).
+mkdir -p "$work/kind-self/.github/workflows"
+cp "$here"/../.github/workflows/*.yml "$work/kind-self/.github/workflows/"
+kind_green kind-self
+# 19. THE FLOOR. A tree with no workflow file checked nothing.
 mkdir -p "$work/kind-empty/.github/workflows"
 kind_red kind-empty 'checked nothing'
 
@@ -357,7 +362,7 @@ fi
 echo
 echo "passed=$passed failed=$fails"
 # A count floor, so cases added below this block cannot silently never run.
-if [ "$fails" -eq 0 ] && [ "$passed" -lt 22 ]; then
-  echo "FAIL: only $passed assertion(s) ran, want 22"; exit 1
+if [ "$fails" -eq 0 ] && [ "$passed" -lt 23 ]; then
+  echo "FAIL: only $passed assertion(s) ran, want 23"; exit 1
 fi
 [ "$fails" -eq 0 ]

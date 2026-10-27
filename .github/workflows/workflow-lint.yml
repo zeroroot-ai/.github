@@ -199,7 +199,7 @@ jobs:
               run = code_lines(step.get("run"))
               # This step's own program names every kind start in its patterns
               # and labels. It starts no cluster, so it is not read as one.
-              if "BEGIN-" + "KIND (extracted by" in run:
+              if "BEGIN-" + "KIND (extracted by" in str(step.get("run") or ""):
                   return None
               for rx, label in STARTS:
                   if rx.search(run):
