@@ -21,7 +21,11 @@
 #     before            optional: compare only the part of the value before
 #                       this string (image pins carry `@sha256:<digest>`)
 #     image             required with `before`: the ghcr.io/zeroroot-ai image
-#                       whose `<value>` tag the fan-out resolves to a digest
+#                       whose `<value>` tag the fan-out resolves to a digest.
+#                       A `mirror/<name>` image is the org mirror of a
+#                       third-party image. If that tag has no digest yet,
+#                       the fan-out fails; it never writes a bare tag over a
+#                       digest pin.
 #     regenerate        optional list of shell commands the fan-out runs in
 #                       the consumer clone after the rewrite (once per repo,
 #                       deduplicated, in order). Every tracked file they
@@ -78,10 +82,17 @@ links:
       key: TAG
       format: env
     consumers:
+      # The server image is the org mirror of upstream Zitadel, pinned by
+      # digest like the login image. Without `before` and `image` the fan-out
+      # wrote a bare tag and dropped the digest (charts#766).
       - repo: zeroroot-ai/charts
         file: helm/gibson/values.yaml
         key: zitadel.image.tag
         format: yaml
+        before: "@"
+        image: mirror/zitadel
+        verify:
+          - python3 scripts/pinned_source.py --check-headers
       - repo: zeroroot-ai/charts
         file: helm/gibson/values.yaml
         key: zitadel.login.image.tag
