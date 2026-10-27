@@ -49,7 +49,7 @@ jobs:
       # so that checkout failed "Repository not found" on every call once the
       # org went private. The runner fetches an action's repo itself.
       - name: Scan for ADR-0009 deny-list violations
-        uses: zeroroot-ai/.github/actions/vault-auth-deny-list@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
+        uses: zeroroot-ai/.github/actions/vault-auth-deny-list@7626d9726b593f0e33bc668626e0dbe8771eee19 # v0.20.1
         with:
           repo-root: ${{ github.workspace }}/caller
           allowlist: ${{ github.workspace }}/caller/.github/.vault-auth-deny-list-allowlist.json
