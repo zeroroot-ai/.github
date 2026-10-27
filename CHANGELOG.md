@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.3](https://github.com/zeroroot-ai/.github/compare/v0.21.2...v0.21.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* **version-fanout:** install the Helm that the consumer names, verified by its SHA-256 ([#300](https://github.com/zeroroot-ai/.github/issues/300)) ([080d050](https://github.com/zeroroot-ai/.github/commit/080d050df6802c9c5584108144a90c1c28dc8599))
+* **version-fanout:** the zitadel server pin keeps its mirror digest ([#305](https://github.com/zeroroot-ai/.github/issues/305)) ([28f148d](https://github.com/zeroroot-ai/.github/commit/28f148dc99fe5ed99ed67ad782f66fc9acbf2a6b))
+
 ## [0.21.2](https://github.com/zeroroot-ai/.github/compare/v0.21.1...v0.21.2) (2026-10-26)
 
 
