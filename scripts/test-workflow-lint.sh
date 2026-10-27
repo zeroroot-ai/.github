@@ -214,6 +214,195 @@ nosched_red schedtwokeys 'has both a quoted and a bare on key'
 mkdir -p "$work/nosched-empty/.github/workflows"
 nosched_red nosched-empty 'checked nothing'
 
+echo "== a job that starts kind raises the inotify limits first =="
+awk '/BEGIN-KIND/{f=1;next} /END-KIND/{f=0} f' "$wf" | sed 's/^          //' > "$work/kind.py"
+grep -q 'helm/kind-action' "$work/kind.py" \
+  || { echo "FAIL: could not extract the kind block from $wf"; exit 1; }
+python3 -c 'import ast,sys; ast.parse(open(sys.argv[1]).read())' "$work/kind.py" \
+  || { echo "FAIL: the extracted kind block is not valid Python"; exit 1; }
+
+# kind_tree <name> writes one workflow from stdin into a fresh tree.
+kind_tree() { mkdir -p "$work/$1/.github/workflows"; cat > "$work/$1/.github/workflows/x.yml"; }
+kind_run() { ( cd "$work/$1" && python3 "$work/kind.py" ) 2>&1; }
+kind_red() { # kind_red <tree> <expected substring>
+  local out rc=0
+  out="$(kind_run "$1")" || rc=$?
+  if [ "$rc" -eq 0 ]; then echo "FAIL  $1 was allowed"; fails=$((fails+1)); return; fi
+  case "$out" in
+    *"$2"*) echo "ok    red    $1"; passed=$((passed+1)) ;;
+    *) echo "FAIL  $1 failed for the wrong reason; wanted '$2', got: $out"; fails=$((fails+1)) ;;
+  esac
+}
+kind_green() { # kind_green <tree>
+  local out rc=0
+  out="$(kind_run "$1")" || rc=$?
+  if [ "$rc" -ne 0 ]; then echo "FAIL  $1 was blocked: $out"; fails=$((fails+1)); else echo "ok    green  $1"; passed=$((passed+1)); fi
+}
+RAISE='      - uses: zeroroot-ai/.github/.github/actions/raise-inotify-limits@0123456789abcdef0123456789abcdef01234567 # v9.9.9'
+
+# 13. THE CASES THIS STEP EXISTS FOR (gibson#1331). Each way to start kind, with
+#     no raise before it, fails and names that way.
+for start in 'make recreate ENV=kind' 'SUBSTRATE_DIR=/tmp/s make substrate ENV=kind' 'kind create cluster --name t --config k.yaml'; do
+  name="kind-noraise-$(printf '%s' "$start" | tr -c '[:lower:]' '-' | cut -c1-30)"
+  kind_tree "$name" <<YAML
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: $start
+YAML
+  case "$start" in
+    *recreate*) want='(make recreate ENV=kind)' ;;
+    *substrate*) want='(make substrate ENV=kind)' ;;
+    *) want='(kind create cluster)' ;;
+  esac
+  kind_red "$name" "$want"
+done
+kind_tree kind-action-noraise <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          config: hack/kind.yaml
+YAML
+kind_red kind-action-noraise 'helm/kind-action without install_only'
+# 13a. ENV=kind before make with other variables between, and a command that
+#      a backslash continues, are kind starts too.
+kind_tree kind-env-first <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ENV=kind RUNG=ci make recreate
+YAML
+kind_red kind-env-first '(make recreate ENV=kind)'
+kind_tree kind-continued <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          WAIT_APPS_TIMEOUT=5400 make recreate \
+            ENV=kind EXTRA_VALUES=x.yaml
+YAML
+kind_red kind-continued '(make recreate ENV=kind)'
+# 13b. `make recreate` of an AWS environment starts no kind cluster, so it
+#      needs no raise (hosted drill.yml and recreate.yml).
+kind_tree kind-recreate-aws <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    env:
+      ENV: staging
+    steps:
+      - run: make recreate ENV="${ENV}" INSTANCE_TYPE=m8i.2xlarge
+      - run: make recreate ENV=${ENV}
+YAML
+kind_green kind-recreate-aws
+# 13c. A composite action named through a checkout path is read through it
+#      (gibson checks out into `gibson` and names ./gibson/.github/actions/<x>).
+mkdir -p "$work/kind-checkout-path/.github/actions/up"
+cat > "$work/kind-checkout-path/.github/actions/up/action.yml" <<'YAML'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: kind create cluster
+YAML
+kind_tree kind-checkout-path <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./gibson/.github/actions/up
+YAML
+kind_red kind-checkout-path '.github/actions/up/action.yml step 1'
+# 14. The raise AFTER the start does not count.
+kind_tree kind-raise-after <<YAML
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - run: kind create cluster
+$RAISE
+YAML
+kind_red kind-raise-after '(kind create cluster)'
+# 15. A raise in ANOTHER job does not count.
+kind_tree kind-raise-other-job <<YAML
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-latest
+    steps:
+$RAISE
+  b:
+    runs-on: ubuntu-latest
+    steps:
+      - run: make recreate ENV=kind
+YAML
+kind_red kind-raise-other-job 'job b step 1'
+# 16. A kind start inside a composite action of the repo is read through it.
+mkdir -p "$work/kind-composite/.github/actions/up"
+cat > "$work/kind-composite/.github/actions/up/action.yml" <<'YAML'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: make substrate ENV=kind
+YAML
+kind_tree kind-composite <<'YAML'
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/up
+YAML
+kind_red kind-composite '.github/actions/up/action.yml step 1'
+# 17. Green: the raise first, then every start. install_only, the local
+#     gibson copy of the action, and a start named only in a comment pass.
+kind_tree kind-raised <<YAML
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          install_only: true
+      - run: |
+          # make recreate ENV=kind creates the cluster in the next step
+          echo prepare
+$RAISE
+      - run: SUBSTRATE_DIR=/tmp/s make substrate ENV=kind
+      - run: make recreate ENV=kind
+      - run: kind create cluster
+  local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ./.github/actions/raise-inotify-limits
+      - run: make recreate ENV=kind
+YAML
+kind_green kind-raised
+# 18. This repo's own workflows pass. The kind step names every kind start in
+#     its program, and it must not read itself as one (.github#307 first run).
+mkdir -p "$work/kind-self/.github/workflows"
+cp "$here"/../.github/workflows/*.yml "$work/kind-self/.github/workflows/"
+kind_green kind-self
+# 19. THE FLOOR. A tree with no workflow file checked nothing.
+mkdir -p "$work/kind-empty/.github/workflows"
+kind_red kind-empty 'checked nothing'
+
 echo "== no GitHub expression inside the run: block =="
 # Actions interpolates a dollar-two-brace expression even inside a shell
 # comment in a run: block, and the whole workflow file is then invalid for
@@ -228,7 +417,7 @@ fi
 echo
 echo "passed=$passed failed=$fails"
 # A count floor, so cases added below this block cannot silently never run.
-if [ "$fails" -eq 0 ] && [ "$passed" -lt 13 ]; then
-  echo "FAIL: only $passed assertion(s) ran, want 13"; exit 1
+if [ "$fails" -eq 0 ] && [ "$passed" -lt 27 ]; then
+  echo "FAIL: only $passed assertion(s) ran, want 27"; exit 1
 fi
 [ "$fails" -eq 0 ]
