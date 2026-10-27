@@ -176,7 +176,7 @@ jobs:
       - if: inputs.platforms != 'linux/amd64'
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -189,7 +189,7 @@ jobs:
       # procurement filter both read that as "unlicensed", which is a worse
       # answer than the truth and is not one anybody chose.
       - id: license
-        uses: zeroroot-ai/.github/actions/spdx-from-license@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
+        uses: zeroroot-ai/.github/actions/spdx-from-license@7626d9726b593f0e33bc668626e0dbe8771eee19 # v0.20.1
         with:
           path: ${{ inputs.component_path }}
       - id: meta
@@ -308,7 +308,7 @@ jobs:
       # named here rather than changed quietly.
       - name: Block the push on a fixable vulnerability
         continue-on-error: ${{ github.event_name == 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/gate-image-vulns@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
+        uses: zeroroot-ai/.github/actions/gate-image-vulns@7626d9726b593f0e33bc668626e0dbe8771eee19 # v0.20.1
         with:
           report: gate-${{ inputs.component_name }}.json
           severities: ${{ inputs.trivy_severity }}
@@ -344,7 +344,7 @@ jobs:
       # is no pushed reference to inspect.
       - name: The image carries its license text
         if: ${{ github.event_name != 'pull_request' }}
-        uses: zeroroot-ai/.github/actions/verify-image-license@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
+        uses: zeroroot-ai/.github/actions/verify-image-license@7626d9726b593f0e33bc668626e0dbe8771eee19 # v0.20.1
         with:
           image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
       - if: github.event_name != 'pull_request'
@@ -473,7 +473,7 @@ jobs:
       # the just-pushed image by digest. Without this login, every scan run
       # fails `UNAUTHORIZED: authentication required` (gibson#104). Must run
       # BEFORE the trivy-action step.
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
