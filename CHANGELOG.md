@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/zeroroot-ai/.github/compare/v0.21.3...v0.22.0) (2026-11-03)
+
+
+### Features
+
+* **actions:** a shared raise-inotify-limits action, and workflow-lint requires it before kind ([#307](https://github.com/zeroroot-ai/.github/issues/307)) ([8d24661](https://github.com/zeroroot-ai/.github/commit/8d246612c9ab23cf7be8d4436a6033af27631d8b))
+
 ## [0.21.3](https://github.com/zeroroot-ai/.github/compare/v0.21.2...v0.21.3) (2026-10-27)
 
 
