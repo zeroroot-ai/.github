@@ -28,6 +28,9 @@
 # 2026-10-19: no zeroroot-ai repo runs a scheduled workflow. A workflow that
 # must run on a timer is started by a person with `workflow_dispatch`.
 #
+# A third step fails a job that starts kind with no raise-inotify-limits step
+# before it (gibson#1331). See the step for what counts as a kind start.
+#
 # The one runner label that is not GitHub-hosted is the org's ephemeral ARC
 # scale-set (`*-ephemeral`, enforced by runs-on-lint.yml), so it is
 # declared here once and no consumer needs a config file.
@@ -137,4 +140,123 @@ jobs:
               sys.exit(1)
           print("OK: %d workflow file(s) have no schedule trigger." % len(files))
           # END-NOSCHED
+          PY
+
+      - name: A job that starts kind raises the inotify limits first
+        # INLINE for the same reason as the steps above.
+        # scripts/test-workflow-lint.sh extracts the program below and runs it
+        # against fixture workflows: each way to start kind with no raise
+        # before it must fail, and the raised and install-only forms must pass.
+        #
+        # No GitHub expression may appear inside this run: block, not even in a
+        # comment. Actions interpolates it there and the whole file is invalid.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          # BEGIN-KIND (extracted by scripts/test-workflow-lint.sh)
+          # A kind cluster on a GitHub-hosted runner hits the default inotify
+          # limits, and the kubelet loses pod logs ("failed to create fsnotify
+          # watcher: too many open files", gibson#1331). Each job that starts
+          # kind runs the raise-inotify-limits action in an earlier step.
+          #
+          # A kind start is any of: `make recreate ENV=kind`, `make substrate ENV=kind`,
+          # `kind create cluster` in a run: line, or helm/kind-action without
+          # install_only true. `make recreate ENV="<var>"` of an AWS environment
+          # is not a kind start. A step that uses a composite action of this repo
+          # (./.github/actions/<name>, or ./<checkout dir>/.github/actions/<name>
+          # when the workflow checks the repo out into a path) is read through
+          # that action. Comment
+          # lines do not count. A start inside a script that a run: line calls
+          # is not visible here; that script's workflow step names it instead.
+          import glob, os, re, sys
+          import yaml
+
+          RAISE = re.compile(r"(^|/)\.github/actions/raise-inotify-limits/?$")
+          STARTS = [
+              (re.compile(r"\bmake\b[^\n#]*\brecreate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\b[^\n#]*\bmake\b[^\n#]*\brecreate\b"), "make recreate ENV=kind"),
+              (re.compile(r"\bmake\b[^\n#]*\bsubstrate\b[^\n#]*\bENV=\"?kind\b|\bENV=\"?kind\b[^\n#]*\bmake\b[^\n#]*\bsubstrate\b"), "make substrate ENV=kind"),
+              (re.compile(r"\bkind\s+create\s+cluster\b"), "kind create cluster"),
+          ]
+
+          def code_lines(text):
+              # Drop comment lines, then join a command that a trailing
+              # backslash continues, so `make recreate \` + `ENV=kind` is one line.
+              kept = [l for l in str(text or "").splitlines() if not l.lstrip().startswith("#")]
+              return re.sub(r"\\\n\s*", " ", "\n".join(kept))
+
+          def local_action(uses):
+              if not uses.startswith("./"):
+                  return None
+              base = uses[2:].rstrip("/")
+              bases = [base]
+              # A workflow that checks this repo out into a path (gibson checks
+              # out into `gibson`) names ./<dir>/.github/actions/<name>.
+              if "/.github/actions/" in base and not base.startswith(".github/"):
+                  bases.append(base[base.index(".github/actions/"):])
+              for b in bases:
+                  for name in ("action.yml", "action.yaml"):
+                      path = os.path.join(b, name)
+                      if os.path.isfile(path):
+                          return path
+              return None
+
+          def kind_start(step):
+              """The way this one step starts kind, or None."""
+              uses = str(step.get("uses") or "")
+              if uses.split("@")[0].endswith("helm/kind-action"):
+                  w = step.get("with") or {}
+                  if str(w.get("install_only", "")).lower() != "true":
+                      return "helm/kind-action without install_only"
+                  return None
+              run = code_lines(step.get("run"))
+              # This step's own program names every kind start in its patterns
+              # and labels. It starts no cluster, so it is not read as one.
+              if "BEGIN-" + "KIND (extracted by" in str(step.get("run") or ""):
+                  return None
+              for rx, label in STARTS:
+                  if rx.search(run):
+                      return label
+              return None
+
+          def walk(steps, raised, where, failures, depth=0):
+              """Walk the steps in order. Returns whether the limits are raised after them."""
+              for i, step in enumerate(steps or []):
+                  if not isinstance(step, dict):
+                      continue
+                  uses = str(step.get("uses") or "")
+                  label = "%s step %d (%s)" % (where, i + 1, step.get("name") or uses or "run")
+                  if RAISE.search(uses.split("@")[0]):
+                      raised = True
+                      continue
+                  start = kind_start(step)
+                  if start and not raised:
+                      failures.append("%s starts kind (%s) with no raise-inotify-limits step before it. "
+                                      "Add `uses: zeroroot-ai/.github/.github/actions/raise-inotify-limits@<sha>` "
+                                      "as an earlier step of the job" % (label, start))
+                  path = local_action(uses)
+                  if path and depth < 5:
+                      with open(path, encoding="utf-8") as fh:
+                          act = yaml.safe_load(fh) or {}
+                      inner = ((act.get("runs") or {}).get("steps")) or []
+                      raised = walk(inner, raised, "%s -> %s" % (label, path), failures, depth + 1)
+              return raised
+
+          files = sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml"))
+          failures = []
+          for path in files:
+              with open(path, encoding="utf-8") as fh:
+                  doc = yaml.safe_load(fh)
+              if not isinstance(doc, dict):
+                  continue
+              for job_id, job in (doc.get("jobs") or {}).items():
+                  if isinstance(job, dict):
+                      walk(job.get("steps"), False, "%s job %s" % (path, job_id), failures)
+          if not files:
+              failures.append("no workflow file under .github/workflows, so this run checked nothing")
+          for f in failures:
+              print("::error::" + f)
+          if failures:
+              sys.exit(1)
+          print("OK: %d workflow file(s): every job that starts kind raises the inotify limits first." % len(files))
+          # END-KIND
           PY
