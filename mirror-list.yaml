@@ -425,6 +425,17 @@ mirrors:
   - source: ghcr.io/spiffe/oidc-discovery-provider
     tag: "1.14.5"
     dest: oidc-discovery-provider
+  # agentgateway, the Model gateway and the Agent gateway (charts#815).
+  - source: ghcr.io/agentgateway/controller
+    tag: "v1.7.0"         # charts helm/gibson agentgateway.controller.image.tag
+    dest: agentgateway-controller
+  - source: ghcr.io/agentgateway/agentgateway
+    tag: "v1.7.0"         # charts helm/gibson gateway.proxy.image
+    dest: agentgateway
+  # The trace collector between the gateway and the daemon (charts#816).
+  - source: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-k8s
+    tag: "0.165.0"        # charts helm/gibson-workloads traceCollector.image.tag
+    dest: opentelemetry-collector-k8s
   - source: ghcr.io/spiffe/spiffe-csi-driver
     tag: "0.2.7"
     dest: spiffe-csi-driver
