@@ -180,6 +180,35 @@ links:
       file: helm/gibson/Chart.yaml
       name: openfga
 
+  # agentgateway, the Model gateway and the Agent gateway (charts#815). The
+  # two keys are the controller image and the default proxy image of the
+  # agentgateway subchart.
+  - name: agentgateway-controller
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: agentgateway.controller.image.tag
+      format: yaml
+    upstream:
+      repo: agentgateway/agentgateway
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: agentgateway
+
+  - name: agentgateway-proxy
+    source:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/values.yaml
+      key: agentgateway.proxy.image.tag
+      format: yaml
+    upstream:
+      repo: agentgateway/agentgateway
+    subchart:
+      repo: zeroroot-ai/charts
+      file: helm/gibson/Chart.yaml
+      name: agentgateway
+
   - name: alpine-k8s
     # The alpine-k8s tool image (kubectl + sh) every first-party Job, init
     # container, gate and helm-test probe renders through `gibson.toolImage`
