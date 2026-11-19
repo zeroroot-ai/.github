@@ -94,6 +94,14 @@ mirrors:
   - source: docker.io/library/golang
     tag: "1.27.3"          # debian-based; the setec builders
     dest: golang
+  # 1.27.4 fixes GO-2026-6859 (net/http). Both variants are mirrored before a
+  # go.mod moves, for the reason given at 1.27.1.
+  - source: docker.io/library/golang
+    tag: "1.27.4-alpine"   # the alpine builders of 1.27.3, one patch on
+    dest: golang
+  - source: docker.io/library/golang
+    tag: "1.27.4"          # debian-based; the setec builders
+    dest: golang
 
   # ---------------------------------------------------------------------------
   # Data plane images
