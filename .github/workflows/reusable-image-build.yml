@@ -157,8 +157,10 @@ jobs:
       # step itself in setec (7 jobs) and gibson (10 jobs). The directory
       # removals below free about 20 GB in seconds, which is the headroom
       # .github#187 needed (.github#122).
+      # The action moved from jlumbroso to lumbroso-commons. The runner does
+      # not follow the old name, so the old reference fails at job setup.
       - name: Free up runner disk space
-        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
+        uses: lumbroso-commons/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
         with:
           tool-cache: false
           android: true
