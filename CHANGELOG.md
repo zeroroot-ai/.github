@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.23.0](https://github.com/zeroroot-ai/.github/compare/v0.22.0...v0.23.0) (2026-11-21)
+
+
+### Features
+
+* **mirror:** add agentgateway and the OpenTelemetry collector ([#311](https://github.com/zeroroot-ai/.github/issues/311)) ([3b8191c](https://github.com/zeroroot-ai/.github/commit/3b8191c75c51ed61cfba39609b5575a3b0772c3a))
+* **mirror:** add golang 1.27.4 for GO-2026-6859 ([#314](https://github.com/zeroroot-ai/.github/issues/314)) ([ce7a102](https://github.com/zeroroot-ai/.github/commit/ce7a1024952bd5ffd92cfbccb68c2ee3e4bb4ec1))
+* **version-links:** declare the two agentgateway image tags of charts ([#313](https://github.com/zeroroot-ai/.github/issues/313)) ([37fc8f5](https://github.com/zeroroot-ai/.github/commit/37fc8f56f847f2b0f788fcdd6e035892b656052d))
+
+
+### Bug Fixes
+
+* use the new home of the free-disk-space action ([#317](https://github.com/zeroroot-ai/.github/issues/317)) ([3b2670b](https://github.com/zeroroot-ai/.github/commit/3b2670bc9c9fed192ba1432291da19838d5c618a))
+
 ## [0.22.0](https://github.com/zeroroot-ai/.github/compare/v0.21.3...v0.22.0) (2026-11-03)
 
 
