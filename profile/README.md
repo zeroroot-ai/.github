@@ -13,9 +13,11 @@
 ╚══════════════════════════════════════════════════════════════╝
 ```
 
-# Gibson: the runtime that gets an AI agent past a security review
+# Gibson: a runtime and an ADK
 
-**You write the agent. Gibson gives it an identity and a grant for every tool it can touch. It gives it a microVM for untrusted work and a replayable record of what it did.**
+**Gibson is a runtime and an ADK for agents that find, fix and verify security flaws inside grants that your security team sets.**
+
+You write the agent with the ADK. The runtime gives it an identity and a grant for every tool it can touch. It gives it a microVM for untrusted work and a record of what it did that you can replay.
 
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/mkqd6mU3)
 [![Docs](https://img.shields.io/badge/Docs-docs.zeroroot.ai-blue?style=for-the-badge)](https://docs.zeroroot.ai)
@@ -25,8 +27,8 @@
 ---
 
 An agent takes an afternoon to write. A fleet of agents that a security review
-accepts is the hard part. The hard part is the same whether the agent patches
-CVEs, reconciles config, or triages alerts:
+accepts is the hard part. The hard part is the same if the agent fixes a CVE,
+tests a fix, or contains an incident:
 
 - Which human is answerable for this agent?
 - What can it touch, and who can revoke that?
@@ -44,14 +46,23 @@ that proves it. This page is the overview.
 
 ## What people build
 
-- **CVE response.** An agent reacts to a new advisory, works out which services
-  in the graph are affected, and opens the patch PR.
+Three jobs of a security team come first. The agents are the tools of that
+team. They do not replace it.
+
+- **CVE response.** A scan raises each flaw as a finding. Agents work out which
+  services in the graph are affected and fix the finding. The scan runs again
+  and verifies the fix.
+- **Security testing.** An agent proves that an attack works. An agent fixes
+  the flaw. The same attack runs again and fails.
+- **Incident response.** Agents read the alerts of your detection tools and
+  contain an incident inside their grant.
+
+The same runtime runs other work:
+
 - **Coding agents under control.** Run `opencode` inside a microVM, under
   grants, with everything it did on the record.
-- **Ops automation.** Reconcile drift, chase SLO burn, sweep IOCs across audit
-  logs.
-- **Offensive and defensive security.** Recon, triage, and evidence collection.
-  This is one domain among several, not the boundary.
+- **CI/CD and operations work.** Each change arrives as a merge request that
+  your pipeline tests.
 
 ---
 
