@@ -178,7 +178,7 @@ jobs:
           /tmp/gitleaks dir . --no-banner --redact --exit-code 1 "${cfg[@]}"
       # END-GITLEAKS-PIN
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: ${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}
           cache: true
@@ -238,7 +238,7 @@ jobs:
       # on the run the required-checks gate actually reads.
       - name: deadcode (whole-program reachability)
         if: inputs.deadcode
-        uses: zeroroot-ai/.github/actions/deadcode-gate@58931387de5d0f2925ee29fa9781822b1e3a100d # v0.20.0
+        uses: zeroroot-ai/.github/actions/deadcode-gate@88cbc77697ff7143c98f29f3c4d80a93a666d601 # v0.23.0
         with:
           version: ${{ inputs.deadcode-version }}
           dir: ${{ inputs.go-mod-path || '.' }}
@@ -302,7 +302,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: ${{ inputs.go-mod-path != '' && format('{0}/go.mod', inputs.go-mod-path) || 'go.mod' }}
           cache: true
